@@ -1,0 +1,321 @@
+.inference-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
+}
+
+.inference-tabs {
+  ::ng-deep .mat-mdc-tab-body-wrapper {
+    padding-top: 0.75rem;
+  }
+}
+
+.tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Section cards ── */
+.section-card {
+  background-color: var(--agri-surface-raised);
+  border-radius: 18px;
+  border: 1px solid var(--agri-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.section-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--agri-fill-subtle);
+  border-bottom: 1px solid var(--agri-border);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--agri-accent-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+
+  mat-icon {
+    font-size: 1.1rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    color: var(--agri-accent);
+  }
+}
+
+.section-card__body {
+  padding: 1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.model-task {
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+/* ── Temp files ── */
+.temp-files-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.btn-select-files {
+  align-self: flex-start;
+  height: 2.5rem;
+  border-radius: 10px;
+}
+
+.temp-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--agri-text-muted);
+}
+
+.temp-count {
+  font-weight: 600;
+  color: var(--agri-accent-dark);
+}
+
+.temp-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.temp-file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--agri-fill-subtle);
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.temp-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agri-text);
+}
+
+.temp-file-size {
+  font-size: 0.75rem;
+  color: var(--agri-text-muted);
+  white-space: nowrap;
+}
+
+.btn-remove-file {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* ── Submit ── */
+.submit-row {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Error ── */
+.error-banner {
+  color: #c62828;
+  background: #fdecea;
+  border: 1px solid #f5c6cb;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-top: 0.75rem;
+}
+
+/* ── Table ── */
+.table-card {
+  background-color: var(--agri-surface-raised);
+  border-radius: 18px;
+  border: 1px solid var(--agri-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    padding: 0.5rem 0.75rem;
+    font-weight: 700;
+    color: var(--agri-brand);
+    background-color: var(--agri-fill-subtle);
+    border-bottom: 2px solid var(--agri-border);
+    white-space: nowrap;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--agri-fill-hover);
+    color: var(--agri-accent-dark);
+    font-size: 0.82rem;
+    vertical-align: middle;
+  }
+
+  .action-cell {
+    padding: 0.25rem;
+    text-align: center;
+    width: 80px;
+    min-width: 80px;
+    white-space: nowrap;
+  }
+
+  .col-action {
+    width: 80px;
+    min-width: 80px;
+    text-align: center;
+  }
+
+  .clickable-row {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background-color: var(--agri-surface);
+    }
+  }
+
+  .cell-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    background-color: var(--agri-chip-bg);
+    color: var(--agri-chip-text);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .badge-blue {
+    background-color: #e3f2fd;
+    color: #1565c0;
+  }
+
+  .badge-amber {
+    background-color: #fff8e1;
+    color: #e65100;
+  }
+
+  .badge-green {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  .badge-red {
+    background-color: #fdecea;
+    color: #c62828;
+  }
+
+  .cell-date {
+    font-size: 0.78rem;
+    color: var(--agri-text-muted);
+    white-space: nowrap;
+  }
+
+  .btn-action {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 1px;
+
+    &:hover {
+      background-color: var(--agri-fill);
+    }
+  }
+}
+
+/* ── Pagination ── */
+.pagination-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+
+  .btn-page {
+    min-width: 140px;
+    height: 2.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 10px;
+    background-color: var(--agri-accent);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(74, 125, 51, 0.25);
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background-color: #3d6a28;
+      box-shadow: 0 4px 12px rgba(74, 125, 51, 0.35);
+      transform: translateY(-1px);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      background-color: var(--agri-border-strong, #bdbdbd);
+      box-shadow: none;
+      cursor: default;
+    }
+
+    mat-icon {
+      margin: 0 0.25rem;
+    }
+  }
+
+  .pagination-info {
+    font-size: 0.82rem;
+    color: var(--agri-text-muted);
+    font-weight: 500;
+  }
+}

@@ -1,0 +1,10 @@
+[Unit]
+Description=AgroLens Restic maintenance
+OnFailure=agrolens-backup-alert.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/agrolens/deploy/production/agrolens-maintenance.sh
+Environment=BACKUP_ENV_FILE=/etc/agrolens/backup.env
+RuntimeDirectory=agrolens-backup
+User=root

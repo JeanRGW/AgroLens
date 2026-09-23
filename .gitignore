@@ -1,0 +1,83 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnpm-state/
+.pub-cache/
+.pub/
+
+# Build output
+dist/
+build/
+coverage/
+out-tsc/
+.angular/
+.dart_tool/
+apps/api/dist/
+apps/api/coverage/
+apps/web/dist/
+apps/web/coverage/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+apps/web/.angular/
+apps/mobile/build/
+apps/mobile/coverage/
+packages/*/dist/
+packages/*/coverage/
+services/inference/__pycache__/
+services/inference/.pytest_cache/
+
+# Turbo
+.turbo/
+
+# Environment and secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+apps/*/.env
+apps/*/.env.*
+!apps/*/.env.example
+deploy/**/.env
+apps/web/e2e/.auth/
+apps/mobile/android/key.properties
+apps/mobile/android/local.properties
+apps/mobile/android/*.jks
+apps/mobile/android/*.keystore
+apps/mobile/ios/Flutter/flutter_export_environment.sh
+
+# Native/generated Flutter files
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/ios/Flutter/Generated.xcconfig
+apps/mobile/ios/Flutter/ephemeral/
+apps/mobile/ios/Runner/GeneratedPluginRegistrant.*
+
+# Cross-app E2E credential artifact (opt-in, git-ignored by policy)
+*cross-app*.json
+e2e-cross-app*.json
+
+# Logs and local tooling
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+*.iml
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+test-results/
+playwright-report/
+blob-report/
+.last-run.json
+
+# Python cache and bytecode
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/

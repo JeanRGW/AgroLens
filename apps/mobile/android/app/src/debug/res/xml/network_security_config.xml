@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug/profile builds only: permits cleartext HTTP to local API targets
+  (emulator host alias 10.0.2.2 and localhost) so a locally overridden
+  API base URL works on Android 9+, which blocks cleartext by default.
+  Release builds keep the default (HTTPS-only) policy.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

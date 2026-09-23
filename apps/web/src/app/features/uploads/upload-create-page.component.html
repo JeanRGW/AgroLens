@@ -1,0 +1,272 @@
+<section class="upload-create-page">
+  <!-- Page header -->
+  <app-page-header
+    eyebrow="Upload"
+    [title]="editing() ? 'Corrigir lote local' : 'Novo Upload'"
+    subtitle="Salve imagens, metadados e localização para sincronizar quando houver conexão"
+  />
+
+  <!-- Loading catalogs -->
+  @if (loadingCatalogs()) {
+    <app-loading-state message="Carregando catálogos..." />
+  }
+
+  @if (catalogsError()) {
+    <div class="error-banner">{{ catalogsError() }}</div>
+  }
+  @if (!progress() && !completedUploadId()) {
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="!online() || loadingCatalogs() || submitting()"
+      (click)="loadCatalogs()"
+    >
+      Recarregar catálogos
+    </button>
+  }
+
+  <!-- Progress display during upload flow -->
+  @if (progress(); as p) {
+    <mat-card class="progress-card">
+      <div class="progress-header">
+        <mat-icon class="progress-icon">cloud_upload</mat-icon>
+        <span class="progress-message">{{ p.message }}</span>
+      </div>
+      <mat-progress-bar
+        [mode]="
+          p.phase === 'init' || p.phase === 'completing' || p.phase === 'finalizing'
+            ? 'indeterminate'
+            : 'determinate'
+        "
+        [value]="p.totalFiles > 0 ? (p.filesUploaded / p.totalFiles) * 100 : 0"
+      />
+      <div class="progress-detail">
+        @switch (p.phase) {
+          @case ('uploading') {
+            <span>{{ p.filesUploaded }} / {{ p.totalFiles }} arquivos enviados</span>
+          }
+          @case ('finalizing') {
+            <span>Tentativa {{ p.pollAttempts }} — aguardando processamento...</span>
+          }
+          @case ('ready') {
+            <span class="progress-ready">Upload concluído!</span>
+          }
+          @case ('failed') {
+            <span class="progress-failed">Falha no processamento.</span>
+          }
+        }
+      </div>
+    </mat-card>
+  }
+
+  <!-- Form -->
+  @if (!loadingCatalogs() && !progress() && !completedUploadId()) {
+    <form (ngSubmit)="onSubmit()" class="upload-create__layout">
+      <!-- Left column -->
+      <div class="upload-create__form">
+        <!-- Metadata card -->
+        <mat-card class="section-card">
+          <div class="section-card__header">
+            <mat-icon>info</mat-icon>
+            <span>Metadados</span>
+          </div>
+          <div class="section-card__body">
+            <!-- Property -->
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Propriedade</mat-label>
+              <mat-select
+                [(ngModel)]="selectedPropertyId"
+                name="propertyId"
+                required
+                (ngModelChange)="onPropertyChange()"
+              >
+                @for (prop of properties(); track prop.id) {
+                  <mat-option [value]="prop.id">{{ prop.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <!-- Talhao -->
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Talhão</mat-label>
+              <mat-select [(ngModel)]="selectedTalhaoId" name="talhaoId" required>
+                @for (talhao of filteredTalhoes(); track talhao.id) {
+                  <mat-option [value]="talhao.id">{{ talhao.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <!-- Crop type -->
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Cultura</mat-label>
+              <mat-select
+                [(ngModel)]="selectedCropTypeId"
+                name="cropTypeId"
+                required
+                (ngModelChange)="onCropTypeChange()"
+              >
+                @for (crop of cropTypes(); track crop.id) {
+                  <mat-option [value]="crop.id">{{ crop.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <!-- Estadio -->
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Estádio (opcional)</mat-label>
+              <mat-select [(ngModel)]="selectedEstadioId" name="estadioId">
+                @for (est of filteredEstadios(); track est.id) {
+                  <mat-option [value]="est.id">{{ est.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <!-- Source -->
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Fonte</mat-label>
+              <mat-select [(ngModel)]="source" name="source" required>
+                <mat-option value="phone">Celular</mat-option>
+                <mat-option value="drone">Drone</mat-option>
+                <mat-option value="mixed">Misto</mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            <!-- Activity date -->
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Data da coleta</mat-label>
+              <input
+                matInput
+                [matDatepicker]="picker"
+                [(ngModel)]="activityDate"
+                name="activityDate"
+                required
+              />
+              <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+              <mat-datepicker #picker></mat-datepicker>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Hora da coleta (opcional)</mat-label>
+              <input matInput type="time" [(ngModel)]="activityTime" name="activityTime" />
+              <mat-icon matSuffix>schedule</mat-icon>
+            </mat-form-field>
+          </div>
+        </mat-card>
+
+        <!-- Images card -->
+        <mat-card class="section-card">
+          <div class="section-card__header">
+            <mat-icon>photo_library</mat-icon>
+            <span>Imagens</span>
+          </div>
+          <div class="section-card__body">
+            <div class="file-input-area">
+              <input
+                type="file"
+                #fileInput
+                multiple
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                (change)="onFilesSelected($event)"
+                class="file-input-hidden"
+              />
+              <button mat-stroked-button type="button" (click)="fileInput.click()">
+                <mat-icon>add_photo_alternate</mat-icon>
+                Selecionar imagens
+              </button>
+              <span class="file-count"> {{ files().length }} imagem(ns) selecionada(s) </span>
+            </div>
+
+            @if (previewUrls().length > 0) {
+              <div class="preview-grid">
+                @for (url of previewUrls(); track url; let i = $index) {
+                  <div class="preview-item">
+                    <img [src]="url" alt="Prévia" />
+                    <button
+                      mat-icon-button
+                      type="button"
+                      class="preview-remove"
+                      (click)="removeFile(i)"
+                    >
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </mat-card>
+      </div>
+
+      <!-- Right column: location -->
+      <div class="upload-create__location">
+        <mat-card class="section-card">
+          <div class="section-card__header">
+            <mat-icon>location_on</mat-icon>
+            <span>Localização</span>
+          </div>
+          <div class="section-card__body">
+            <app-location-picker
+              height="420px"
+              [latitude]="latitude()"
+              [longitude]="longitude()"
+              (locationSelected)="onLocationSelected($event)"
+              (locationCleared)="latitude.set(null); longitude.set(null)"
+            />
+          </div>
+        </mat-card>
+      </div>
+    </form>
+
+    <!-- Error display -->
+    @if (error()) {
+      <div class="error-banner">{{ error() }}</div>
+    }
+
+    <!-- Actions -->
+    <div class="upload-create__actions">
+      <a mat-stroked-button routerLink="/uploads/queue">
+        <mat-icon>arrow_back</mat-icon>
+        Cancelar
+      </a>
+      <button
+        mat-flat-button
+        color="primary"
+        type="button"
+        [disabled]="
+          submitting() ||
+          files().length === 0 ||
+          !selectedPropertyId ||
+          !selectedTalhaoId ||
+          !selectedCropTypeId
+        "
+        (click)="onSubmit()"
+      >
+        <mat-icon>{{
+          submitting() ? 'hourglass_empty' : online() ? 'cloud_upload' : 'save'
+        }}</mat-icon>
+        {{
+          submitting()
+            ? online()
+              ? 'Enviando...'
+              : 'Salvando...'
+            : online()
+              ? 'Criar Upload'
+              : 'Salvar na fila'
+        }}
+      </button>
+    </div>
+  }
+
+  <!-- Completion state -->
+  @if (completedUploadId()) {
+    <mat-card class="completion-card">
+      <mat-icon class="completion-icon">check_circle</mat-icon>
+      <h3>Upload criado com sucesso!</h3>
+      <p>O upload foi concluído e já está disponível para visualização.</p>
+      <a mat-flat-button color="primary" [routerLink]="['/uploads', completedUploadId()]">
+        <mat-icon>visibility</mat-icon>
+        Ver detalhes do upload
+      </a>
+    </mat-card>
+  }
+</section>

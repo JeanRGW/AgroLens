@@ -1,0 +1,17 @@
+{
+  "name": "@agrolens/eslint-config",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared ESLint flat configuration for AgroLens",
+  "type": "module",
+  "main": "index.mjs",
+  "files": [
+    "index.mjs",
+    "prettier-base.json"
+  ],
+  "peerDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

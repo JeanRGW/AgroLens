@@ -1,0 +1,581 @@
+.uploads-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
+}
+
+/* ── Filters Card ── */
+.filters-card {
+  background-color: var(--agri-surface-raised);
+  border-radius: 18px;
+  border: 1px solid var(--agri-border);
+  padding: 1.25rem 1.5rem 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+
+  .full-width {
+    grid-column: span 1;
+  }
+}
+
+.filters-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-start;
+
+  .btn-apply {
+    min-width: 180px;
+    height: 2.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 10px;
+    background-color: var(--agri-accent);
+    color: #fff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(74, 125, 51, 0.25);
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background-color: #3d6a28;
+      transform: translateY(-1px);
+    }
+
+    &:disabled {
+      background-color: var(--agri-border-strong);
+      box-shadow: none;
+    }
+
+    mat-icon {
+      margin-right: 0.5rem;
+    }
+  }
+
+  .btn-reset {
+    min-width: 120px;
+    height: 2.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid var(--agri-border-subtle);
+    color: var(--agri-brand);
+    background: transparent;
+
+    &:hover {
+      background-color: var(--agri-fill-hover);
+      border-color: var(--agri-border-strong);
+    }
+  }
+}
+
+/* ── Toolbar ── */
+.toolbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  // Match the rendered mat-card surface: the global .mat-mdc-card rule
+  // overrides surface-raised with --agri-surface (!important), so a plain
+  // div must use --agri-surface directly to avoid a white mismatch band.
+  background-color: var(--agri-surface);
+  border-radius: 12px;
+  border: 1px solid var(--agri-border);
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    .selection-count {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--agri-accent);
+      background-color: var(--agri-fill);
+      border-radius: 20px;
+      padding: 0.3rem 0.75rem;
+    }
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    .btn-toolbar-action {
+      height: 2.25rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 8px;
+      border: 1px solid var(--agri-border);
+      color: var(--agri-accent-dark);
+      background: var(--agri-surface-raised);
+
+      &:hover:not(:disabled) {
+        background-color: var(--agri-fill-hover);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        color: var(--agri-text-muted, #9e9e9e);
+        border-color: var(--agri-border-subtle, #e0e0e0);
+        cursor: default;
+        pointer-events: none;
+      }
+
+      mat-icon {
+        margin-right: 0.35rem;
+        font-size: 1rem;
+        width: 1rem;
+        height: 1rem;
+      }
+    }
+
+    .btn-yolo {
+      border-color: var(--agri-accent);
+      color: var(--agri-accent);
+    }
+
+    .btn-view-toggle {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 8px;
+      border: 1px solid var(--agri-border);
+      background-color: var(--agri-fill-subtle);
+      color: var(--agri-brand);
+
+      &:hover {
+        background-color: var(--agri-fill);
+      }
+    }
+  }
+}
+
+/* ── Download Progress ── */
+.download-progress-wrap {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--agri-border);
+  background: var(--agri-surface);
+}
+
+.download-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--agri-accent-dark);
+  margin-bottom: 0.5rem;
+}
+
+.download-icon {
+  color: var(--agri-accent);
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.download-percent {
+  margin-left: auto;
+  color: var(--agri-accent);
+  font-weight: 700;
+}
+
+.download-bar {
+  border-radius: 4px;
+}
+
+.download-warning {
+  margin: 0.45rem 0 0;
+  font-size: 0.75rem;
+  color: #8a7a3a;
+  font-style: italic;
+}
+
+/* ── Error ── */
+.error-banner {
+  color: #c62828;
+  background: #fdecea;
+  border: 1px solid #f5c6cb;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+/* ── Table Card ── */
+.table-card {
+  background-color: var(--agri-surface-raised);
+  border-radius: 18px;
+  border: 1px solid var(--agri-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.records-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+
+  th {
+    padding: 0.5rem 0.75rem;
+    font-weight: 700;
+    color: var(--agri-brand);
+    background-color: var(--agri-fill-subtle);
+    border-bottom: 2px solid var(--agri-border);
+    white-space: nowrap;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+
+    &.col-center {
+      text-align: center;
+    }
+    &.col-action {
+      width: 32px;
+      min-width: 32px;
+      text-align: center;
+    }
+    &.col-upload-id {
+      min-width: 100px;
+    }
+  }
+
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--agri-fill-hover);
+    color: var(--agri-accent-dark);
+    font-size: 0.82rem;
+    text-align: left;
+    vertical-align: middle;
+
+    &.col-center {
+      text-align: center;
+    }
+
+    &.action-cell {
+      padding: 0.25rem;
+      text-align: center;
+      width: 50px;
+      min-width: 50px;
+      max-width: 50px;
+      white-space: nowrap;
+    }
+
+    &.col-upload-id {
+      white-space: nowrap;
+      overflow: hidden;
+    }
+  }
+
+  tr {
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background-color: var(--agri-surface);
+    }
+    &:last-child td {
+      border-bottom: none;
+    }
+  }
+
+  .table-checkbox {
+    ::ng-deep .mdc-checkbox {
+      .mdc-checkbox__native-control:checked + .mdc-checkbox__ripple {
+        background-color: var(--agri-accent);
+      }
+      .mdc-checkbox__ripple {
+        background-color: var(--agri-accent);
+      }
+    }
+  }
+
+  .cell-preview-img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    display: inline-block;
+  }
+
+  .cell-preview-empty {
+    color: var(--agri-border-strong);
+    font-size: 36px;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cell-user {
+    font-size: 0.8rem;
+    color: var(--agri-brand);
+    display: inline-block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    vertical-align: middle;
+    font-size: 0.75rem;
+  }
+
+  .cell-upload-id {
+    font-weight: 600;
+    font-family: var(--agri-mono);
+    font-size: 0.78rem;
+    color: var(--agri-accent-dark);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+    display: inline-block;
+    text-decoration: none;
+
+    &:hover {
+      color: var(--agri-accent);
+      text-decoration: underline;
+    }
+  }
+
+  .cell-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    background-color: var(--agri-chip-bg);
+    color: var(--agri-chip-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .cell-source {
+    text-transform: capitalize;
+  }
+
+  .cell-ready {
+    background-color: #c8e6c9;
+    color: #2e7d32;
+  }
+
+  .cell-failed {
+    background-color: #fdecea;
+    color: #c62828;
+  }
+
+  .cell-count {
+    background-color: var(--agri-fill-hover);
+    font-weight: 700;
+    min-width: 2rem;
+    text-align: center;
+  }
+
+  .cell-date {
+    font-size: 0.78rem;
+    color: var(--agri-text-muted);
+    white-space: nowrap;
+  }
+
+  .btn-action {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+      background-color: var(--agri-fill);
+    }
+  }
+}
+
+/* ── Grid View ── */
+.grid-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.grid-item {
+  border-radius: 16px;
+  overflow: hidden;
+  background-color: var(--agri-surface-raised);
+  border: 1px solid var(--agri-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(45, 90, 30, 0.1);
+    border-color: var(--agri-border-strong);
+  }
+
+  .grid-item-image {
+    position: relative;
+    width: 100%;
+    padding-top: 65%;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--agri-fill-hover) 0%, #e6e9d8 100%);
+
+    mat-icon {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 2.5rem;
+      color: var(--agri-border-strong);
+    }
+  }
+
+  .grid-preview-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .grid-item-info {
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+
+    .grid-item-id {
+      font-size: 0.85rem;
+      font-weight: 700;
+      font-family: var(--agri-mono);
+      color: var(--agri-accent-dark);
+    }
+
+    .grid-item-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+
+      .badge {
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.15rem 0.4rem;
+        border-radius: 6px;
+        text-transform: uppercase;
+
+        &.badge-crop {
+          background: var(--agri-chip-bg);
+          color: var(--agri-chip-text);
+        }
+        &.badge-talhao {
+          background: var(--agri-fill-hover);
+          color: var(--agri-brand);
+        }
+        &.badge-estadio {
+          background: #f8f0d7;
+          color: #8a7a3a;
+        }
+      }
+    }
+
+    .grid-item-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+
+      .meta-row {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+
+        .meta-icon {
+          font-size: 0.85rem;
+          width: 0.9rem;
+          height: 0.9rem;
+          color: var(--agri-border-strong);
+        }
+        .value {
+          color: var(--agri-brand);
+          font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+    }
+  }
+}
+
+/* ── Pagination ── */
+.pagination-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+
+  .btn-page {
+    min-width: 140px;
+    height: 2.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 10px;
+    background-color: var(--agri-accent);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(74, 125, 51, 0.25);
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background-color: #3d6a28;
+      box-shadow: 0 4px 12px rgba(74, 125, 51, 0.35);
+      transform: translateY(-1px);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      background-color: var(--agri-border-strong, #bdbdbd);
+      box-shadow: none;
+      cursor: default;
+    }
+
+    mat-icon {
+      margin: 0 0.25rem;
+    }
+  }
+
+  .pagination-info {
+    font-size: 0.82rem;
+    color: var(--agri-text-muted);
+    font-weight: 500;
+  }
+}

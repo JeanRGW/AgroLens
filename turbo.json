@@ -1,0 +1,48 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "coverage/**"],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "e2e/**",
+        "*.json",
+        "*.ts",
+        "*.js",
+        "*.mjs",
+        "*.yml",
+        "*.yaml"
+      ]
+    },
+    "lint": {
+      "dependsOn": ["@agrolens/contracts#build"]
+    },
+    "typecheck": {
+      "dependsOn": ["@agrolens/contracts#build"]
+    },
+    "format:check": {},
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "env": ["CHROME_BIN"]
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "env": [
+        "DATABASE_URL",
+        "E2E_API_URL",
+        "E2E_WEB_URL",
+        "E2E_ADMIN_EMAIL",
+        "E2E_ADMIN_PASSWORD",
+        "S3_ENDPOINT",
+        "S3_PUBLIC_ENDPOINT",
+        "JWT_SECRET",
+        "THROTTLE_*"
+      ]
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "name": "@agrolens/web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "author": "Jean RGW",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JeanRGW/AgroLens.git",
+    "directory": "apps/web"
+  },
+  "bugs": {
+    "url": "https://github.com/JeanRGW/AgroLens/issues"
+  },
+  "homepage": "https://github.com/JeanRGW/AgroLens/tree/main/apps/web#readme",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve --proxy-config proxy.conf.json",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "format": "prettier --write \"src/**/*.{ts,html,scss,css}\" \"e2e/**/*.ts\" \"*.{ts,js,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,html,scss,css}\" \"e2e/**/*.ts\" \"*.{ts,js,json,md}\"",
+    "lint": "eslint \"{src,e2e}/**/*.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test": "CHROME_BIN=${CHROME_BIN:-$(command -v chromium-browser chromium google-chrome-stable google-chrome 2>/dev/null | head -n1)} ng test --watch=false --browsers=ChromeHeadlessNoSandbox",
+    "test:watch": "CHROME_BIN=${CHROME_BIN:-$(command -v chromium-browser chromium google-chrome-stable google-chrome 2>/dev/null | head -n1)} ng test --browsers=ChromeHeadlessNoSandbox",
+    "test:coverage": "CHROME_BIN=${CHROME_BIN:-$(command -v chromium-browser chromium google-chrome-stable google-chrome 2>/dev/null | head -n1)} ng test --watch=false --browsers=ChromeHeadlessNoSandbox --code-coverage",
+    "e2e": "npx playwright test",
+    "e2e:pwa": "npm run build && playwright test --config=playwright.pwa.config.ts",
+    "e2e:install": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "@agrolens/contracts": "workspace:*",
+    "@angular/animations": "^20.3.30",
+    "@angular/cdk": "^20.2.14",
+    "@angular/common": "^20.3.30",
+    "@angular/compiler": "^20.3.30",
+    "@angular/core": "^20.3.30",
+    "@angular/forms": "^20.3.30",
+    "@angular/material": "^20.2.14",
+    "@angular/platform-browser": "^20.3.30",
+    "@angular/platform-browser-dynamic": "^20.3.30",
+    "@angular/router": "^20.3.30",
+    "@angular/service-worker": "^20.3.31",
+    "jszip": "^3.10.1",
+    "leaflet": "^1.9.4",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "zone.js": "~0.15.0"
+  },
+  "overrides": {
+    "express": {
+      "qs": "^6.16.0"
+    }
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^20.3.36",
+    "@angular/cli": "^20.3.36",
+    "@angular/compiler-cli": "^20.3.30",
+    "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.61.1",
+    "@types/jasmine": "~5.1.0",
+    "@types/leaflet": "^1.9.21",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "jasmine-core": "~5.6.0",
+    "karma": "~6.4.0",
+    "karma-chrome-launcher": "~3.2.0",
+    "karma-coverage": "~2.2.0",
+    "karma-jasmine": "~5.1.0",
+    "karma-jasmine-html-reporter": "~2.1.0",
+    "prettier": "^3.3.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.0.0"
+  }
+}

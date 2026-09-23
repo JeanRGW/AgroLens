@@ -1,0 +1,43 @@
+<mat-form-field appearance="outline" class="autocomplete-field">
+  <mat-label>{{ label }}</mat-label>
+
+  @if (prefixIcon) {
+    <mat-icon matPrefix>{{ prefixIcon }}</mat-icon>
+  }
+
+  <input
+    matInput
+    [formControl]="searchControl"
+    [matAutocomplete]="auto"
+    [placeholder]="placeholder"
+    [required]="required"
+    autocomplete="off"
+    (blur)="markTouched()"
+  />
+
+  <mat-autocomplete #auto="matAutocomplete" [autoActiveFirstOption]="autoActiveFirstOption">
+    @for (option of options(); track option.value) {
+      <mat-option
+        [value]="getOptionText(option)"
+        (onSelectionChange)="selectOption(option, $event)"
+      >
+        <div class="option-content">
+          <span class="option-title">{{ option.label }}</span>
+          @if (option.secondary) {
+            <span class="option-subtitle">{{ option.secondary }}</span>
+          }
+        </div>
+      </mat-option>
+    }
+  </mat-autocomplete>
+
+  @if (showValueHint && resolvedControl.value) {
+    <mat-hint>{{ valueHintLabel }}: {{ resolvedControl.value }}</mat-hint>
+  }
+
+  @if (
+    errorMessage && resolvedControl.invalid && (resolvedControl.touched || searchControl.touched)
+  ) {
+    <mat-error>{{ errorMessage }}</mat-error>
+  }
+</mat-form-field>

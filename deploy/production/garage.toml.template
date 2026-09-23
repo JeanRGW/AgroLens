@@ -1,0 +1,37 @@
+# AgroLens — Garage PRODUCTION configuration template
+#
+# This is the PRODUCTION Garage config (S3-compatible object storage that
+# replaces MinIO). The structure mirrors the dev config (deploy/garage.toml)
+# but the three SECRETS — rpc_secret, admin_token, metrics_token — are NOT
+# stored here. Garage v2.3.0 supports CLI/env overrides that replace the
+# corresponding config keys, so the production compose file passes them via
+# environment variables at runtime (sourced from the prod .env):
+#
+#   GARAGE_RPC_SECRET      -> replaces `rpc_secret`
+#   GARAGE_ADMIN_TOKEN     -> replaces `admin.admin_token`
+#   GARAGE_METRICS_TOKEN   -> replaces `admin.metrics_token`
+#
+# DO NOT hardcode real secret values in this file. Generate them with:
+#   openssl rand -base64 32      (rpc_secret)
+#   openssl rand -hex 32         (admin_token / metrics_token)
+#
+# The binary reads this file from /etc/garage.toml inside the container.
+
+replication_factor = 1
+
+# On-disk locations for Garage's metadata and data (named volumes in compose).
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+
+# RPC traffic between Garage nodes (single node here, not published to host).
+rpc_bind_addr = "[::]:3901"
+
+[s3_api]
+# Region reported by the S3 API. The backend sets S3_REGION=garage to match.
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+[admin]
+# Admin/metrics API. Internal-only (not published by the compose stack; the
+# init container reaches it over the shared `service:garage` network).
+api_bind_addr = "[::]:3903"

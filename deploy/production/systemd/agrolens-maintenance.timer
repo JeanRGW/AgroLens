@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AgroLens Restic maintenance weekly
+
+[Timer]
+OnCalendar=Sun 03:00:00
+Persistent=true
+Unit=agrolens-maintenance.service
+
+[Install]
+WantedBy=timers.target

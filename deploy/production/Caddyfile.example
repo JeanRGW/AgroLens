@@ -1,0 +1,85 @@
+{
+	email ops@app.agrolens.rgw.app
+}
+
+(app_security) {
+	header {
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self' blob:"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+}
+
+app.agrolens.rgw.app {
+	import app_security
+
+	route {
+		@readiness path /api/health/ready /api/health/ready/
+		respond @readiness 404
+
+		@docs path /docs /docs/*
+		respond @docs 404
+
+		@api path /api /api/*
+		handle @api {
+			request_body {
+				max_size 2MB
+			}
+			reverse_proxy 127.0.0.1:3000 {
+				header_up Host {host}
+			}
+		}
+
+		handle {
+			reverse_proxy 127.0.0.1:3000 {
+				header_up Host {host}
+			}
+		}
+	}
+}
+
+s3.agrolens.rgw.app {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	# Signed original PUTs use /<bucket>/staging/uploads/... (path-style S3).
+	@staged_images {
+		method PUT
+		path_regexp ^/[^/]+/staging/uploads/
+	}
+	handle @staged_images {
+		request_body {
+			max_size 104857600
+		}
+		reverse_proxy 127.0.0.1:3900 {
+			header_up Host {host}
+		}
+	}
+	@inference_images {
+		method PUT
+		path_regexp ^/[^/]+/inference/
+	}
+	handle @inference_images {
+		request_body {
+			max_size 26214400
+		}
+		reverse_proxy 127.0.0.1:3900 {
+			header_up Host {host}
+		}
+	}
+
+	handle {
+		request_body {
+			max_size 524288000
+		}
+		reverse_proxy 127.0.0.1:3900 {
+			header_up Host {host}
+		}
+	}
+}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AgroLens backup every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+Persistent=true
+Unit=agrolens-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,68 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+*.iml
+*.ipr
+*.iws
+*~
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Flutter / Dart / Pub
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+coverage/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Generated native (also ignored by android/ & ios/ sub-.gitignore; repeated for defense-in-depth)
+android/key.properties
+android/**/*.jks
+android/**/*.keystore
+android/**/*.aab
+android/**/*.apk
+android/local.properties
+
+# iOS signing and export artifacts
+ios/**/*.mobileprovision
+ios/**/*.provisionprofile
+ios/**/*.p12
+ios/**/*.cer
+ios/**/*.certSigningRequest
+ios/**/*.xcarchive
+ios/**/*.ipa
+ios/**/*.dSYM.zip
+exportOptions.plist
+fastlane/*.json
+fastlane/*.mobileprovision
+
+android/.gradle/
+android/build/
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/ephemeral/
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json

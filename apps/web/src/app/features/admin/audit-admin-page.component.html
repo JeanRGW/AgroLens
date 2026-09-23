@@ -1,0 +1,220 @@
+<section class="audit-page">
+  <app-page-header eyebrow="Administração" title="Auditoria de Acessos">
+    <div class="header-actions">
+      <button
+        mat-flat-button
+        color="primary"
+        type="button"
+        (click)="exportCsv()"
+        [disabled]="exporting() || !events().length"
+      >
+        <mat-icon>download</mat-icon>
+        Exportar CSV
+      </button>
+    </div>
+  </app-page-header>
+
+  <div class="filters-card">
+    <div class="filter-header">
+      <span class="section-label">Filtros</span>
+      <button mat-stroked-button type="button" (click)="loadEvents()" [disabled]="loading()">
+        <mat-icon>refresh</mat-icon>
+        Atualizar
+      </button>
+    </div>
+
+    <form class="filters" [formGroup]="filtersForm">
+      <span class="filter-group-label">Quem &amp; O que</span>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Evento</mat-label>
+        <mat-select formControlName="eventType">
+          <mat-option value="">Todos</mat-option>
+          @for (eventType of eventTypes; track eventType) {
+            <mat-option [value]="eventType">{{ eventLabel(eventType) }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Recurso</mat-label>
+        <mat-select formControlName="resourceType">
+          <mat-option value="">Todos</mat-option>
+          @for (resourceType of resourceTypes; track resourceType) {
+            <mat-option [value]="resourceType">
+              {{ resourceLabels[resourceType] }}
+            </mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>ID do Ator</mat-label>
+        <input matInput formControlName="actorUserId" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>ID do Alvo</mat-label>
+        <input matInput formControlName="targetUserId" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>ID do Recurso</mat-label>
+        <input matInput formControlName="resourceId" />
+      </mat-form-field>
+
+      <span class="filter-group-label filter-group-divider">Período &amp; Exibição</span>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Data inicial</mat-label>
+        <input matInput type="date" formControlName="dateFrom" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Data final</mat-label>
+        <input matInput type="date" formControlName="dateTo" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Itens por página</mat-label>
+        <mat-select formControlName="pageSize">
+          <mat-option [value]="25">25</mat-option>
+          <mat-option [value]="50">50</mat-option>
+          <mat-option [value]="100">100</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </form>
+  </div>
+
+  <div class="table-card">
+    <div class="table-header">
+      <span class="section-label">Eventos</span>
+      @if (total() > 0) {
+        <span class="count-badge">{{ total() }}</span>
+      }
+    </div>
+
+    <div class="table-scroll">
+      @if (loading()) {
+        <app-loading-state />
+      } @else {
+        <table mat-table [dataSource]="events()" class="audit-table">
+          <ng-container matColumnDef="eventType">
+            <th mat-header-cell *matHeaderCellDef>Evento</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="event-badge" [attr.data-event]="row.eventType">
+                {{ eventLabel(row.eventType) }}
+              </span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="actorUid">
+            <th mat-header-cell *matHeaderCellDef>Ator</th>
+            <td mat-cell *matCellDef="let row">
+              @if (userLabel(row.actorUserId, row.actorName) !== '-') {
+                <app-copy-id-button
+                  [id]="row.actorUserId || ''"
+                  [displayText]="row.actorName || ''"
+                  copiedMessage="ID do ator copiado."
+                />
+              } @else {
+                <span class="uid-empty">-</span>
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="targetUid">
+            <th mat-header-cell *matHeaderCellDef>Alvo</th>
+            <td mat-cell *matCellDef="let row">
+              @if (userLabel(row.targetUserId, row.targetName) !== '-') {
+                <app-copy-id-button
+                  [id]="row.targetUserId || ''"
+                  [displayText]="row.targetName || ''"
+                  copiedMessage="ID do alvo copiado."
+                />
+              } @else {
+                <span class="uid-empty">-</span>
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="resource">
+            <th mat-header-cell *matHeaderCellDef>Recurso</th>
+            <td mat-cell *matCellDef="let row">
+              @if (row.resourceType && row.resourceId) {
+                <app-copy-id-button
+                  [id]="row.resourceId"
+                  [prefix]="resourceTypeLabel(row)"
+                  [displayText]="row.resourceName || ''"
+                  copiedMessage="ID do recurso copiado."
+                />
+              } @else {
+                -
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="createdAt">
+            <th mat-header-cell *matHeaderCellDef>Criado em</th>
+            <td mat-cell *matCellDef="let row">
+              {{ row.createdAt ? (row.createdAt | date: 'dd/MM/yyyy HH:mm:ss') : '-' }}
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="changes">
+            <th mat-header-cell *matHeaderCellDef>Alterações</th>
+            <td mat-cell *matCellDef="let row" class="changes-cell">
+              @if (hasDetails(row)) {
+                <button
+                  type="button"
+                  class="changes-btn"
+                  (click)="openChanges(row)"
+                  [attr.aria-label]="'Ver detalhes: ' + cellLabel(row)"
+                >
+                  <span class="changes-label">{{ cellLabel(row) }}</span>
+                  <mat-icon aria-hidden="true">chevron_right</mat-icon>
+                </button>
+              } @else {
+                <span class="changes-label">–</span>
+              }
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+        </table>
+
+        @if (!events().length) {
+          <app-empty-state message="Nenhum evento encontrado para os filtros selecionados." />
+        }
+      }
+    </div>
+
+    @if (totalPages() > 1) {
+      <div class="pagination-wrap">
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="goToPage(currentPage() - 1)"
+          [disabled]="loading() || currentPage() <= 1"
+        >
+          <mat-icon>arrow_back</mat-icon>
+          Anterior
+        </button>
+
+        <span class="page-info"> Página {{ currentPage() }} de {{ totalPages() }} </span>
+
+        <button
+          mat-flat-button
+          color="primary"
+          type="button"
+          (click)="goToPage(currentPage() + 1)"
+          [disabled]="loading() || currentPage() >= totalPages()"
+        >
+          <mat-icon>arrow_forward</mat-icon>
+          Próxima
+        </button>
+      </div>
+    }
+  </div>
+</section>

@@ -1,0 +1,511 @@
+<section class="uploads-page">
+  <!-- Page header -->
+  <app-page-header
+    eyebrow="Consulta"
+    title="Uploads da Plataforma"
+    subtitle="Use os filtros para combinar origem, localização e período de criação."
+  >
+    <a mat-flat-button color="primary" routerLink="/uploads/new">
+      <mat-icon>add</mat-icon>
+      Novo Upload
+    </a>
+  </app-page-header>
+
+  <!-- Filters card -->
+  <mat-card class="filters-card">
+    <div class="filters-grid">
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>ID do Upload</mat-label>
+        <input matInput [(ngModel)]="filters.search" />
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Fonte</mat-label>
+        <mat-select [(ngModel)]="filters.source">
+          <mat-option value="">Todas</mat-option>
+          <mat-option value="drone">Drone</mat-option>
+          <mat-option value="phone">Celular</mat-option>
+          <mat-option value="mixed">Misto</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Status</mat-label>
+        <mat-select [(ngModel)]="filters.status">
+          <mat-option value="">Todos</mat-option>
+          <mat-option value="ready">Pronto</mat-option>
+          <mat-option value="draft">Rascunho</mat-option>
+          <mat-option value="finalizing">Finalizando</mat-option>
+          <mat-option value="failed">Falhou</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <app-autocomplete-field
+        label="Usuário"
+        placeholder="Busque pelo nome"
+        prefixIcon="person_search"
+        [searchControl]="userSearchControl"
+        [valueControl]="userIdControl"
+        [searchFn]="searchUserOptions"
+      />
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Propriedade</mat-label>
+        <mat-select [(ngModel)]="filters.propertyId" (selectionChange)="onPropertyChange()">
+          <mat-option value="">Todas</mat-option>
+          @for (property of properties(); track property.id) {
+            <mat-option [value]="property.id">{{ property.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Talhão</mat-label>
+        <mat-select [(ngModel)]="filters.talhaoId">
+          <mat-option value="">Todos</mat-option>
+          @for (talhao of filteredTalhoes(); track talhao.id) {
+            <mat-option [value]="talhao.id">{{ talhao.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Cultura</mat-label>
+        <mat-select [(ngModel)]="filters.cropTypeId" (selectionChange)="onCropTypeChange()">
+          <mat-option value="">Todas</mat-option>
+          @for (cropType of cropTypes(); track cropType.id) {
+            <mat-option [value]="cropType.id">{{ cropType.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Estádio</mat-label>
+        <mat-select [(ngModel)]="filters.estadioId">
+          <mat-option value="">Todos</mat-option>
+          @for (estadio of filteredEstadios(); track estadio.id) {
+            <mat-option [value]="estadio.id">{{ estadio.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Criado de</mat-label>
+        <input matInput type="datetime-local" [(ngModel)]="filters.createdFrom" />
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Criado até</mat-label>
+        <input matInput type="datetime-local" [(ngModel)]="filters.createdTo" />
+      </mat-form-field>
+
+      <mat-form-field class="full-width" appearance="outline">
+        <mat-label>Registros por página</mat-label>
+        <mat-select [(ngModel)]="pageSize">
+          @for (size of pageSizes; track size) {
+            <mat-option [value]="size">{{ size }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <div class="filters-actions">
+      <button
+        mat-flat-button
+        color="primary"
+        (click)="applyFilters()"
+        [disabled]="loading()"
+        class="btn-apply"
+      >
+        <mat-icon>filter_alt</mat-icon>
+        Aplicar filtros
+      </button>
+      <button mat-button (click)="clearFilters()" class="btn-reset">Limpar</button>
+    </div>
+  </mat-card>
+
+  <!-- Toolbar row -->
+  <div class="toolbar-row">
+    <div class="toolbar-left">
+      @if (selectedIds().size > 0) {
+        <span class="selection-count">
+          {{ selectedIds().size }} selecionado{{ selectedIds().size > 1 ? 's' : '' }}
+        </span>
+      }
+    </div>
+    <div class="toolbar-right">
+      <button
+        mat-stroked-button
+        (click)="exportCsv()"
+        [disabled]="loading() || selectedIds().size === 0"
+        class="btn-toolbar-action"
+      >
+        <mat-icon>description</mat-icon>
+        Exportar CSV
+      </button>
+
+      <button
+        mat-stroked-button
+        (click)="downloadSelectedImages()"
+        [disabled]="downloadingImages() || selectedIds().size === 0"
+        class="btn-toolbar-action"
+      >
+        <mat-icon>download</mat-icon>
+        @if (downloadingImages()) {
+          Preparando ZIP...
+        } @else {
+          Baixar imagens
+        }
+      </button>
+
+      <button
+        mat-stroked-button
+        color="primary"
+        (click)="exportSelectedAsYolo()"
+        [disabled]="preparingYolo() || exportingYolo() || selectedIds().size === 0"
+        class="btn-toolbar-action btn-yolo"
+      >
+        <mat-icon>science</mat-icon>
+        @if (preparingYolo()) {
+          Preparando...
+        } @else if (exportingYolo()) {
+          Exportando...
+        } @else {
+          Exportar YOLO
+        }
+      </button>
+
+      <button
+        mat-icon-button
+        [attr.aria-label]="'Alternar visualizacao'"
+        (click)="toggleViewMode()"
+        [attr.title]="viewMode() === 'table' ? 'Visualizar como grade' : 'Visualizar como tabela'"
+        class="btn-view-toggle"
+      >
+        @if (viewMode() === 'table') {
+          <mat-icon>grid_view</mat-icon>
+        } @else {
+          <mat-icon>table_chart</mat-icon>
+        }
+      </button>
+    </div>
+  </div>
+
+  <!-- Download/Export progress -->
+  @if (downloadingImages() || preparingYolo() || exportingYolo()) {
+    <div class="download-progress-wrap">
+      <div class="download-progress-header">
+        <mat-icon class="download-icon">{{
+          exportingYolo() || preparingYolo() ? 'science' : 'download'
+        }}</mat-icon>
+        <span>{{
+          preparingYolo()
+            ? 'Carregando anotacoes...'
+            : exportingYolo()
+              ? 'Exportando dataset YOLO...'
+              : 'Baixando imagens...'
+        }}</span>
+        @if (exportingYolo() || downloadingImages()) {
+          <span class="download-percent">{{ downloadProgress() }}%</span>
+        }
+      </div>
+      <mat-progress-bar
+        [mode]="exportingYolo() || downloadingImages() ? 'determinate' : 'indeterminate'"
+        [value]="downloadProgress()"
+        class="download-bar"
+      ></mat-progress-bar>
+      <p class="download-warning">Nao feche a pagina ate concluir a operacao.</p>
+    </div>
+  }
+
+  <!-- Loading state -->
+  @if (loading()) {
+    <app-loading-state message="Carregando uploads..." />
+  }
+
+  <!-- Error -->
+  @if (error()) {
+    <div class="error-banner">{{ error() }}</div>
+  }
+
+  <!-- Table View -->
+  @if (!loading() && viewMode() === 'table') {
+    <mat-card class="table-card">
+      @if (records().length === 0) {
+        <app-empty-state
+          icon="inbox"
+          title="Nenhum upload encontrado"
+          message="Nenhum upload encontrado com os filtros informados."
+        />
+      } @else {
+        <div class="table-scroll">
+          <table mat-table [dataSource]="records()" class="records-table">
+            <!-- Checkbox column -->
+            <ng-container matColumnDef="select">
+              <th mat-header-cell *matHeaderCellDef>
+                <mat-checkbox
+                  (change)="toggleAll($event.checked)"
+                  [checked]="isAllSelected()"
+                  class="table-checkbox"
+                ></mat-checkbox>
+              </th>
+              <td mat-cell *matCellDef="let row">
+                <mat-checkbox
+                  [checked]="isSelected(row)"
+                  (change)="toggleSelection(row, $event.checked)"
+                  class="table-checkbox"
+                ></mat-checkbox>
+              </td>
+            </ng-container>
+
+            <!-- Preview column -->
+            <ng-container matColumnDef="preview">
+              <th mat-header-cell *matHeaderCellDef class="col-center">Previa</th>
+              <td mat-cell *matCellDef="let row" class="col-center">
+                @if (previewUrl(row)) {
+                  <img
+                    [src]="previewUrl(row)"
+                    class="cell-preview-img"
+                    alt="Previa"
+                    loading="lazy"
+                    (error)="onPreviewError(row)"
+                  />
+                } @else {
+                  <mat-icon class="cell-preview-empty">image_not_supported</mat-icon>
+                }
+              </td>
+            </ng-container>
+
+            <!-- Upload ID -->
+            <ng-container matColumnDef="uploadId">
+              <th mat-header-cell *matHeaderCellDef class="col-upload-id">ID do Upload</th>
+              <td mat-cell *matCellDef="let row" class="col-upload-id">
+                <span
+                  class="cell-upload-id"
+                  [attr.title]="row.id"
+                  (click)="copyUploadId(row.id)"
+                  (keydown.enter)="copyUploadId(row.id)"
+                  (keydown.space)="$event.preventDefault(); copyUploadId(row.id)"
+                  role="button"
+                  tabindex="0"
+                >
+                  {{ row.id }}
+                </span>
+              </td>
+            </ng-container>
+
+            <!-- User -->
+            <ng-container matColumnDef="user">
+              <th mat-header-cell *matHeaderCellDef>Usuario</th>
+              <td mat-cell *matCellDef="let row">
+                <span
+                  class="cell-user"
+                  [attr.title]="'Copiar ID do usuario: ' + row.userId"
+                  (click)="copyUserId(row.userId)"
+                  (keydown.enter)="copyUserId(row.userId)"
+                  (keydown.space)="$event.preventDefault(); copyUserId(row.userId)"
+                  role="button"
+                  tabindex="0"
+                >
+                  {{ row.user?.fullName || row.userId }}
+                </span>
+              </td>
+            </ng-container>
+
+            <!-- Property -->
+            <ng-container matColumnDef="property">
+              <th mat-header-cell *matHeaderCellDef>Prop.</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="cell-badge">
+                  {{ row.propertyName || row.propertyId || 'N/A' }}
+                </span>
+              </td>
+            </ng-container>
+
+            <!-- Talhao -->
+            <ng-container matColumnDef="talhao">
+              <th mat-header-cell *matHeaderCellDef>Talhao</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="cell-badge">{{ row.talhaoName || row.talhaoId || 'N/A' }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Crop Type -->
+            <ng-container matColumnDef="cropType">
+              <th mat-header-cell *matHeaderCellDef>Cultura</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="cell-badge">{{ row.cropTypeName || row.cropTypeId || 'N/A' }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Estadio -->
+            <ng-container matColumnDef="estadio">
+              <th mat-header-cell *matHeaderCellDef>Estadio</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="cell-badge">{{ row.estadioName || row.estadioId || 'N/A' }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Source -->
+            <ng-container matColumnDef="source">
+              <th mat-header-cell *matHeaderCellDef>Fonte</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="cell-badge cell-source">{{ getSourceLabel(row.source) }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Status -->
+            <ng-container matColumnDef="status">
+              <th mat-header-cell *matHeaderCellDef>Status</th>
+              <td mat-cell *matCellDef="let row">
+                <span
+                  class="cell-badge"
+                  [class.cell-ready]="row.status === 'ready'"
+                  [class.cell-failed]="row.status === 'failed'"
+                >
+                  {{ getStatusLabel(row.status) }}
+                </span>
+              </td>
+            </ng-container>
+
+            <!-- File Count -->
+            <ng-container matColumnDef="fileCount">
+              <th mat-header-cell *matHeaderCellDef class="col-center">Imagens</th>
+              <td mat-cell *matCellDef="let row" class="col-center">
+                <span class="cell-badge cell-count">{{ row.fileCount }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Date -->
+            <ng-container matColumnDef="date">
+              <th mat-header-cell *matHeaderCellDef>Data</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="cell-date">{{ row.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Actions -->
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef class="col-action"></th>
+              <td mat-cell *matCellDef="let row" class="action-cell">
+                <button
+                  mat-icon-button
+                  color="primary"
+                  (click)="openDetails(row)"
+                  class="btn-action"
+                  [attr.title]="'Ver detalhes de ' + row.id"
+                >
+                  <mat-icon>visibility</mat-icon>
+                </button>
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="displayedColumns; sticky: true"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+          </table>
+        </div>
+      }
+    </mat-card>
+  }
+
+  <!-- Grid View -->
+  @if (!loading() && viewMode() === 'grid') {
+    <div class="grid-view">
+      @if (records().length === 0) {
+        <app-empty-state
+          icon="inbox"
+          title="Nenhum upload encontrado"
+          message="Nenhum upload encontrado com os filtros informados."
+        />
+      } @else {
+        <div class="grid-container">
+          @for (record of records(); track record.id) {
+            <div class="grid-item" (click)="openDetails(record)">
+              <div class="grid-item-image">
+                @if (previewUrl(record)) {
+                  <img
+                    [src]="previewUrl(record)"
+                    class="grid-preview-img"
+                    alt="Previa"
+                    loading="lazy"
+                    (error)="onPreviewError(record)"
+                  />
+                } @else {
+                  <mat-icon>image_not_supported</mat-icon>
+                }
+              </div>
+              <div class="grid-item-info">
+                <div class="grid-item-id">{{ record.id }}</div>
+                <div class="grid-item-badges">
+                  @if (record.cropTypeName) {
+                    <span class="badge badge-crop">{{ record.cropTypeName }}</span>
+                  }
+                  @if (record.talhaoName) {
+                    <span class="badge badge-talhao">{{ record.talhaoName }}</span>
+                  }
+                  @if (record.estadioName) {
+                    <span class="badge badge-estadio">{{ record.estadioName }}</span>
+                  }
+                </div>
+                <div class="grid-item-meta">
+                  <div class="meta-row">
+                    <mat-icon class="meta-icon">domain</mat-icon>
+                    <span class="value">{{ record.propertyName || record.propertyId || '-' }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <mat-icon class="meta-icon">person</mat-icon>
+                    <span class="value" [matTooltip]="record.userId">{{
+                      record.user?.fullName || record.userId
+                    }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <mat-icon class="meta-icon">image</mat-icon>
+                    <span class="value">{{ record.fileCount }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <mat-icon class="meta-icon">calendar_today</mat-icon>
+                    <span class="value">{{ record.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Pagination -->
+  @if (!loading() && result()) {
+    <div class="pagination-wrap">
+      <button
+        mat-flat-button
+        color="primary"
+        (click)="prevPage()"
+        [disabled]="offset() <= 0"
+        class="btn-page"
+      >
+        <mat-icon>arrow_back</mat-icon>
+        Anterior
+      </button>
+
+      <span class="pagination-info">
+        Mostrando {{ offset() + 1 }}-{{
+          Math.min(offset() + result()!.records.length, result()!.total)
+        }}
+        de {{ result()!.total }}
+      </span>
+
+      <button
+        mat-flat-button
+        color="primary"
+        (click)="nextPage()"
+        [disabled]="offset() + appliedPageSize >= result()!.total"
+        class="btn-page"
+      >
+        Proximo
+        <mat-icon>arrow_forward</mat-icon>
+      </button>
+    </div>
+  }
+</section>

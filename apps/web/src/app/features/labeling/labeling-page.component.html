@@ -1,0 +1,292 @@
+<div class="labeling-wrapper">
+  <app-page-header
+    eyebrow="Rotulagem"
+    title="Anotação YOLO"
+    subtitle="Desenhe bounding boxes nas imagens para treinar modelos de detecção."
+  />
+
+  <section class="labeling-page">
+    <aside class="left-sidebar">
+      <mat-card class="filters-card">
+        <mat-form-field appearance="outline">
+          <mat-label>Propriedade</mat-label>
+          <mat-select
+            [value]="filterPropertyId()"
+            (selectionChange)="onPropertyChange($event.value)"
+          >
+            <mat-option value="">Todas</mat-option>
+            @for (p of properties(); track p.id) {
+              <mat-option [value]="p.id">{{ p.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Talhao</mat-label>
+          <mat-select
+            [value]="filterTalhaoId()"
+            (selectionChange)="filterTalhaoId.set($event.value); onFilterChange()"
+          >
+            <mat-option value="">Todos</mat-option>
+            @for (t of filteredTalhoes(); track t.id) {
+              <mat-option [value]="t.id">{{ t.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Cultura</mat-label>
+          <mat-select
+            [value]="filterCropTypeId()"
+            (selectionChange)="onCropTypeChange($event.value)"
+          >
+            <mat-option value="">Todas</mat-option>
+            @for (c of cropTypes(); track c.id) {
+              <mat-option [value]="c.id">{{ c.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Estadio</mat-label>
+          <mat-select
+            [value]="filterEstadioId()"
+            (selectionChange)="filterEstadioId.set($event.value); onFilterChange()"
+          >
+            <mat-option value="">Todos</mat-option>
+            @for (e of filteredEstadios(); track e.id) {
+              <mat-option [value]="e.id">{{ e.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </mat-card>
+
+      <app-upload-sidebar
+        [uploads]="uploads()"
+        [selectedUploadId]="selectedUploadId()"
+        [loading]="loadingUploads()"
+        (selectUpload)="selectUpload($event)"
+      />
+
+      @if (hasMoreUploads()) {
+        <button
+          mat-stroked-button
+          class="load-more-btn"
+          (click)="loadMoreUploads()"
+          [disabled]="loadingUploads()"
+        >
+          <mat-icon>expand_more</mat-icon>
+          Carregar mais
+        </button>
+      }
+    </aside>
+
+    <section class="editor-main">
+      <app-class-palette
+        [classes]="classes()"
+        [selectedClass]="selectedClass()"
+        [classColors]="classColors()"
+        (selectClass)="onSelectClass($event)"
+        (addClass)="onAddClass($event)"
+        (removeClass)="onRemoveClass($event)"
+      />
+
+      <div class="toolbar-row">
+        <div class="toolbar-group">
+          <button
+            mat-stroked-button
+            color="primary"
+            (click)="undo()"
+            [disabled]="!canUndo()"
+            matTooltip="Desfazer (Ctrl+Z)"
+          >
+            <mat-icon>undo</mat-icon>
+            Desfazer
+          </button>
+          <button
+            mat-stroked-button
+            color="primary"
+            (click)="redo()"
+            [disabled]="!canRedo()"
+            matTooltip="Refazer (Ctrl+Shift+Z)"
+          >
+            <mat-icon>redo</mat-icon>
+            Refazer
+          </button>
+        </div>
+
+        <div class="toolbar-group">
+          <button
+            mat-stroked-button
+            color="warn"
+            (click)="clearLabels()"
+            [disabled]="labels().length === 0"
+            matTooltip="Limpar todos"
+          >
+            <mat-icon>delete_sweep</mat-icon>
+            Limpar
+          </button>
+          <button
+            mat-stroked-button
+            color="warn"
+            (click)="removeSelectedLabel()"
+            [disabled]="selectedLabelIndex() === null"
+            matTooltip="Remover selecionado (Del)"
+          >
+            <mat-icon>delete</mat-icon>
+            Remover
+          </button>
+        </div>
+
+        <div class="toolbar-group">
+          <button
+            mat-flat-button
+            color="primary"
+            (click)="saveCurrentAnnotation()"
+            [disabled]="
+              savingAnnotation() ||
+              loadingAnnotation() ||
+              annotationLoadError() ||
+              !selectedImageUrl()
+            "
+          >
+            <mat-icon>save</mat-icon>
+            Salvar
+          </button>
+          <button
+            mat-flat-button
+            (click)="exportSelectedUploadYolo()"
+            [disabled]="exportingYolo() || !selectedUpload()"
+            matTooltip="Exportar dataset YOLO para este upload"
+          >
+            <mat-icon>science</mat-icon>
+            Exportar YOLO
+          </button>
+        </div>
+
+        <div class="toolbar-group">
+          <button
+            mat-flat-button
+            color="accent"
+            [routerLink]="['/inference']"
+            [queryParams]="{ uploadId: selectedUploadId(), imageIndex: selectedImageIndex() }"
+            [disabled]="!selectedUploadId()"
+            matTooltip="Executa inferência nesta imagem"
+          >
+            <mat-icon>psychology</mat-icon>
+            Inferir
+          </button>
+        </div>
+      </div>
+
+      <div class="shortcuts-help">
+        <button
+          type="button"
+          class="shortcuts-toggle"
+          (click)="showShortcuts.set(!showShortcuts())"
+        >
+          <mat-icon>keyboard</mat-icon>
+          <span>Atalhos</span>
+          <mat-icon class="toggle-arrow">{{
+            showShortcuts() ? 'expand_less' : 'expand_more'
+          }}</mat-icon>
+        </button>
+        @if (showShortcuts()) {
+          <div class="shortcuts-grid">
+            <span class="shortcut-key">&larr; &rarr;</span
+            ><span class="shortcut-desc">Navegar imagens</span>
+            <span class="shortcut-key">Del / Backspace</span
+            ><span class="shortcut-desc">Remover selecionado</span>
+            <span class="shortcut-key">Ctrl+Z</span><span class="shortcut-desc">Desfazer</span>
+            <span class="shortcut-key">Ctrl+Shift+Z / Ctrl+Y</span
+            ><span class="shortcut-desc">Refazer</span> <span class="shortcut-key">1 &ndash; 9</span
+            ><span class="shortcut-desc">Selecionar classe</span>
+          </div>
+        }
+      </div>
+
+      <div class="canvas-area">
+        @if (loadingAnnotation()) {
+          <div class="state-wrap">
+            <mat-spinner diameter="30"></mat-spinner>
+            <span>Carregando anotacao...</span>
+          </div>
+        } @else {
+          <app-image-canvas
+            [imageUrl]="selectedImageUrl()"
+            [labels]="labels()"
+            [selectedLabelIndex]="selectedLabelIndex()"
+            [classColors]="classColors()"
+            [classes]="classes()"
+            [selectedClass]="selectedClass()"
+            [loadingImage]="loadingImage()"
+            (imageLoad)="onImageLoad($event)"
+            (imageError)="refreshImageUrl()"
+            (labelPick)="onPickLabel($event)"
+            (labelCreate)="onLabelCreate($event)"
+          />
+        }
+      </div>
+
+      <div class="thumbs-strip">
+        <button
+          mat-icon-button
+          type="button"
+          class="nav-btn"
+          (click)="goToPrevImage()"
+          [disabled]="selectedUploadImages().length === 0"
+          aria-label="Imagem anterior"
+        >
+          <mat-icon>chevron_left</mat-icon>
+        </button>
+
+        <div class="thumbs-scroll">
+          @for (item of selectedUploadImages(); track item.index) {
+            <button
+              type="button"
+              class="thumb-btn"
+              [class.selected]="item.index === selectedImageIndex()"
+              [class.annotated]="annotatedIndexes().has(item.index)"
+              (click)="selectImage(item.index)"
+            >
+              @if (item.thumbUrl) {
+                <img
+                  [src]="item.thumbUrl"
+                  [alt]="'Imagem ' + item.index"
+                  class="thumb-img"
+                  (error)="refreshThumbnail(item.index)"
+                />
+              }
+              <span class="thumb-index">#{{ item.index }}</span>
+              @if (annotatedIndexes().has(item.index)) {
+                <span class="status-dot" title="Anotada"></span>
+              }
+            </button>
+          }
+        </div>
+
+        <button
+          mat-icon-button
+          type="button"
+          class="nav-btn"
+          (click)="goToNextImage()"
+          [disabled]="selectedUploadImages().length === 0"
+          aria-label="Proxima imagem"
+        >
+          <mat-icon>chevron_right</mat-icon>
+        </button>
+      </div>
+    </section>
+
+    <aside class="right-sidebar">
+      <app-label-list-panel
+        [labels]="labels()"
+        [selectedLabelIndex]="selectedLabelIndex()"
+        [classColors]="classColors()"
+        [classes]="classes()"
+        (selectLabel)="onPickLabel($event)"
+        (removeLabel)="removeLabelAt($event)"
+      />
+    </aside>
+  </section>
+</div>

@@ -1,0 +1,33 @@
+# AgroLens — Garage dev single-node configuration
+#
+# This is the LOCAL DEVELOPMENT config for Garage (the S3-compatible object
+# storage that replaces MinIO in dev). It runs a single Garage node with
+# replication_factor = 1 (no redundancy — fine for a laptop/dev box).
+#
+# DO NOT use these tokens/keys in production. The production config lives
+# under deploy/production/ and uses real secrets.
+#
+# The binary reads this file from /etc/garage.toml inside the container.
+
+replication_factor = 1
+
+# On-disk locations for Garage's metadata and data (named volumes in compose).
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+
+# Dev-only RPC secret (network key). 64-char hex placeholder — not secret.
+rpc_secret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+# RPC traffic between Garage nodes (single node here, not published to host).
+rpc_bind_addr = "[::]:3901"
+
+[s3_api]
+# Region reported by the S3 API. The backend sets S3_REGION=garage to match.
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+[admin]
+# Admin/metrics API. Published on 127.0.0.1 only for local debugging.
+api_bind_addr = "[::]:3903"
+admin_token = "dev-admin-token-change-in-production"
+metrics_token = "dev-metrics-token-change-in-production"

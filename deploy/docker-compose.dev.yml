@@ -1,0 +1,155 @@
+# AgroLens local development Docker Compose.
+# Starts: merged backend, PostgreSQL, Garage. Set INFERENCE_ENABLED=true and
+# add --profile ai for inference.
+
+x-backend-development-environment: &backend-development-environment
+  NODE_ENV: development
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/agrolens
+  S3_ENDPOINT: http://garage:3900
+  S3_REGION: garage
+  S3_ACCESS_KEY: agrolens-dev-access-key
+  S3_SECRET_KEY: agrolens-dev-secret-key-change-me
+  S3_BUCKET: agrolens
+  S3_FORCE_PATH_STYLE: "true"
+  JWT_SECRET: dev-only-jwt-secret-change-in-production-min-32-chars
+  REGISTRATION_ENABLED: "true"
+  CORS_ORIGINS: http://localhost:4200,http://localhost:3000
+  INFERENCE_ENABLED: "${INFERENCE_ENABLED:-false}"
+  INFERENCE_SERVICE_URL: http://inference:8000
+  INFERENCE_API_KEY: "${INFERENCE_API_KEY:-local-e2e-inference-key}"
+  INFERENCE_MODEL_MAX_SIZE_BYTES: "${INFERENCE_MODEL_MAX_SIZE_BYTES:-524288000}"
+  INFERENCE_TEMP_MAX_FILES: "20"
+  INFERENCE_TEMP_MAX_FILE_SIZE_BYTES: "26214400"
+  INFERENCE_JOB_RETENTION_DAYS: "7"
+  RETENTION_DAYS: "7"
+  INFERENCE_UPLOAD_EXPIRY_HOURS: "24"
+  INFERENCE_IMAGE_TTL_SECONDS: "900"
+  INFERENCE_PREDICT_MAX_SIZE_BYTES: "26214400"
+  IMAGE_MAX_INPUT_PIXELS: "40000000"
+  WORKER_ENABLED: "true"
+  WORKER_POLL_INTERVAL_MS: "5000"
+  WORKER_LEASE_MS: "120000"
+  WORKER_CLEANUP_INTERVAL_MS: "60000"
+  WORKER_FINALIZATION_MAX_ATTEMPTS: "3"
+  WORKER_DELETION_MAX_ATTEMPTS: "3"
+  WORKER_INFERENCE_MAX_IMAGE_ATTEMPTS: "3"
+  # Mail / password recovery (opt-in; use MAIL_TRANSPORT=test in local e2e).
+  MAIL_ENABLED: "${MAIL_ENABLED:-false}"
+  MAIL_TRANSPORT: "${MAIL_TRANSPORT:-smtp}"
+  MAIL_FROM: "${MAIL_FROM:-}"
+  MAIL_FROM_NAME: "${MAIL_FROM_NAME:-AgroLens}"
+  MAIL_PASSWORD_RESET_TTL_MINUTES: "${MAIL_PASSWORD_RESET_TTL_MINUTES:-30}"
+  # Rate limiting (per-endpoint IP buckets; @nestjs/throttler).
+  THROTTLE_DEFAULT_LIMIT: "${THROTTLE_DEFAULT_LIMIT:-120}"
+  THROTTLE_DEFAULT_TTL_MS: "${THROTTLE_DEFAULT_TTL_MS:-60000}"
+  THROTTLE_AUTH_LIMIT: "${THROTTLE_AUTH_LIMIT:-10}"
+  THROTTLE_AUTH_TTL_MS: "${THROTTLE_AUTH_TTL_MS:-60000}"
+  RESEND_API_KEY: "${RESEND_API_KEY:-}"
+  SMTP_HOST: "${SMTP_HOST:-}"
+  SMTP_PORT: "${SMTP_PORT:-587}"
+  SMTP_SECURE: "${SMTP_SECURE:-false}"
+  SMTP_USER: "${SMTP_USER:-}"
+  SMTP_PASS: "${SMTP_PASS:-}"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    mem_limit: 512m
+    memswap_limit: 1g
+    cpus: '0.5'
+    pids_limit: 256
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agrolens
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agrolens"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  garage:
+    image: dxflrs/garage:v2.3.0
+    restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 512m
+    cpus: '0.5'
+    pids_limit: 256
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_DEFAULT_ACCESS_KEY: agrolens-dev-access-key
+      GARAGE_DEFAULT_SECRET_KEY: agrolens-dev-secret-key-change-me
+      GARAGE_DEFAULT_BUCKET: agrolens
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    ports:
+      - "3900:3900"
+      - "127.0.0.1:3903:3903"
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: production
+    mem_limit: 1g
+    memswap_limit: 2g
+    cpus: '2.0'
+    pids_limit: 512
+    command: ["node", "dist/main.js"]
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      garage:
+        condition: service_healthy
+    environment:
+      <<: *backend-development-environment
+      PORT: "3000"
+      API_PREFIX: api
+      S3_PUBLIC_ENDPOINT: "${S3_PUBLIC_ENDPOINT:-http://localhost:3900}"
+    restart: unless-stopped
+
+  inference:
+    profiles: [ai]
+    build:
+      context: ../services/inference
+    mem_limit: 2g
+    memswap_limit: 4g
+    cpus: '2.0'
+    pids_limit: 512
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      INFERENCE_API_KEY: "${INFERENCE_API_KEY:-local-e2e-inference-key}"
+      INFERENCE_MODEL_MAX_SIZE_BYTES: "${INFERENCE_MODEL_MAX_SIZE_BYTES:-524288000}"
+      INFERENCE_MODEL_DOWNLOAD_ORIGINS: "${INFERENCE_MODEL_DOWNLOAD_ORIGINS:-http://garage:3900}"
+      INFERENCE_PREDICT_MAX_SIZE_BYTES: "26214400"
+      INFERENCE_IMAGE_MAX_PIXELS: "40000000"
+      YOLO_CONFIG_DIR: /tmp/ultralytics
+      TMPDIR: /tmp
+      TORCH_HOME: /tmp/torch
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  postgres_data:
+  garage_meta:
+  garage_data:

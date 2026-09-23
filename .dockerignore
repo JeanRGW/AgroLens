@@ -1,0 +1,64 @@
+# ── Git metadata ──
+.git
+.github
+.gitignore
+.gitattributes
+
+# ── Dependencies & package managers ──
+**/node_modules
+**/.pnpm-store
+**/.pub-cache
+**/.pub
+**/.venv
+**/venv
+
+# ── Turbo & Build outputs ──
+.turbo
+**/.turbo
+**/dist
+**/build
+**/out-tsc
+**/.angular
+**/.dart_tool
+tmp
+**/tmp
+
+# ── Environment & secrets ──
+**/.env
+**/.env.*
+!**/.env.example
+
+# ── Test coverage & artifacts ──
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+
+# ── Logs ──
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Editor & OS files ──
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Temporary files ──
+.tmp
+*.tmp
+*.tsbuildinfo
+
+# ── Projects not needed in container builds ──
+apps/mobile
+docs
+deploy

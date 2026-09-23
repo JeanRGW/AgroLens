@@ -1,0 +1,89 @@
+{
+  "name": "@agrolens/api",
+  "version": "0.1.0",
+  "description": "AgroLens backend API and worker",
+  "license": "Apache-2.0",
+  "author": "Jean RGW",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JeanRGW/AgroLens.git",
+    "directory": "apps/api"
+  },
+  "bugs": {
+    "url": "https://github.com/JeanRGW/AgroLens/issues"
+  },
+  "homepage": "https://github.com/JeanRGW/AgroLens/tree/main/apps/api#readme",
+  "scripts": {
+    "build": "nest build",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"*.ts\"",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/main.js",
+    "start:worker": "node dist/worker/main.js",
+    "lint": "eslint \"{src,test}/**/*.ts\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "typecheck": "tsc --noEmit",
+    "config:drift": "tsx scripts/check-config-drift.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:migrate:runtime": "node dist/cli/migrate.js",
+    "db:push": "drizzle-kit push",
+    "db:seed:first-admin": "tsx src/cli/seed-first-admin.ts"
+  },
+  "dependencies": {
+    "@agrolens/contracts": "workspace:*",
+    "@aws-sdk/client-s3": "^3.800.0",
+    "@aws-sdk/s3-request-presigner": "^3.1076.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/platform-express": "^11.1.28",
+    "@nestjs/serve-static": "^5.0.5",
+    "@nestjs/swagger": "^11.4.7",
+    "@nestjs/throttler": "^6.5.0",
+    "argon2": "^0.44.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "express": "^4.22.0",
+    "nodemailer": "^9.0.5",
+    "postgres": "^3.4.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0",
+    "sharp": "^0.35.2",
+    "zod": "^3.23.0"
+  },
+  "overrides": {
+    "multer": "^2.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.1",
+    "@types/supertest": "^7.2.0",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.3.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

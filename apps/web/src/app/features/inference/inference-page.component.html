@@ -1,0 +1,288 @@
+<section class="inference-page">
+  <app-page-header
+    eyebrow="Inferência"
+    title="Inferência"
+    subtitle="Execute modelos de detecção sobre suas imagens"
+  />
+
+  <mat-tab-group animationDuration="0ms" class="inference-tabs">
+    <!-- New inference tab -->
+    <mat-tab label="Nova inferência">
+      <div class="tab-body">
+        @if (loadingModels()) {
+          <app-loading-state message="Carregando modelos..." />
+        } @else if (models().length === 0) {
+          <app-empty-state
+            icon="science"
+            title="Nenhum modelo disponível"
+            message="Nenhum modelo de inferência ativo foi encontrado."
+          />
+        } @else {
+          <mat-card class="section-card">
+            <div class="section-card__header">
+              <mat-icon>psychology</mat-icon>
+              <span>Configuração da inferência</span>
+            </div>
+            <div class="section-card__body">
+              <!-- Model selector -->
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Modelo</mat-label>
+                <mat-select
+                  [ngModel]="selectedModelId()"
+                  (ngModelChange)="selectedModelId.set($event)"
+                  name="model"
+                >
+                  @for (m of models(); track m.id) {
+                    <mat-option [value]="m.id">
+                      {{ m.name }} v{{ m.version }}
+                      @if (m.task) {
+                        <span class="model-task">({{ m.task }})</span>
+                      }
+                    </mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <!-- Source toggle -->
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Fonte das imagens</mat-label>
+                <mat-select
+                  [ngModel]="sourceType()"
+                  (ngModelChange)="sourceType.set($event)"
+                  name="sourceType"
+                >
+                  <mat-option value="upload">Upload existente</mat-option>
+                  <mat-option value="temp">Imagens locais</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <!-- Upload selector -->
+              @if (sourceType() === 'upload') {
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Upload</mat-label>
+                  <mat-select
+                    [ngModel]="selectedUploadId()"
+                    (ngModelChange)="selectedUploadId.set($event)"
+                    name="upload"
+                  >
+                    @for (u of uploads(); track u.id) {
+                      <mat-option [value]="u.id">
+                        {{ u.id }} — {{ u.propertyName || u.propertyId || 'N/A' }} ({{
+                          u.fileCount
+                        }}
+                        imagens)
+                      </mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+              }
+
+              <!-- Temp file input -->
+              @if (sourceType() === 'temp') {
+                <div class="temp-files-section">
+                  <input
+                    type="file"
+                    #fileInput
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    (change)="onTempFilesSelected($event)"
+                    class="file-input-hidden"
+                  />
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    (click)="fileInput.click()"
+                    class="btn-select-files"
+                  >
+                    <mat-icon>add_photo_alternate</mat-icon>
+                    Selecionar imagens
+                  </button>
+
+                  <div class="temp-info">
+                    <span>Máx. 20 arquivos, 25MB cada</span>
+                    <span class="temp-count">{{ tempFiles().length }} selecionado(s)</span>
+                  </div>
+
+                  @if (tempFiles().length > 0) {
+                    <div class="temp-file-list">
+                      @for (f of tempFiles(); track f.name; let i = $index) {
+                        <div class="temp-file-item">
+                          <mat-icon>image</mat-icon>
+                          <span class="temp-file-name">{{ f.name }}</span>
+                          <span class="temp-file-size"
+                            >{{ (f.size / (1024 * 1024)).toFixed(1) }} MB</span
+                          >
+                          <button
+                            mat-icon-button
+                            type="button"
+                            class="btn-remove-file"
+                            (click)="removeTempFile(i)"
+                          >
+                            <mat-icon>close</mat-icon>
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Submit -->
+              <div class="submit-row">
+                <button
+                  mat-flat-button
+                  color="primary"
+                  (click)="submitInference()"
+                  [disabled]="submitting() || !canSubmit()"
+                >
+                  <mat-icon>{{ submitting() ? 'hourglass_empty' : 'play_arrow' }}</mat-icon>
+                  {{ submitting() ? 'Enviando...' : 'Executar inferência' }}
+                </button>
+              </div>
+
+              @if (error()) {
+                <div class="error-banner">{{ error() }}</div>
+              }
+            </div>
+          </mat-card>
+        }
+      </div>
+    </mat-tab>
+
+    <!-- History tab -->
+    <mat-tab label="Histórico">
+      <div class="tab-body">
+        @if (loadingJobs()) {
+          <app-loading-state message="Carregando histórico..." />
+        } @else if (jobs().length === 0) {
+          <app-empty-state
+            icon="history"
+            title="Nenhuma execução encontrada"
+            message="Nenhum trabalho de inferência foi encontrado."
+          />
+        } @else {
+          <mat-card class="table-card">
+            <div class="table-scroll">
+              <table mat-table [dataSource]="jobs()" class="jobs-table">
+                <!-- Status -->
+                <ng-container matColumnDef="status">
+                  <th mat-header-cell *matHeaderCellDef>Status</th>
+                  <td mat-cell *matCellDef="let row">
+                    <span class="cell-badge" [class]="statusBadgeClass(row.status)">
+                      {{ statusLabel(row.status) }}
+                    </span>
+                  </td>
+                </ng-container>
+
+                <!-- Source type -->
+                <ng-container matColumnDef="sourceType">
+                  <th mat-header-cell *matHeaderCellDef>Fonte</th>
+                  <td mat-cell *matCellDef="let row">
+                    <span class="cell-badge">
+                      {{ row.sourceType === 'upload' ? 'Upload' : 'Temporário' }}
+                    </span>
+                  </td>
+                </ng-container>
+
+                <!-- Progress -->
+                <ng-container matColumnDef="progress">
+                  <th mat-header-cell *matHeaderCellDef>Progresso</th>
+                  <td mat-cell *matCellDef="let row">
+                    <span>
+                      {{ row.completedCount }} / {{ row.imageCount }}
+                      @if (row.failedCount > 0) {
+                        ({{ row.failedCount }} falhas)
+                      }
+                    </span>
+                  </td>
+                </ng-container>
+
+                <!-- Created -->
+                <ng-container matColumnDef="createdAt">
+                  <th mat-header-cell *matHeaderCellDef>Criado</th>
+                  <td mat-cell *matCellDef="let row">
+                    <span class="cell-date">{{ row.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Expires -->
+                <ng-container matColumnDef="expiresAt">
+                  <th mat-header-cell *matHeaderCellDef>Expira</th>
+                  <td mat-cell *matCellDef="let row">
+                    @if (row.expiresAt) {
+                      <span class="cell-date">{{ row.expiresAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                    } @else {
+                      <span class="cell-date">—</span>
+                    }
+                  </td>
+                </ng-container>
+
+                <!-- Actions -->
+                <ng-container matColumnDef="actions">
+                  <th mat-header-cell *matHeaderCellDef class="col-action"></th>
+                  <td mat-cell *matCellDef="let row" class="action-cell">
+                    <button
+                      mat-icon-button
+                      color="primary"
+                      (click)="openJob(row.id)"
+                      class="btn-action"
+                      title="Ver detalhes"
+                    >
+                      <mat-icon>visibility</mat-icon>
+                    </button>
+                    @if (canDeleteJob(row)) {
+                      <button
+                        mat-icon-button
+                        color="warn"
+                        (click)="confirmDeleteJob(row)"
+                        class="btn-action"
+                        title="Excluir"
+                      >
+                        <mat-icon>delete</mat-icon>
+                      </button>
+                    }
+                  </td>
+                </ng-container>
+
+                <tr mat-header-row *matHeaderRowDef="jobColumns; sticky: true"></tr>
+                <tr mat-row *matRowDef="let row; columns: jobColumns"></tr>
+              </table>
+            </div>
+          </mat-card>
+
+          <!-- Pagination -->
+          <div class="pagination-wrap">
+            <button
+              mat-flat-button
+              color="primary"
+              (click)="prevJobsPage()"
+              [disabled]="jobsOffset() <= 0"
+              class="btn-page"
+            >
+              <mat-icon>arrow_back</mat-icon>
+              Anterior
+            </button>
+
+            <span class="pagination-info">
+              Mostrando {{ jobsOffset() + 1 }}-{{
+                Math.min(jobsOffset() + jobs().length, jobsTotal())
+              }}
+              de {{ jobsTotal() }}
+            </span>
+
+            <button
+              mat-flat-button
+              color="primary"
+              (click)="nextJobsPage()"
+              [disabled]="jobsOffset() + pageSize >= jobsTotal()"
+              class="btn-page"
+            >
+              Próximo
+              <mat-icon>arrow_forward</mat-icon>
+            </button>
+          </div>
+        }
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+</section>

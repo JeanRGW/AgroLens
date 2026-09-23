@@ -1,0 +1,16 @@
+packages:
+  - "apps/api"
+  - "apps/web"
+  - "packages/*"
+
+# pnpm v10 skips postinstall build scripts unless allowlisted.
+# These are required: argon2 + sharp (native/runtime bindings),
+# esbuild (Angular/Nest build binaries), lmdb + msgpackr-extract
+# (optional native deps of some transitive packages).
+onlyBuiltDependencies:
+  - argon2
+  - sharp
+  - esbuild
+  - "@parcel/watcher"
+  - lmdb
+  - msgpackr-extract

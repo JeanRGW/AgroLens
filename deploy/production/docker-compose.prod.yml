@@ -1,0 +1,199 @@
+# AgroLens production services. Host Caddy owns ports 80/443 and is configured
+# separately with Caddyfile.example.
+
+x-backend-production-environment: &backend-production-environment
+  DATABASE_URL: ${DATABASE_URL}
+  S3_ENDPOINT: ${S3_ENDPOINT}
+  S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT}
+  S3_REGION: ${S3_REGION}
+  S3_ACCESS_KEY: ${S3_APP_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_APP_SECRET_KEY}
+  S3_BUCKET: ${S3_BUCKET}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE}
+  CORS_ORIGINS: ${CORS_ORIGINS}
+  JWT_SECRET: ${JWT_SECRET}
+  JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN}
+  JWT_REFRESH_EXPIRES_DAYS: ${JWT_REFRESH_EXPIRES_DAYS}
+  REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME}
+  REFRESH_COOKIE_DOMAIN: ${REFRESH_COOKIE_DOMAIN}
+  REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE}
+  REFRESH_COOKIE_SAME_SITE: ${REFRESH_COOKIE_SAME_SITE}
+  UPLOAD_MAX_FILES: ${UPLOAD_MAX_FILES}
+  UPLOAD_MAX_FILE_SIZE_BYTES: ${UPLOAD_MAX_FILE_SIZE_BYTES}
+  UPLOAD_PRESIGNED_URL_TTL_SECONDS: ${UPLOAD_PRESIGNED_URL_TTL_SECONDS}
+  CLEANUP_DRAFT_EXPIRY_HOURS: ${CLEANUP_DRAFT_EXPIRY_HOURS}
+  CLEANUP_FAILED_RETENTION_DAYS: ${CLEANUP_FAILED_RETENTION_DAYS}
+  CLEANUP_BATCH_SIZE: ${CLEANUP_BATCH_SIZE}
+  INFERENCE_SERVICE_URL: ${INFERENCE_SERVICE_URL}
+  INFERENCE_API_KEY: "${INFERENCE_API_KEY:-}"
+  INFERENCE_MODEL_MAX_SIZE_BYTES: ${INFERENCE_MODEL_MAX_SIZE_BYTES}
+  INFERENCE_TEMP_MAX_FILES: ${INFERENCE_TEMP_MAX_FILES}
+  INFERENCE_TEMP_MAX_FILE_SIZE_BYTES: ${INFERENCE_TEMP_MAX_FILE_SIZE_BYTES}
+  INFERENCE_JOB_RETENTION_DAYS: ${INFERENCE_JOB_RETENTION_DAYS}
+  RETENTION_DAYS: ${RETENTION_DAYS}
+  INFERENCE_UPLOAD_EXPIRY_HOURS: ${INFERENCE_UPLOAD_EXPIRY_HOURS}
+  INFERENCE_IMAGE_TTL_SECONDS: ${INFERENCE_IMAGE_TTL_SECONDS}
+  INFERENCE_PREDICT_MAX_SIZE_BYTES: ${INFERENCE_PREDICT_MAX_SIZE_BYTES}
+  IMAGE_MAX_INPUT_PIXELS: ${IMAGE_MAX_INPUT_PIXELS}
+  # Mail / password recovery (opt-in)
+  MAIL_ENABLED: ${MAIL_ENABLED}
+  MAIL_TRANSPORT: ${MAIL_TRANSPORT}
+  MAIL_FROM: ${MAIL_FROM}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME}
+  MAIL_PASSWORD_RESET_TTL_MINUTES: ${MAIL_PASSWORD_RESET_TTL_MINUTES}
+  # Rate limiting (per-endpoint IP buckets; @nestjs/throttler).
+  THROTTLE_DEFAULT_LIMIT: "${THROTTLE_DEFAULT_LIMIT:-120}"
+  THROTTLE_DEFAULT_TTL_MS: "${THROTTLE_DEFAULT_TTL_MS:-60000}"
+  THROTTLE_AUTH_LIMIT: "${THROTTLE_AUTH_LIMIT:-10}"
+  THROTTLE_AUTH_TTL_MS: "${THROTTLE_AUTH_TTL_MS:-60000}"
+  RESEND_API_KEY: "${RESEND_API_KEY:-}"
+  SMTP_HOST: "${SMTP_HOST:-}"
+  SMTP_PORT: ${SMTP_PORT}
+  SMTP_SECURE: ${SMTP_SECURE}
+  SMTP_USER: "${SMTP_USER:-}"
+  SMTP_PASS: "${SMTP_PASS:-}"
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571
+    restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 1g
+    cpus: "0.5"
+    pids_limit: 256
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  garage:
+    image: dxflrs/garage:v2.3.0@sha256:dac0c92add4f1a0b41035e94b41036a270ffbe88a37c7ac9c3f19e6dc5bdccf2
+    restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 1g
+    cpus: "1.0"
+    pids_limit: 256
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
+      GARAGE_METRICS_TOKEN: ${GARAGE_METRICS_TOKEN}
+      GARAGE_DEFAULT_ACCESS_KEY: ${S3_APP_ACCESS_KEY}
+      GARAGE_DEFAULT_SECRET_KEY: ${S3_APP_SECRET_KEY}
+      GARAGE_DEFAULT_BUCKET: ${S3_BUCKET}
+    volumes:
+      - ./garage.toml.template:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    ports:
+      - "127.0.0.1:3900:3900"
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+      target: production
+    restart: unless-stopped
+    stop_grace_period: 6m
+    mem_limit: 1g
+    memswap_limit: 2g
+    cpus: "2.0"
+    pids_limit: 512
+    command: ["node", "dist/main.js"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      garage:
+        condition: service_healthy
+    environment:
+      <<: *backend-production-environment
+      NODE_ENV: production
+      SWAGGER_ENABLED: "false"
+      REGISTRATION_ENABLED: "false"
+      PORT: "3000"
+      API_PREFIX: ${API_PREFIX}
+      INFERENCE_ENABLED: ${INFERENCE_ENABLED}
+      WORKER_ENABLED: "true"
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS}
+      WORKER_LEASE_MS: ${WORKER_LEASE_MS}
+      WORKER_ID: ${WORKER_ID:?set a unique worker instance ID}
+      WORKER_CLEANUP_INTERVAL_MS: ${WORKER_CLEANUP_INTERVAL_MS}
+      WORKER_QUEUE_AGE_THRESHOLD_MS: ${WORKER_QUEUE_AGE_THRESHOLD_MS}
+      WORKER_DEAD_JOB_THRESHOLD: ${WORKER_DEAD_JOB_THRESHOLD}
+      WORKER_FINALIZATION_CONCURRENCY: ${WORKER_FINALIZATION_CONCURRENCY}
+      WORKER_DELETION_CONCURRENCY: ${WORKER_DELETION_CONCURRENCY}
+      WORKER_INFERENCE_CONCURRENCY: ${WORKER_INFERENCE_CONCURRENCY}
+      WORKER_FINALIZATION_MAX_ATTEMPTS: ${WORKER_FINALIZATION_MAX_ATTEMPTS}
+      WORKER_DELETION_MAX_ATTEMPTS: ${WORKER_DELETION_MAX_ATTEMPTS}
+      WORKER_INFERENCE_MAX_IMAGE_ATTEMPTS: ${WORKER_INFERENCE_MAX_IMAGE_ATTEMPTS}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:3000/${API_PREFIX}/health/ready || exit 1",
+        ]
+      interval: 15s
+      timeout: 35s
+      retries: 5
+      # Boot includes migrations and the embedded SPA mount; do not count
+      # startup probes against retries.
+      start_period: 60s
+
+  inference:
+    profiles: [ai]
+    build:
+      context: ../../services/inference
+    mem_limit: 2g
+    memswap_limit: 4g
+    cpus: "2.0"
+    pids_limit: 512
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    expose:
+      - "8000"
+    depends_on:
+      garage:
+        condition: service_healthy
+    environment:
+      INFERENCE_API_KEY: "${INFERENCE_API_KEY:-}"
+      INFERENCE_MODEL_MAX_SIZE_BYTES: ${INFERENCE_MODEL_MAX_SIZE_BYTES}
+      INFERENCE_MODEL_DOWNLOAD_ORIGINS: ${INFERENCE_MODEL_DOWNLOAD_ORIGINS:-http://garage:3900}
+      INFERENCE_PREDICT_MAX_SIZE_BYTES: ${INFERENCE_PREDICT_MAX_SIZE_BYTES}
+      INFERENCE_IMAGE_MAX_PIXELS: ${IMAGE_MAX_INPUT_PIXELS}
+      YOLO_CONFIG_DIR: /tmp/ultralytics
+      TMPDIR: /tmp
+      TORCH_HOME: /tmp/torch
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      # Leave time for Python imports on first boot; models load on demand.
+      start_period: 120s
+
+volumes:
+  postgres_data:
+  garage_meta:
+  garage_data:

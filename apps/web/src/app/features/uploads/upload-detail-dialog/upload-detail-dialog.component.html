@@ -1,0 +1,226 @@
+<div class="dialog-header" mat-dialog-title>
+  @if (loading()) {
+    <h2>Carregando...</h2>
+  } @else {
+    @if (upload(); as u) {
+      <h2>
+        Upload
+        <span class="upload-id" (click)="copyUploadId()" title="Clique para copiar">{{
+          u.id
+        }}</span>
+      </h2>
+    }
+  }
+</div>
+
+<mat-dialog-content class="dialog-body">
+  @if (loading()) {
+    <div class="loading-state">
+      <mat-icon>hourglass_empty</mat-icon>
+      <span>Carregando detalhes...</span>
+    </div>
+  } @else if (error()) {
+    <div class="error-state">{{ error() }}</div>
+  } @else {
+    @if (upload(); as u) {
+      <div class="info-panel">
+        <h3>Informacoes</h3>
+
+        <div class="info-row">
+          <span class="info-label">Origem</span>
+          <span class="info-value">
+            <span class="source-badge">{{ getSourceLabel(u.source) }}</span>
+          </span>
+        </div>
+
+        <div class="info-row">
+          <span class="info-label">Usuario</span>
+          <span
+            class="info-value clickable"
+            (click)="copyUserId()"
+            title="Clique para copiar ID do usuario"
+          >
+            {{ u.user?.fullName || u.userId }}
+            <mat-icon class="copy-icon">content_copy</mat-icon>
+          </span>
+        </div>
+
+        @if (u.propertyName || u.propertyId) {
+          <div class="info-row">
+            <span class="info-label">Propriedade</span>
+            <span
+              class="info-value clickable"
+              (click)="copyFieldId(u.propertyId, 'Propriedade')"
+              title="Clique para copiar ID"
+            >
+              {{ u.propertyName || u.propertyId }}
+              @if (u.propertyId) {
+                <mat-icon class="copy-icon">content_copy</mat-icon>
+              }
+            </span>
+          </div>
+        }
+
+        <div class="info-row">
+          <span class="info-label">Talhao</span>
+          <span
+            class="info-value clickable"
+            (click)="copyFieldId(u.talhaoId, 'Talhao')"
+            title="Clique para copiar ID"
+          >
+            {{ u.talhaoName || u.talhaoId }}
+            <mat-icon class="copy-icon">content_copy</mat-icon>
+          </span>
+        </div>
+
+        <div class="info-row">
+          <span class="info-label">Cultura</span>
+          <span
+            class="info-value clickable"
+            (click)="copyFieldId(u.cropTypeId, 'Cultura')"
+            title="Clique para copiar ID"
+          >
+            {{ u.cropTypeName || u.cropTypeId }}
+            <mat-icon class="copy-icon">content_copy</mat-icon>
+          </span>
+        </div>
+
+        @if (u.estadioId) {
+          <div class="info-row">
+            <span class="info-label">Estadio</span>
+            <span
+              class="info-value clickable"
+              (click)="copyFieldId(u.estadioId!, 'Estadio')"
+              title="Clique para copiar ID"
+            >
+              {{ u.estadioName || u.estadioId }}
+              <mat-icon class="copy-icon">content_copy</mat-icon>
+            </span>
+          </div>
+        }
+
+        <div class="info-row gps-row">
+          <span class="info-label">GPS</span>
+          <span class="info-value gps-coords">{{ u.latitude }}, {{ u.longitude }}</span>
+          <button
+            mat-stroked-button
+            class="map-button"
+            [disabled]="!hasValidCoordinates()"
+            (click)="openInMap()"
+          >
+            <mat-icon>map</mat-icon>
+            Ver no mapa
+          </button>
+        </div>
+
+        <div class="info-row">
+          <span class="info-label">Data de atividade</span>
+          <span class="info-value activity-date">{{
+            u.activityDate | date: 'dd/MM/yyyy HH:mm'
+          }}</span>
+        </div>
+      </div>
+
+      <div class="image-panel">
+        <div class="image-header">
+          <h3>Imagens</h3>
+          <span class="count-badge">{{ u.files.length }}</span>
+        </div>
+
+        @if (displayEntries().length > 0) {
+          <div class="hero-wrap">
+            @if (getSelectedDisplayImage(); as imgUrl) {
+              <img [src]="imgUrl" alt="Imagem do upload" class="hero-image" />
+            } @else {
+              <div class="hero-loading">
+                <mat-icon>hourglass_empty</mat-icon>
+                <span>Carregando imagem...</span>
+              </div>
+            }
+          </div>
+
+          <div class="hero-actions">
+            <button mat-flat-button color="primary" (click)="openOriginal()">
+              <mat-icon>open_in_new</mat-icon>
+              Abrir original
+            </button>
+
+            <button
+              mat-flat-button
+              color="primary"
+              (click)="downloadAllStructured()"
+              [disabled]="downloadingAll()"
+            >
+              <mat-icon>download</mat-icon>
+              @if (downloadingAll()) {
+                Preparando ZIP...
+              } @else {
+                Baixar Todas
+              }
+            </button>
+          </div>
+
+          @if (downloadingAll()) {
+            <div class="download-progress-wrap">
+              <div class="download-progress-header">
+                <mat-icon class="download-icon">cloud_download</mat-icon>
+                <span>Baixando imagens...</span>
+                <span class="download-percent">{{ downloadProgress() }}%</span>
+              </div>
+              <mat-progress-bar mode="determinate" [value]="downloadProgress()"></mat-progress-bar>
+              <p class="download-warning">Nao feche a pagina ate concluir o download.</p>
+            </div>
+          }
+
+          <div class="thumb-strip">
+            @for (entry of displayEntries(); track $index) {
+              <button
+                type="button"
+                class="thumb-button"
+                [class.selected]="$index === selectedImageIndex()"
+                [attr.aria-current]="$index === selectedImageIndex() ? 'true' : null"
+                [attr.aria-label]="'Selecionar miniatura da imagem ' + ($index + 1)"
+                (click)="selectImage($index)"
+              >
+                @if (resolvedUrls().get(entry); as thumbUrl) {
+                  <img [src]="thumbUrl" alt="" />
+                } @else {
+                  <div class="thumb-placeholder">
+                    <mat-icon>image</mat-icon>
+                  </div>
+                }
+              </button>
+            }
+          </div>
+        } @else {
+          <div class="no-images">
+            <mat-icon>image_not_supported</mat-icon>
+            <p>Nenhuma imagem disponivel.</p>
+          </div>
+        }
+      </div>
+    }
+  }
+</mat-dialog-content>
+
+@if (upload() && !loading()) {
+  <div class="actions-bar" mat-dialog-actions>
+    @if (canDelete()) {
+      <button mat-flat-button class="delete-btn" (click)="deleteUpload()" [disabled]="deleting()">
+        <mat-icon>delete</mat-icon>
+        @if (deleting()) {
+          Excluindo...
+        } @else {
+          Excluir
+        }
+      </button>
+    }
+    <div class="right-actions">
+      <button mat-flat-button color="primary" (click)="goToLabeling()">
+        <mat-icon>crop_free</mat-icon>
+        Anotar
+      </button>
+      <button mat-stroked-button mat-dialog-close>Fechar</button>
+    </div>
+  </div>
+}

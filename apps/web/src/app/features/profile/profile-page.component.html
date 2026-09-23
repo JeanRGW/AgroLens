@@ -1,0 +1,206 @@
+<section class="profile-page">
+  <app-page-header
+    eyebrow="Conta"
+    title="Meu Perfil"
+    subtitle="Confira sua identificação no painel e mantenha seus dados de acesso atualizados."
+  >
+    <a mat-stroked-button routerLink="/dashboard">
+      <mat-icon>arrow_back</mat-icon>
+      Voltar ao dashboard
+    </a>
+  </app-page-header>
+
+  <div class="profile-layout">
+    <mat-card class="credential">
+      <svg
+        class="contours"
+        viewBox="0 0 340 120"
+        preserveAspectRatio="xMidYMin slice"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <g fill="none" stroke="var(--agri-border-strong)" stroke-width="1.5" opacity="0.55">
+          <path d="M-10,28 C60,8 120,48 180,28 S300,8 350,28" />
+          <path d="M-10,53 C60,33 120,73 180,53 S300,33 350,53" />
+          <path d="M-10,78 C60,58 120,98 180,78 S300,58 350,78" />
+          <path d="M-10,103 C60,83 120,118 180,103 S300,88 350,103" />
+        </g>
+        <g fill="var(--agri-accent-light)" opacity="0.8">
+          <circle cx="74" cy="53" r="3.5" />
+          <circle cx="252" cy="28" r="3.5" />
+        </g>
+      </svg>
+
+      <mat-card-content class="credential-body">
+        <div class="credential-head">
+          <div class="avatar" aria-hidden="true">{{ userInitial() }}</div>
+          <div class="credential-id">
+            <span class="role-chip" [class.role-admin]="isAdmin()">{{ roleLabel() }}</span>
+            <h2>{{ user()?.fullName || 'Usuário do painel' }}</h2>
+            <p class="email">{{ user()?.email || '-' }}</p>
+          </div>
+        </div>
+
+        <dl class="ledger">
+          <div>
+            <dt>Função</dt>
+            <dd>{{ roleLabel() }}</dd>
+          </div>
+          <div>
+            <dt>ID da conta</dt>
+            <dd>
+              <app-copy-id-button [id]="user()?.id || ''" copiedMessage="ID da conta copiado." />
+            </dd>
+          </div>
+          <div>
+            <dt>Na conta desde</dt>
+            <dd>{{ memberSince() }}</dd>
+          </div>
+        </dl>
+      </mat-card-content>
+    </mat-card>
+
+    <div class="forms">
+      <mat-card class="edit-card">
+        <mat-card-header>
+          <mat-card-title>
+            <mat-icon aria-hidden="true">person</mat-icon>
+            Editar informações
+          </mat-card-title>
+          <mat-card-subtitle>
+            Atualize seu nome completo e telefone de exibição. O email é definido pelo
+            administrador.
+          </mat-card-subtitle>
+        </mat-card-header>
+
+        <mat-card-content>
+          <form [formGroup]="form" (ngSubmit)="saveProfile()" class="edit-form">
+            <mat-form-field appearance="outline">
+              <mat-label>Nome completo</mat-label>
+              <input matInput formControlName="fullName" maxlength="80" autocomplete="name" />
+              @if (form.controls.fullName.hasError('required')) {
+                <mat-error>Nome é obrigatório</mat-error>
+              } @else if (form.controls.fullName.hasError('minlength')) {
+                <mat-error>Mínimo de 2 caracteres</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Telefone</mat-label>
+              <input matInput formControlName="phone" phoneMask maxlength="16" autocomplete="tel" />
+              @if (form.controls.phone.hasError('pattern')) {
+                <mat-error>Formato: (XX) XXXXX-XXXX</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Email</mat-label>
+              <input matInput [value]="user()?.email || ''" readonly />
+            </mat-form-field>
+
+            <div class="actions">
+              <button mat-flat-button color="primary" type="submit" [disabled]="saving()">
+                <mat-icon>save</mat-icon>
+                {{ saving() ? 'Salvando...' : 'Salvar alterações' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="edit-card">
+        <mat-card-header>
+          <mat-card-title>
+            <mat-icon aria-hidden="true">lock</mat-icon>
+            Alterar senha
+          </mat-card-title>
+          <mat-card-subtitle>
+            Ao alterar a senha, todos os outros dispositivos conectados com essa conta serão
+            desconectados.
+          </mat-card-subtitle>
+        </mat-card-header>
+
+        <mat-card-content>
+          <form [formGroup]="passwordForm" (ngSubmit)="changePassword()" class="edit-form">
+            <mat-form-field appearance="outline">
+              <mat-label>Senha atual</mat-label>
+              <input
+                matInput
+                [type]="hideCurrent() ? 'password' : 'text'"
+                autocomplete="current-password"
+                formControlName="currentPassword"
+              />
+              <button
+                mat-icon-button
+                matSuffix
+                type="button"
+                (click)="hideCurrent.set(!hideCurrent())"
+                [attr.aria-label]="hideCurrent() ? 'Mostrar senha atual' : 'Ocultar senha atual'"
+              >
+                <mat-icon>{{ hideCurrent() ? 'visibility' : 'visibility_off' }}</mat-icon>
+              </button>
+              @if (passwordForm.controls.currentPassword.hasError('required')) {
+                <mat-error>Senha atual é obrigatória</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Nova senha</mat-label>
+              <input
+                matInput
+                [type]="hideNew() ? 'password' : 'text'"
+                autocomplete="new-password"
+                formControlName="newPassword"
+              />
+              <button
+                mat-icon-button
+                matSuffix
+                type="button"
+                (click)="hideNew.set(!hideNew())"
+                [attr.aria-label]="hideNew() ? 'Mostrar nova senha' : 'Ocultar nova senha'"
+              >
+                <mat-icon>{{ hideNew() ? 'visibility' : 'visibility_off' }}</mat-icon>
+              </button>
+              @if (passwordForm.controls.newPassword.hasError('required')) {
+                <mat-error>Nova senha é obrigatória</mat-error>
+              } @else if (passwordForm.controls.newPassword.hasError('minlength')) {
+                <mat-error>Mínimo de 8 caracteres</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Confirmar nova senha</mat-label>
+              <input
+                matInput
+                [type]="hideConfirm() ? 'password' : 'text'"
+                autocomplete="new-password"
+                formControlName="confirmPassword"
+              />
+              <button
+                mat-icon-button
+                matSuffix
+                type="button"
+                (click)="hideConfirm.set(!hideConfirm())"
+                [attr.aria-label]="hideConfirm() ? 'Mostrar confirmação' : 'Ocultar confirmação'"
+              >
+                <mat-icon>{{ hideConfirm() ? 'visibility' : 'visibility_off' }}</mat-icon>
+              </button>
+              @if (passwordForm.controls.confirmPassword.hasError('required')) {
+                <mat-error>Confirmação é obrigatória</mat-error>
+              } @else if (passwordForm.controls.confirmPassword.hasError('mismatch')) {
+                <mat-error>As senhas não conferem</mat-error>
+              }
+            </mat-form-field>
+
+            <div class="actions">
+              <button mat-flat-button color="primary" type="submit" [disabled]="passwordSaving()">
+                <mat-icon>password</mat-icon>
+                {{ passwordSaving() ? 'Alterando...' : 'Alterar senha' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,75 @@
+<section class="login-screen">
+  <div class="bg-orb bg-orb-a"></div>
+  <div class="bg-orb bg-orb-b"></div>
+  <div class="bg-orb bg-orb-c"></div>
+
+  <mat-card class="login-card">
+    <div class="brand-header">
+      <h1 class="brand-name">AgroLens</h1>
+      <p class="brand-tagline">Painel de Controle</p>
+    </div>
+
+    <div class="divider"></div>
+
+    @if (suspendedNotice()) {
+      <p class="suspended-notice" role="alert">
+        <mat-icon aria-hidden="true">block</mat-icon>
+        Sua sessão foi encerrada porque a conta está suspensa. Fale com um administrador.
+      </p>
+    }
+
+    <form [formGroup]="form" (ngSubmit)="login()" class="login-form">
+      <mat-form-field appearance="outline">
+        <mat-label>Email</mat-label>
+        <input matInput type="email" formControlName="email" autocomplete="email" />
+        <mat-icon matPrefix>mail</mat-icon>
+        @if (form.controls.email.hasError('required')) {
+          <mat-error>Email é obrigatório</mat-error>
+        } @else if (form.controls.email.hasError('email')) {
+          <mat-error>Informe um email válido</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Senha</mat-label>
+        <input
+          matInput
+          [type]="hidePassword() ? 'password' : 'text'"
+          formControlName="password"
+          autocomplete="current-password"
+        />
+        <mat-icon matPrefix>lock</mat-icon>
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          [attr.aria-label]="hidePassword() ? 'Mostrar senha' : 'Ocultar senha'"
+          (click)="togglePasswordVisibility()"
+        >
+          <mat-icon>{{ hidePassword() ? 'visibility' : 'visibility_off' }}</mat-icon>
+        </button>
+        @if (form.controls.password.hasError('required')) {
+          <mat-error>Senha é obrigatória</mat-error>
+        } @else if (form.controls.password.hasError('minlength')) {
+          <mat-error>Mínimo de 6 caracteres</mat-error>
+        }
+      </mat-form-field>
+
+      <div class="forgot-password-row">
+        <a routerLink="/forgot-password" class="forgot-password-link">Esqueci minha senha</a>
+      </div>
+
+      <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+        <mat-icon>login</mat-icon>
+        {{ loading() ? 'Entrando...' : 'Entrar' }}
+      </button>
+    </form>
+
+    <p class="footer-text">Visualize, gerencie e acompanhe seus dados.</p>
+
+    <p class="register-link">
+      Ainda não tem conta?
+      <a routerLink="/register">Criar conta</a>
+    </p>
+  </mat-card>
+</section>

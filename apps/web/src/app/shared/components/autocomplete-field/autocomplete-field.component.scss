@@ -1,0 +1,22 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+.autocomplete-field {
+  width: 100%;
+}
+
+.option-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.option-title {
+  font-weight: 500;
+}
+
+.option-subtitle {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}

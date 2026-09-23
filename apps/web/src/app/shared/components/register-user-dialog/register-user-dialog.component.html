@@ -1,0 +1,182 @@
+<div class="register-user-dialog">
+  @if (!created()) {
+    <h2 mat-dialog-title>Registrar novo usuario</h2>
+
+    <mat-dialog-content>
+      <form [formGroup]="form" class="register-form">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Nome completo</mat-label>
+          <input matInput formControlName="fullName" placeholder="Ex: João Silva" required />
+          @if (form.get('fullName')?.hasError('required') && form.get('fullName')?.touched) {
+            <mat-error>Nome completo é obrigatório.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Email</mat-label>
+          <input
+            matInput
+            formControlName="email"
+            type="email"
+            placeholder="Ex: joao@example.com"
+            required
+          />
+          @if (form.get('email')?.hasError('required') && form.get('email')?.touched) {
+            <mat-error>Email é obrigatório.</mat-error>
+          }
+          @if (form.get('email')?.hasError('email') && form.get('email')?.touched) {
+            <mat-error>Email invalido.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Telefone</mat-label>
+          <input
+            matInput
+            formControlName="phone"
+            phoneMask
+            placeholder="(XX) XXXXX-XXXX"
+            required
+          />
+          @if (form.get('phone')?.hasError('required') && form.get('phone')?.touched) {
+            <mat-error>Telefone é obrigatório.</mat-error>
+          }
+          @if (form.get('phone')?.hasError('pattern') && form.get('phone')?.touched) {
+            <mat-error>Formato: (XX) XXXXX-XXXX</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Perfil</mat-label>
+          <mat-select formControlName="role">
+            @for (role of roleOptions; track role) {
+              <mat-option [value]="role">{{ roleLabels[role] }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <div class="password-section">
+          <div class="password-inputs">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Senha</mat-label>
+              <input
+                matInput
+                formControlName="password"
+                type="password"
+                placeholder="Min 8 caracteres"
+                required
+              />
+              @if (form.get('password')?.hasError('required') && form.get('password')?.touched) {
+                <mat-error>Senha é obrigatória.</mat-error>
+              }
+              @if (form.get('password')?.hasError('minlength') && form.get('password')?.touched) {
+                <mat-error>Senha deve ter pelo menos 8 caracteres.</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Confirmar senha</mat-label>
+              <input
+                matInput
+                formControlName="confirmPassword"
+                type="password"
+                placeholder="Confirme a senha"
+                required
+              />
+              @if (!passwordsMatch() && form.get('confirmPassword')?.touched) {
+                <mat-error>As senhas não conferem.</mat-error>
+              }
+            </mat-form-field>
+          </div>
+
+          <button
+            mat-stroked-button
+            type="button"
+            (click)="generatePassword()"
+            class="generate-btn"
+            [matTooltip]="'Gera uma senha aleatória de 12 caracteres'"
+          >
+            <mat-icon>refresh</mat-icon>
+            Gerar senha aleatória
+          </button>
+        </div>
+      </form>
+    </mat-dialog-content>
+
+    <mat-dialog-actions align="end">
+      <button mat-button type="button" (click)="close()" [disabled]="creating()">Cancelar</button>
+      <button
+        mat-raised-button
+        color="primary"
+        type="button"
+        (click)="registerUser()"
+        [disabled]="!canSubmit()"
+      >
+        <mat-icon>person_add</mat-icon>
+        @if (creating()) {
+          Registrando...
+        } @else {
+          Registrar usuario
+        }
+      </button>
+    </mat-dialog-actions>
+  } @else {
+    <h2 mat-dialog-title>Usuario registrado com sucesso!</h2>
+
+    <mat-dialog-content>
+      @if (createdUserData(); as user) {
+        <mat-card class="success-card">
+          <mat-card-header>
+            <mat-card-title>Informações de acesso</mat-card-title>
+          </mat-card-header>
+
+          <mat-card-content class="access-info">
+            <div class="info-row">
+              <label>ID:</label>
+              <code>{{ user.id }}</code>
+            </div>
+
+            <div class="info-row">
+              <label>Email:</label>
+              <code>{{ user.email }}</code>
+            </div>
+
+            <div class="info-row">
+              <label>Telefone:</label>
+              <code>{{ user.phone }}</code>
+            </div>
+
+            <div class="info-row">
+              <label>Senha:</label>
+              <code class="password">{{ user.password }}</code>
+            </div>
+
+            <div class="info-row">
+              <label>Perfil:</label>
+              <code>{{ roleLabels[user.role] }}</code>
+            </div>
+          </mat-card-content>
+
+          <mat-card-actions>
+            <button mat-stroked-button type="button" (click)="copyAccessInfo()" class="copy-btn">
+              <mat-icon>content_copy</mat-icon>
+              Copiar informações
+            </button>
+          </mat-card-actions>
+        </mat-card>
+
+        <p class="info-text">
+          Compartilhe estas informações com o novo usuário. A senha deverá ser alterada no primeiro
+          login.
+        </p>
+      }
+    </mat-dialog-content>
+
+    <mat-dialog-actions align="end">
+      <button mat-raised-button color="primary" type="button" (click)="closeAfterCreate()">
+        <mat-icon>done</mat-icon>
+        Concluir
+      </button>
+    </mat-dialog-actions>
+  }
+</div>

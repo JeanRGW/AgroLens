@@ -1,0 +1,130 @@
+<section class="dashboard">
+  <app-page-header eyebrow="Visão Geral" title="Panorama de Uploads">
+    <button mat-flat-button color="primary" (click)="refresh()" [disabled]="loading()">
+      <mat-icon>refresh</mat-icon>
+      Atualizar
+    </button>
+  </app-page-header>
+
+  @if (loading()) {
+    <app-loading-state />
+  } @else if (snapshot()) {
+    <div class="kpi-grid">
+      <mat-card class="kpi-card">
+        <mat-card-content>
+          <div class="kpi-icon-wrap">
+            <mat-icon>cloud_upload</mat-icon>
+          </div>
+          <p class="kpi-label">Total de Uploads</p>
+          <h3 class="kpi-value">{{ snapshot()!.totalUploads | number }}</h3>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="kpi-card">
+        <mat-card-content>
+          <div class="kpi-icon-wrap">
+            <mat-icon>today</mat-icon>
+          </div>
+          <p class="kpi-label">Uploads Hoje</p>
+          <h3 class="kpi-value">{{ snapshot()!.uploadsToday | number }}</h3>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="kpi-card">
+        <mat-card-content>
+          <div class="kpi-icon-wrap">
+            <mat-icon>flight</mat-icon>
+          </div>
+          <p class="kpi-label">Fonte Drone</p>
+          <h3 class="kpi-value">
+            {{ snapshot()!.sourceBreakdown.drone | number }}
+          </h3>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="kpi-card">
+        <mat-card-content>
+          <div class="kpi-icon-wrap">
+            <mat-icon>smartphone</mat-icon>
+          </div>
+          <p class="kpi-label">Fonte Telefone</p>
+          <h3 class="kpi-value">
+            {{ snapshot()!.sourceBreakdown.phone | number }}
+          </h3>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <div class="recent-section">
+      <div class="recent-title-row">
+        <h2>Últimos uploads</h2>
+      </div>
+
+      @if (snapshot()!.recentUploads.length === 0) {
+        <app-empty-state
+          icon="inbox"
+          title="Nenhum upload recente"
+          message="Nenhum upload recente encontrado."
+        />
+      } @else {
+        <div class="grid-container">
+          @for (item of snapshot()!.recentUploads; track item.id) {
+            <a class="grid-item" [routerLink]="['/uploads', item.id]">
+              <div class="grid-item-image">
+                @if (previewUrl(item)) {
+                  <img
+                    [src]="previewUrl(item)"
+                    alt="Previa"
+                    loading="lazy"
+                    (error)="onPreviewError(item)"
+                  />
+                } @else {
+                  <div class="image-placeholder">
+                    <mat-icon>image_not_supported</mat-icon>
+                  </div>
+                }
+                <div class="grid-item-image-overlay"></div>
+              </div>
+              <div class="grid-item-info">
+                <div class="grid-item-id">{{ item.id }}</div>
+                <div class="grid-item-badges">
+                  @if (item.cropTypeName) {
+                    <span class="badge badge-crop">{{ item.cropTypeName }}</span>
+                  }
+                  @if (item.talhaoName) {
+                    <span class="badge badge-talhao">{{ item.talhaoName }}</span>
+                  }
+                  @if (item.estadioName) {
+                    <span class="badge badge-estadio">
+                      {{ item.estadioName }}
+                    </span>
+                  }
+                </div>
+                <div class="grid-item-meta">
+                  <div class="meta-row">
+                    <mat-icon class="meta-icon">domain</mat-icon>
+                    <span class="value">{{ item.propertyName || item.propertyId || '-' }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <mat-icon class="meta-icon">person</mat-icon>
+                    <span class="value">{{ item.user?.fullName || '-' }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <mat-icon class="meta-icon">image</mat-icon>
+                    <span class="value">{{ item.fileCount }}</span>
+                  </div>
+                  @if (item.createdAt) {
+                    <div class="meta-row">
+                      <mat-icon class="meta-icon">calendar_today</mat-icon>
+                      <span class="value">{{ item.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            </a>
+          }
+        </div>
+      }
+    </div>
+  }
+</section>

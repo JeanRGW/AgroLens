@@ -1,0 +1,251 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monorepo:
+    name: Monorepo (Node 22, pnpm 10, Turbo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.34.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared contracts
+        run: pnpm --filter @agrolens/contracts build
+
+      - name: Install Chromium for headless web unit tests
+        id: chromium
+        run: |
+          pnpm --filter @agrolens/web exec playwright install --with-deps chromium
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const { chromium } = require('./apps/web/node_modules/@playwright/test');
+          process.stdout.write(`chrome_bin=${chromium.executablePath()}\n`);
+          NODE
+
+      - name: Run lint, typecheck, test, and build via Turbo
+        run: pnpm turbo run lint typecheck test build
+        env:
+          CHROME_BIN: ${{ steps.chromium.outputs.chrome_bin }}
+
+      - name: Check config drift (env schema vs compose files)
+        run: pnpm --filter @agrolens/api config:drift
+
+  backend-e2e:
+    name: Backend API E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: monorepo
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agrolens
+      INFERENCE_API_KEY: ci-ephemeral-inference-key-${{ github.run_id }}-${{ github.run_attempt }}
+      S3_ENDPOINT: http://localhost:3900
+      S3_REGION: garage
+      S3_ACCESS_KEY: agrolens-dev-access-key
+      S3_SECRET_KEY: agrolens-dev-secret-key-change-me
+      S3_BUCKET: agrolens
+      S3_FORCE_PATH_STYLE: "true"
+      JWT_SECRET: ci-e2e-jwt-secret-key-at-least-32-characters-long
+      REGISTRATION_ENABLED: "true"
+      WORKER_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.34.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared contracts
+        run: pnpm --filter @agrolens/contracts build
+
+      - name: Start PostgreSQL and Garage
+        run: docker compose -f deploy/docker-compose.dev.yml up -d --wait postgres garage
+
+      - name: Run database migrations
+        run: pnpm --filter @agrolens/api db:migrate
+
+      - name: Run backend API E2E
+        run: pnpm --filter @agrolens/api test:e2e
+
+  production-compose:
+    name: Production Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: monorepo
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.34.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate production Compose with example environment
+        working-directory: deploy/production
+        run: docker compose -f docker-compose.prod.yml --env-file .env.example config --quiet
+
+      # Prod envSchema coverage is enforced by `config:drift` in the monorepo
+      # job (it validates both dev and prod Compose environments).
+
+      - name: Build production image target
+        run: docker build --target production -t agrolens-api:production -f apps/api/Dockerfile .
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Forked pull requests cannot access repository secrets. Keep the required
+    # credential check for trusted events, but skip this service-backed job for
+    # forks instead of failing before checkout.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs:
+      - monorepo
+      - backend-e2e
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agrolens
+      INFERENCE_API_KEY: ci-ephemeral-inference-key-${{ github.run_id }}-${{ github.run_attempt }}
+      ADMIN_EMAIL: e2e-admin@example.com
+      ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+      ADMIN_FULL_NAME: Admin User
+      ADMIN_PHONE: "+550000000000"
+      E2E_API_URL: http://localhost:3000/api
+      E2E_WEB_URL: http://localhost:4200
+      E2E_ADMIN_EMAIL: e2e-admin@example.com
+      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+      # Raised so the browser suite is not throttled (mirrors local e2e runs).
+      THROTTLE_DEFAULT_LIMIT: "1000"
+      THROTTLE_DEFAULT_TTL_MS: "60000"
+      THROTTLE_AUTH_LIMIT: "1000"
+      THROTTLE_AUTH_TTL_MS: "60000"
+    steps:
+      - name: Require E2E admin credential
+        run: |
+          if [ -z "$E2E_ADMIN_PASSWORD" ]; then
+            echo "E2E_ADMIN_PASSWORD repository secret is required for the E2E job."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.34.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared contracts
+        run: pnpm --filter @agrolens/contracts build
+
+      # The merged API runs the guarded runtime migrator before listening.
+      - name: Start dev stack (postgres, garage, api)
+        working-directory: deploy
+        run: docker compose -f docker-compose.dev.yml up -d --wait postgres garage api
+
+      - name: Verify backend is running
+        working-directory: deploy
+        run: docker compose -f docker-compose.dev.yml ps --status running api
+
+      - name: Wait for backend readiness
+        run: |
+          node <<'NODE'
+          const base = process.env.E2E_API_URL || 'http://localhost:3000/api';
+          const deadline = Date.now() + 180000;
+
+          async function check(path) {
+            const res = await fetch(`${base}${path}`);
+            if (!res.ok) {
+              throw new Error(`${path} returned ${res.status}`);
+            }
+
+            const body = await res.json();
+            if (body.status !== 'ok') {
+              throw new Error(`${path} status ${body.status}`);
+            }
+          }
+
+          (async () => {
+            while (Date.now() < deadline) {
+              try {
+                await check('/health');
+                process.exit(0);
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                console.log(`Waiting for backend: ${message}`);
+              }
+
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+
+            console.error('Backend did not become ready in time.');
+            process.exit(1);
+          })();
+          NODE
+
+      - name: Seed first admin
+        run: pnpm --filter @agrolens/api db:seed:first-admin
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @agrolens/web exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E
+        run: pnpm --filter @agrolens/web e2e --reporter=list,html
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-artifacts
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: ignore
