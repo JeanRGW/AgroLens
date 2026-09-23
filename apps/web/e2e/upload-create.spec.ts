@@ -17,7 +17,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { loginAsBrowser } from './helpers';
+import { loginAsBrowser, stubMapTiles } from './helpers';
 
 // ── Load provisioned data ───────────────────────────────────────────────
 
@@ -54,6 +54,7 @@ test.describe('Upload creation via UI', () => {
   test('create upload through the full form flow', async ({ page }) => {
     test.setTimeout(180_000);
 
+    await stubMapTiles(page);
     await loginAsBrowser(page, data.ownerEmail, data.ownerPassword);
 
     // Navigate to the upload creation page

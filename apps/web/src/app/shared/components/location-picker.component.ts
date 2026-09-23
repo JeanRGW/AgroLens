@@ -332,8 +332,9 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
       zoom: this.latitude != null ? 14 : this.initialZoom,
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
       maxZoom: 19,
     }).addTo(this.map);
 

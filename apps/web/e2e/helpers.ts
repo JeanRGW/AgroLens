@@ -389,6 +389,25 @@ export async function createAccessGrant(
   );
 }
 
+// ── Map tile stub (E2E specs) ─────────────────────────────────────────────
+
+/**
+ * Intercept map tile requests so tests never hit tile.openstreetmap.org.
+ *
+ * Automated tile downloads violate the OSM tile usage policy (apps get
+ * blocked); fulfilling with a tiny PNG keeps the Leaflet map interactive
+ * (clicks land on the container) without any external traffic.
+ */
+export async function stubMapTiles(page: Page): Promise<void> {
+  await page.route('https://tile.openstreetmap.org/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(MINIMAL_PNG_BASE64, 'base64'),
+    }),
+  );
+}
+
 // ── Browser login helper (E2E specs) ──────────────────────────────────────
 
 /**

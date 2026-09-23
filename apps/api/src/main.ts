@@ -39,7 +39,7 @@ async function bootstrap() {
       res.removeHeader('X-Powered-By');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
-      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
       next();
     });
     // Turn off the Express framework identification header at the adapter level too.

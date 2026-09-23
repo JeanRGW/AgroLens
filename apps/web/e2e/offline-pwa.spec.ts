@@ -7,6 +7,7 @@ import {
   createCropType,
   createEstadio,
   loginAsBrowser,
+  stubMapTiles,
 } from './helpers';
 import type { OfflineUpload } from '../src/app/shared/models/offline-upload';
 import type { UploadDetail, UploadRecord } from '../src/app/shared/models/upload-record';
@@ -91,6 +92,7 @@ test('production PWA cold-starts offline, saves all catalogs and GPS, then resum
   const estadioId = await createEstadio(owner.accessToken, names.estadio, cropTypeId);
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: -25.4, longitude: -51.4, accuracy: 6 });
+  await stubMapTiles(page);
   await loginAsBrowser(page, owner.email, owner.password);
 
   // Preparation is required on the dashboard, before ever visiting the upload form.

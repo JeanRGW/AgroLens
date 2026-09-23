@@ -24,7 +24,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { loginAsBrowser } from './helpers';
+import { loginAsBrowser, stubMapTiles } from './helpers';
 
 // ── Load provisioned data ───────────────────────────────────────────────
 
@@ -216,6 +216,7 @@ test.describe('Real-backend critical flows', () => {
   // ── Metadata Page Smoke (Properties) ─────────────────────────────
 
   test('properties page loads and shows provisioned property', async ({ page }) => {
+    await stubMapTiles(page);
     await loginAsBrowser(page, data.ownerEmail, data.ownerPassword);
 
     await page.goto('/properties');
