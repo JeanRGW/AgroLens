@@ -217,7 +217,8 @@ export class OfflineStatusComponent {
   readonly queueText = computed(() => {
     if (this.sync.syncing()) return 'Sincronizando...';
     const count = this.pendingCount();
-    return count === 0 ? 'Nenhum lote na fila' : `${count} lote(s) na fila`;
+    if (count === 0) return 'Nenhum lote na fila';
+    return `${count} ${count === 1 ? 'lote' : 'lotes'} na fila`;
   });
 
   readonly statusLabel = computed(() => `${this.statusTitle()}. ${this.queueText()}.`);

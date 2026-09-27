@@ -231,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: IconButton(
               icon: const Icon(Icons.logout, color: Colors.white),
               onPressed: _confirmLogout,
-              tooltip: 'Logout',
+               tooltip: 'Sair',
             ),
           ),
         ],
@@ -313,8 +313,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Icons.cloud_outlined,
               'Uploads',
               _pendingCount > 0
-                  ? '$_pendingCount lote(s) aguardando sincronização'
-                  : 'Ver fila, status e sincronizar imagens',
+                  ? '$_pendingCount ${_pendingCount == 1 ? 'lote' : 'lotes'} aguardando sincronização.'
+                  : 'Ver fila, status e sincronizar imagens.',
               () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -332,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _card(
               context,
               Icons.add_a_photo_outlined,
-              'Novo Upload',
+              'Novo upload',
               'Criar e preparar um novo envio de imagens',
               _createUpload,
               const [Color(0xff6a4e1a), Color(0xffb17a22)],

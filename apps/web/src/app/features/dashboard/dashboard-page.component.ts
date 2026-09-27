@@ -78,7 +78,7 @@ export class DashboardPageComponent implements OnInit {
       this.fetchPreviewUrls(result.recentUploads);
     } catch {
       this.snapshot.set(null);
-      this.snackBar.open('Falha ao carregar o dashboard.', 'Fechar', { duration: 6000 });
+      this.snackBar.open('Falha ao carregar o painel.', 'Fechar', { duration: 6000 });
     } finally {
       this.loading.set(false);
     }

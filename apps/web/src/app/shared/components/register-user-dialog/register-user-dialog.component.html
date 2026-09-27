@@ -1,6 +1,6 @@
 <div class="register-user-dialog">
   @if (!created()) {
-    <h2 mat-dialog-title>Registrar novo usuario</h2>
+    <h2 mat-dialog-title>Registrar novo usuário</h2>
 
     <mat-dialog-content>
       <form [formGroup]="form" class="register-form">
@@ -22,10 +22,10 @@
             required
           />
           @if (form.get('email')?.hasError('required') && form.get('email')?.touched) {
-            <mat-error>Email é obrigatório.</mat-error>
+            <mat-error>O email é obrigatório.</mat-error>
           }
           @if (form.get('email')?.hasError('email') && form.get('email')?.touched) {
-            <mat-error>Email invalido.</mat-error>
+            <mat-error>Informe um email válido.</mat-error>
           }
         </mat-form-field>
 
@@ -63,7 +63,7 @@
                 matInput
                 formControlName="password"
                 type="password"
-                placeholder="Min 8 caracteres"
+                placeholder="Mínimo de 8 caracteres"
                 required
               />
               @if (form.get('password')?.hasError('required') && form.get('password')?.touched) {
@@ -116,12 +116,12 @@
         @if (creating()) {
           Registrando...
         } @else {
-          Registrar usuario
+          Registrar usuário
         }
       </button>
     </mat-dialog-actions>
   } @else {
-    <h2 mat-dialog-title>Usuario registrado com sucesso!</h2>
+    <h2 mat-dialog-title>Usuário registrado com sucesso!</h2>
 
     <mat-dialog-content>
       @if (createdUserData(); as user) {

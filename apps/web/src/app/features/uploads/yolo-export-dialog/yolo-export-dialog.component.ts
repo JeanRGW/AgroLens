@@ -52,7 +52,7 @@ export interface YoloExportDialogData {
   template: `
     <h2 mat-dialog-title>
       <mat-icon>science</mat-icon>
-      Exportar Dataset YOLO
+      Exportar conjunto de dados YOLO
     </h2>
 
     <mat-dialog-content>
@@ -73,7 +73,7 @@ export interface YoloExportDialogData {
             <span class="summary-value annotated">{{ effectiveAnnotatedImages() }}</span>
           </div>
           <div class="summary-item">
-            <span class="summary-label">Sem anotacao</span>
+            <span class="summary-label">Sem anotação</span>
             <span class="summary-value" [class.warning]="data.unannotatedImages > 0">
               {{ data.unannotatedImages }}
             </span>
@@ -160,7 +160,7 @@ export interface YoloExportDialogData {
 
           @if (data.unannotatedUploads.length > 0) {
             <div class="warning-item">
-              <p>Uploads sem nenhuma anotacao ({{ data.unannotatedUploads.length }}):</p>
+              <p>Uploads sem anotação ({{ data.unannotatedUploads.length }}):</p>
               <ul class="upload-list">
                 @for (upload of data.unannotatedUploads; track upload.docId) {
                   <li>
@@ -179,7 +179,7 @@ export interface YoloExportDialogData {
               <p>
                 {{ disabledClassCount() }}
                 {{ disabledClassCount() === 1 ? 'classe desabilitada' : 'classes desabilitadas' }} —
-                imagens sem classes habilitadas serao ignoradas.
+                imagens sem classes habilitadas serão ignoradas.
               </p>
             </div>
           }
@@ -191,8 +191,12 @@ export interface YoloExportDialogData {
           ) {
             <div class="warning-item">
               <p>
-                {{ data.unannotatedImages }} imagens sem anotacao serao incluidas conforme opcao
-                abaixo.
+                {{ data.unannotatedImages }}
+                {{
+                  data.unannotatedImages === 1
+                    ? 'imagem sem anotação será incluída'
+                    : 'imagens sem anotação serão incluídas'
+                }} conforme a opção abaixo.
               </p>
             </div>
           }
@@ -201,25 +205,25 @@ export interface YoloExportDialogData {
 
       <!-- Options -->
       <div class="options-section">
-        <h3>Opcoes</h3>
+        <h3>Opções</h3>
 
         <div class="option-group">
-          <label>Divisao Train/Val</label>
+          <label>Divisão treino/validação</label>
           <div class="slider-row">
             <mat-slider min="50" max="95" step="5" discrete showTickMarks>
               <input matSliderThumb [(ngModel)]="trainRatio" />
             </mat-slider>
             <span class="ratio-display">{{ trainRatio() }}% / {{ 100 - trainRatio() }}%</span>
           </div>
-          <span class="ratio-detail">{{ trainCount() }} train / {{ valCount() }} val</span>
+          <span class="ratio-detail">{{ trainCount() }} treino / {{ valCount() }} validação</span>
         </div>
 
         <div class="option-group">
-          <label>Imagens sem anotacao</label>
+          <label>Imagens sem anotação</label>
           <mat-radio-group [(ngModel)]="includeUnannotated">
-            <mat-radio-button value="exclude"> Excluir do dataset </mat-radio-button>
-            <mat-radio-button value="empty-labels"> Incluir com .txt vazio </mat-radio-button>
-            <mat-radio-button value="no-labels"> Incluir sem .txt </mat-radio-button>
+            <mat-radio-button value="exclude"> Excluir do conjunto de dados </mat-radio-button>
+            <mat-radio-button value="empty-labels"> Incluir com arquivo .txt vazio </mat-radio-button>
+            <mat-radio-button value="no-labels"> Incluir sem arquivo .txt </mat-radio-button>
           </mat-radio-group>
         </div>
       </div>
@@ -235,7 +239,7 @@ export interface YoloExportDialogData {
         [disabled]="effectiveImageCount() === 0 || trainCount() === 0 || valCount() === 0"
       >
         <mat-icon>download</mat-icon>
-        Exportar Dataset
+        Exportar conjunto de dados
       </button>
     </mat-dialog-actions>
   `,

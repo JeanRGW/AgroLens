@@ -96,7 +96,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
 
     expect(find.byTooltip('Mais opções'), findsNothing);
-    expect(find.byTooltip('Logout'), findsOneWidget);
+    expect(find.byTooltip('Sair'), findsOneWidget);
   });
 
   testWidgets('about screen shows AgroLens web details', (tester) async {

@@ -82,8 +82,8 @@ class _CropTypeCatalogScreenState extends State<CropTypeCatalogScreen> {
         SnackBar(
           content: Text(
             created.isPendingSync
-                ? 'Cultura salva localmente e aguarda sincronização'
-                : 'Cultura criada com sucesso',
+                ? 'Cultura salva localmente e será sincronizada quando houver conexão.'
+                : 'Cultura criada com sucesso.',
           ),
         ),
       );
@@ -228,8 +228,8 @@ class _CropTypeCatalogScreenState extends State<CropTypeCatalogScreen> {
                     Expanded(
                       child: Text(
                         _searchController.text.isNotEmpty
-                            ? '${filtered.length} resultado(s) de ${_cropTypes.length} cultura(s).'
-                            : '${filtered.length} cultura(s) cadastrada(s).',
+                            ? '${filtered.length} ${filtered.length == 1 ? 'resultado' : 'resultados'} de ${_cropTypes.length} ${_cropTypes.length == 1 ? 'cultura' : 'culturas'}.'
+                            : '${filtered.length} ${filtered.length == 1 ? 'cultura cadastrada' : 'culturas cadastradas'}.',
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
@@ -439,8 +439,8 @@ class _CropTypeDetailScreenState extends State<CropTypeDetailScreen> {
         SnackBar(
           content: Text(
             created.isPendingSync
-                ? 'Estádio salvo localmente e aguarda sincronização'
-                : 'Estádio criado com sucesso',
+                ? 'Estádio salvo localmente e será sincronizado quando houver conexão.'
+                : 'Estádio criado com sucesso.',
           ),
         ),
       );

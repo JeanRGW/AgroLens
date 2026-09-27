@@ -353,7 +353,7 @@ export class UploadsListPageComponent implements OnInit {
 
   copyUploadId(uploadId: string): void {
     this.clipboard.copy(uploadId);
-    this.snackBar.open('Upload ID copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do upload copiado.', 'Fechar', { duration: 4000 });
   }
 
   openDetails(record: UploadRecord): void {
@@ -366,7 +366,7 @@ export class UploadsListPageComponent implements OnInit {
 
   copyUserId(userId: string): void {
     this.clipboard.copy(userId);
-    this.snackBar.open('ID do usuario copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do usuário copiado.', 'Fechar', { duration: 4000 });
   }
 
   // ── Bulk export actions ──────────────────────────────────────────
@@ -402,16 +402,19 @@ export class UploadsListPageComponent implements OnInit {
         },
       );
 
+      const downloadedLabel =
+        result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
+      const skippedLabel = result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas';
       const message =
         result.skipped > 0
-          ? `Download concluido: ${result.downloaded} imagens baixadas, ${result.skipped} ignoradas.`
-          : `Download concluido: ${result.downloaded} imagens baixadas.`;
+          ? `Download concluído: ${result.downloaded} ${downloadedLabel}, ${result.skipped} ${skippedLabel}.`
+          : `Download concluído: ${result.downloaded} ${downloadedLabel}.`;
 
       this.snackBar.open(message, 'Fechar', { duration: 4000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       this.snackBar.open(
-        `Nao foi possivel montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
+        `Não foi possível montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
         'Fechar',
         { duration: 6000 },
       );
@@ -464,13 +467,13 @@ export class UploadsListPageComponent implements OnInit {
 
       const message =
         result.skipped > 0
-          ? `Dataset exportado: ${result.downloaded} imagens (treino: ${result.trainCount}, validacao: ${result.valCount}), ${result.skipped} ignoradas.`
-          : `Dataset exportado: ${result.downloaded} imagens (treino: ${result.trainCount}, validacao: ${result.valCount}).`;
+          ? `Conjunto de dados exportado: ${result.downloaded} ${result.downloaded === 1 ? 'imagem' : 'imagens'} (treino: ${result.trainCount}, validação: ${result.valCount}), ${result.skipped} ${result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas'}.`
+          : `Conjunto de dados exportado: ${result.downloaded} ${result.downloaded === 1 ? 'imagem' : 'imagens'} (treino: ${result.trainCount}, validação: ${result.valCount}).`;
 
       this.snackBar.open(message, 'Fechar', { duration: 4000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
-      this.snackBar.open(`Erro ao exportar dataset${detail ? `: ${detail}` : ''}.`, 'Fechar', {
+      this.snackBar.open(`Erro ao exportar conjunto de dados${detail ? `: ${detail}` : ''}.`, 'Fechar', {
         duration: 6000,
       });
     } finally {

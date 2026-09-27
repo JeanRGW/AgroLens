@@ -532,7 +532,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     final scaffold = CustomScaffold(
       appBar: CustomAppBar(
         leading: CustomAppBarAction.backButton(context),
-        title: 'Novo Upload',
+         title: 'Novo upload',
       ),
       body: _loadingCatalogs
           ? const Center(child: CircularProgressIndicator())
@@ -553,7 +553,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     const SizedBox(height: 12),
                     _buildManualIdField(
                       controller: _talhaoIdController,
-                      label: 'Talhão ID',
+                       label: 'ID do talhão',
                       hintText: 'Informe o UUID do talhão',
                     ),
                     const SizedBox(height: 12),
@@ -864,7 +864,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                       ),
                     ),
                   CustomButton(
-                    label: 'Confirmar e Preparar Lote',
+                    label: 'Confirmar e preparar lote',
                     icon: Icons.cloud_upload,
                     onPressed: _loadingImages ? null : _save,
                     isLoading: _saving,

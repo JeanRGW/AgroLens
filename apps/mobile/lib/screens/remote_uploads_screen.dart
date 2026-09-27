@@ -1048,7 +1048,7 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                                   onPressed: _downloadingFile
                                       ? null
                                       : () => _openDownloadUrl(original),
-                                  tooltip: 'Abrir / baixar',
+                                   tooltip: 'Abrir ou baixar',
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(
                                     minWidth: 36,

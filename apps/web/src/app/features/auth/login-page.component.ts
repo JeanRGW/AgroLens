@@ -82,7 +82,7 @@ export class LoginPageComponent {
     if (isAccountDisabledError(error)) {
       return 'Conta suspensa. Fale com um administrador.';
     }
-    return 'Falha no login. Verifique email e senha.';
+    return 'Falha no login. Verifique o email e a senha.';
   }
 
   private getSafeRedirect(raw: string | null): string {

@@ -101,7 +101,7 @@ export class UploadCreateService {
       this.emitProgress(
         onProgress,
         'finalizing',
-        'Processando previews...',
+        'Processando prévias...',
         files.length,
         files.length,
         0,
@@ -181,7 +181,7 @@ export class UploadCreateService {
     this.emitProgress(
       onProgress,
       'finalizing',
-      'Processando previews...',
+      'Processando prévias...',
       files.length,
       files.length,
       0,

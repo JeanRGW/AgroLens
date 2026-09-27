@@ -1,5 +1,5 @@
 <section class="dashboard">
-  <app-page-header eyebrow="Visão Geral" title="Panorama de Uploads">
+  <app-page-header eyebrow="Visão geral" title="Panorama de uploads">
     <button mat-flat-button color="primary" (click)="refresh()" [disabled]="loading()">
       <mat-icon>refresh</mat-icon>
       Atualizar
@@ -15,7 +15,7 @@
           <div class="kpi-icon-wrap">
             <mat-icon>cloud_upload</mat-icon>
           </div>
-          <p class="kpi-label">Total de Uploads</p>
+          <p class="kpi-label">Total de uploads</p>
           <h3 class="kpi-value">{{ snapshot()!.totalUploads | number }}</h3>
         </mat-card-content>
       </mat-card>
@@ -25,7 +25,7 @@
           <div class="kpi-icon-wrap">
             <mat-icon>today</mat-icon>
           </div>
-          <p class="kpi-label">Uploads Hoje</p>
+          <p class="kpi-label">Uploads de hoje</p>
           <h3 class="kpi-value">{{ snapshot()!.uploadsToday | number }}</h3>
         </mat-card-content>
       </mat-card>
@@ -35,7 +35,7 @@
           <div class="kpi-icon-wrap">
             <mat-icon>flight</mat-icon>
           </div>
-          <p class="kpi-label">Fonte Drone</p>
+          <p class="kpi-label">Fonte: drone</p>
           <h3 class="kpi-value">
             {{ snapshot()!.sourceBreakdown.drone | number }}
           </h3>
@@ -47,7 +47,7 @@
           <div class="kpi-icon-wrap">
             <mat-icon>smartphone</mat-icon>
           </div>
-          <p class="kpi-label">Fonte Telefone</p>
+          <p class="kpi-label">Fonte: celular</p>
           <h3 class="kpi-value">
             {{ snapshot()!.sourceBreakdown.phone | number }}
           </h3>
@@ -74,7 +74,7 @@
                 @if (previewUrl(item)) {
                   <img
                     [src]="previewUrl(item)"
-                    alt="Previa"
+                    alt="Prévia"
                     loading="lazy"
                     (error)="onPreviewError(item)"
                   />

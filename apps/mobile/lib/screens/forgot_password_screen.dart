@@ -25,9 +25,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   String? _emailValidator(String? v) => v == null || v.trim().isEmpty
-      ? 'Por favor, insira seu email'
+      ? 'Por favor, insira seu email.'
       : !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v.trim())
-      ? 'Por favor, insira um email válido'
+      ? 'Por favor, insira um email válido.'
       : null;
 
   Future<void> _submit() async {
@@ -40,7 +40,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Se o email estiver cadastrado, enviamos um link de redefinição.',
+            'Se o email estiver cadastrado, enviaremos um link de redefinição.',
           ),
         ),
       );
@@ -84,7 +84,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Se o email estiver cadastrado, enviamos um link válido por 30 minutos. Verifique também a caixa de spam.\n\nAbra o link no navegador para criar uma nova senha.',
+                  'Se o email estiver cadastrado, enviaremos um link válido por 30 minutos. Verifique também a caixa de spam.\n\nAbra o link no navegador para criar uma nova senha.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey[700]),
                 ),

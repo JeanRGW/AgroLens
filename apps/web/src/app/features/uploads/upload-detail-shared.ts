@@ -14,7 +14,7 @@ export function buildUploadZipName(uploadId: string, timestamp = Date.now()): st
 export function buildDeleteUploadConfirmData(uploadId: string): ConfirmDialogData {
   return {
     title: 'Excluir Upload',
-    message: `Tem certeza que deseja excluir o upload ${uploadId}? Todas as imagens e anotacoes serao removidas permanentemente.`,
+    message: `Tem certeza que deseja excluir o upload ${uploadId}? Todas as imagens e anotações serão removidas permanentemente.`,
     confirmText: 'Excluir',
     cancelText: 'Cancelar',
     confirmColor: 'warn',

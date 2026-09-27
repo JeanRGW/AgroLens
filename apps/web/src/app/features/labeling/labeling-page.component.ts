@@ -692,7 +692,7 @@ export class LabelingPageComponent implements OnInit {
       });
       this.snackBar.open('Rótulos salvos com sucesso.', 'Fechar', { duration: 2400 });
     } catch {
-      this.snackBar.open('Nao foi possivel salvar os rótulos.', 'Fechar', { duration: 3000 });
+      this.snackBar.open('Não foi possível salvar os rótulos.', 'Fechar', { duration: 3000 });
     } finally {
       this.savingAnnotation.set(false);
     }
@@ -728,7 +728,7 @@ export class LabelingPageComponent implements OnInit {
     } catch {
       if (generation !== this.selectionGeneration) return;
       this.annotationLoadError.set(true);
-      this.snackBar.open('Falha ao carregar anotacao da imagem.', 'Fechar', { duration: 3000 });
+      this.snackBar.open('Falha ao carregar a anotação da imagem.', 'Fechar', { duration: 3000 });
     } finally {
       if (generation === this.selectionGeneration) {
         this.loadingAnnotation.set(false);
@@ -811,7 +811,7 @@ export class LabelingPageComponent implements OnInit {
     try {
       const annotations = await this.annotationsService.listUploadAnnotations(upload.id);
       if (annotations.length === 0) {
-        this.snackBar.open('Nao existem rótulos salvos para este upload.', 'Fechar', {
+        this.snackBar.open('Não existem rótulos salvos para este upload.', 'Fechar', {
           duration: 2800,
         });
         return;
@@ -876,13 +876,13 @@ export class LabelingPageComponent implements OnInit {
 
       const message =
         result.skipped > 0
-          ? `Dataset exportado: ${result.downloaded} imagens (treino: ${result.trainCount}, validacao: ${result.valCount}), ${result.skipped} ignoradas.`
-          : `Dataset exportado: ${result.downloaded} imagens (treino: ${result.trainCount}, validacao: ${result.valCount}).`;
+          ? `Conjunto de dados exportado: ${result.downloaded} ${result.downloaded === 1 ? 'imagem' : 'imagens'} (treino: ${result.trainCount}, validação: ${result.valCount}), ${result.skipped} ${result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas'}.`
+          : `Conjunto de dados exportado: ${result.downloaded} ${result.downloaded === 1 ? 'imagem' : 'imagens'} (treino: ${result.trainCount}, validação: ${result.valCount}).`;
 
       this.snackBar.open(message, 'Fechar', { duration: 3000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
-      this.snackBar.open(`Erro ao exportar dataset${detail ? `: ${detail}` : ''}.`, 'Fechar', {
+      this.snackBar.open(`Erro ao exportar conjunto de dados${detail ? `: ${detail}` : ''}.`, 'Fechar', {
         duration: 3000,
       });
     } finally {

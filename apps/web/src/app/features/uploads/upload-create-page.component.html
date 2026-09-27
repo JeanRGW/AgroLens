@@ -2,8 +2,8 @@
   <!-- Page header -->
   <app-page-header
     eyebrow="Upload"
-    [title]="editing() ? 'Corrigir lote local' : 'Novo Upload'"
-    subtitle="Salve imagens, metadados e localização para sincronizar quando houver conexão"
+    [title]="editing() ? 'Corrigir lote local' : 'Novo upload'"
+    subtitle="Salve imagens, metadados e localização para sincronizar quando houver conexão."
   />
 
   <!-- Loading catalogs -->
@@ -173,7 +173,10 @@
                 <mat-icon>add_photo_alternate</mat-icon>
                 Selecionar imagens
               </button>
-              <span class="file-count"> {{ files().length }} imagem(ns) selecionada(s) </span>
+              <span class="file-count">
+                {{ files().length }}
+                {{ files().length === 1 ? 'imagem selecionada' : 'imagens selecionadas' }}
+              </span>
             </div>
 
             @if (previewUrls().length > 0) {

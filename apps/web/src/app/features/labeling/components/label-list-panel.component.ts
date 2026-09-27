@@ -42,7 +42,7 @@ import { YoloLabel } from '@agrolens/contracts';
                 mat-icon-button
                 class="remove-btn"
                 (click)="removeLabel.emit($index); $event.stopPropagation()"
-                aria-label="Remover rotulo"
+                aria-label="Remover rótulo"
               >
                 <mat-icon>delete_outline</mat-icon>
               </button>

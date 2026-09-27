@@ -21,7 +21,9 @@ export interface OfflineUploadDetailDialogData {
     <mat-dialog-content>
       <div class="status-row">
         <span class="status" [class]="upload.status">{{ statusLabel(upload.status) }}</span>
-        <span>{{ upload.files.length }} imagem(ns)</span>
+        <span>
+          {{ upload.files.length }} {{ upload.files.length === 1 ? 'imagem' : 'imagens' }}
+        </span>
       </div>
 
       @if (upload.errorMessage) {

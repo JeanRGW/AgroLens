@@ -38,11 +38,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   String? _emailValidator(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Por favor, insira seu email';
+      return 'Por favor, insira seu email.';
     }
     return RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value.trim())
         ? null
-        : 'Por favor, insira um email válido';
+        : 'Por favor, insira um email válido.';
   }
 
   Future<void> _register() async {
@@ -58,7 +58,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Registro bem-sucedido!')));
+        ).showSnackBar(const SnackBar(content: Text('Cadastro realizado com sucesso!')));
       }
     } catch (error) {
       if (mounted) {
@@ -121,7 +121,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         child: Column(
                           children: [
                             CustomTextField(
-                              label: 'Nome Completo',
+                              label: 'Nome completo',
                               hint: 'Digite seu nome completo',
                               controller: _name,
                               prefixIcon: const Icon(Icons.person_outlined),
@@ -139,7 +139,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               validator: _emailValidator,
                             ),
                             CustomTextField(
-                              label: 'Número de Telefone',
+                              label: 'Número de telefone',
                               hint: 'Insira seu número de telefone',
                               controller: _phone,
                               keyboardType: TextInputType.phone,
@@ -166,7 +166,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   : null,
                             ),
                             CustomTextField(
-                              label: 'Confirmar Senha',
+                              label: 'Confirmar senha',
                               hint: 'Confirme sua senha',
                               controller: _confirm,
                               obscureText: true,
@@ -180,7 +180,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 16),
                       CustomButton(
-                        label: 'Criar Conta',
+                        label: 'Criar conta',
                         onPressed: _register,
                         isLoading: _loading,
                         icon: Icons.person_add,

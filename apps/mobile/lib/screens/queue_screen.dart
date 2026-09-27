@@ -91,7 +91,7 @@ class _QueueScreenState extends State<QueueScreen> {
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Sem conexão. Uploads serão enviados quando conectar.',
+                 'Sem conexão. Os uploads serão enviados quando a conexão for restabelecida.',
               ),
             ),
           ],
@@ -181,7 +181,7 @@ class _QueueScreenState extends State<QueueScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Fila local limpa: $deletedCount lote(s) concluído(s)',
+              'Fila local limpa: $deletedCount ${deletedCount == 1 ? 'lote concluído' : 'lotes concluídos'}.',
             ),
           ),
         );
@@ -632,6 +632,13 @@ class _QueueScreenState extends State<QueueScreen> {
 
           final completedCount = _count(uploads, PendingUploadStatus.completed);
           final failedCount = _count(uploads, PendingUploadStatus.failed);
+          final retryLimitCount = uploads
+              .where(
+                (u) =>
+                    u.status == PendingUploadStatus.failed &&
+                    u.syncAttemptCount >= DatabaseHelper.maxAutomaticSyncAttempts,
+              )
+              .length;
           final uploadingCount =
               _count(uploads, PendingUploadStatus.uploading) +
               _count(uploads, PendingUploadStatus.pendingMetadataSync);
@@ -644,12 +651,7 @@ class _QueueScreenState extends State<QueueScreen> {
                 completedCount: completedCount,
                 failedCount: failedCount,
               ),
-              if (uploads.any(
-                (u) =>
-                    u.status == PendingUploadStatus.failed &&
-                    u.syncAttemptCount >=
-                        DatabaseHelper.maxAutomaticSyncAttempts,
-              ))
+              if (retryLimitCount > 0)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
@@ -658,7 +660,7 @@ class _QueueScreenState extends State<QueueScreen> {
                   ),
                   color: Colors.red.shade50,
                   child: Text(
-                    '${uploads.where((u) => u.status == PendingUploadStatus.failed && u.syncAttemptCount >= DatabaseHelper.maxAutomaticSyncAttempts).length} lote(s) atingiram o limite de tentativas. Toque no botão de tentar novamente.',
+                    '$retryLimitCount ${retryLimitCount == 1 ? 'lote atingiu' : 'lotes atingiram'} o limite de tentativas. Toque em “Tentar novamente”.',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.red.shade800,
@@ -675,7 +677,7 @@ class _QueueScreenState extends State<QueueScreen> {
                   ),
                   color: Colors.green.shade50,
                   child: Text(
-                    '$completedCount lote(s) concluído(s) — use a limpeza local para remover da fila',
+                    '$completedCount ${completedCount == 1 ? 'lote concluído' : 'lotes concluídos'} — use a limpeza local para removê-los da fila.',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.green.shade800,
@@ -858,7 +860,7 @@ class _QueueScreenState extends State<QueueScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '${paths.length} imagem(ns)',
+                  '${paths.length} ${paths.length == 1 ? 'imagem' : 'imagens'}',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey[700],

@@ -2,7 +2,7 @@
   <app-page-header
     eyebrow="Rotulagem"
     title="Anotação YOLO"
-    subtitle="Desenhe bounding boxes nas imagens para treinar modelos de detecção."
+    subtitle="Desenhe caixas delimitadoras nas imagens para treinar modelos de detecção."
   />
 
   <section class="labeling-page">
@@ -22,7 +22,7 @@
         </mat-form-field>
 
         <mat-form-field appearance="outline">
-          <mat-label>Talhao</mat-label>
+          <mat-label>Talhão</mat-label>
           <mat-select
             [value]="filterTalhaoId()"
             (selectionChange)="filterTalhaoId.set($event.value); onFilterChange()"
@@ -48,7 +48,7 @@
         </mat-form-field>
 
         <mat-form-field appearance="outline">
-          <mat-label>Estadio</mat-label>
+          <mat-label>Estádio</mat-label>
           <mat-select
             [value]="filterEstadioId()"
             (selectionChange)="filterEstadioId.set($event.value); onFilterChange()"
@@ -157,7 +157,7 @@
             mat-flat-button
             (click)="exportSelectedUploadYolo()"
             [disabled]="exportingYolo() || !selectedUpload()"
-            matTooltip="Exportar dataset YOLO para este upload"
+            matTooltip="Exportar conjunto de dados YOLO para este upload"
           >
             <mat-icon>science</mat-icon>
             Exportar YOLO
@@ -209,7 +209,7 @@
         @if (loadingAnnotation()) {
           <div class="state-wrap">
             <mat-spinner diameter="30"></mat-spinner>
-            <span>Carregando anotacao...</span>
+            <span>Carregando anotação...</span>
           </div>
         } @else {
           <app-image-canvas
@@ -271,7 +271,7 @@
           class="nav-btn"
           (click)="goToNextImage()"
           [disabled]="selectedUploadImages().length === 0"
-          aria-label="Proxima imagem"
+          aria-label="Próxima imagem"
         >
           <mat-icon>chevron_right</mat-icon>
         </button>
