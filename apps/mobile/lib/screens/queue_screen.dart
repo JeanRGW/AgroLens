@@ -91,7 +91,7 @@ class _QueueScreenState extends State<QueueScreen> {
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                 'Sem conexão. Os uploads serão enviados quando a conexão for restabelecida.',
+                'Sem conexão. Os uploads serão enviados quando a conexão for restabelecida.',
               ),
             ),
           ],
@@ -347,7 +347,7 @@ class _QueueScreenState extends State<QueueScreen> {
                 _infoRow(
                   sheetContext,
                   Icons.location_on,
-                  'GPS: ${upload.latitude.toStringAsFixed(5)}, ${upload.longitude.toStringAsFixed(5)}',
+                  'Localização: ${upload.images.where((image) => image.latitude != null).length}/${upload.images.length} imagens',
                 ),
                 const SizedBox(height: 8),
                 _infoRow(
@@ -636,7 +636,8 @@ class _QueueScreenState extends State<QueueScreen> {
               .where(
                 (u) =>
                     u.status == PendingUploadStatus.failed &&
-                    u.syncAttemptCount >= DatabaseHelper.maxAutomaticSyncAttempts,
+                    u.syncAttemptCount >=
+                        DatabaseHelper.maxAutomaticSyncAttempts,
               )
               .length;
           final uploadingCount =

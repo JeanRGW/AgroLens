@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import '../models/pending_upload.dart';
@@ -160,21 +161,19 @@ class DatabaseHelper {
     if (dir == null || !await dir.exists()) return 0;
 
     final db = await database;
-    final rows = await db.query(_tablePendingUploads, columns: ['image_paths']);
+    final rows = await db.query(_tablePendingUploads, columns: ['images_json']);
     final activePaths = <String>{};
     for (final row in rows) {
-      final raw = row['image_paths'] as String?;
+      final raw = row['images_json'] as String?;
       if (raw != null) {
-        activePaths.addAll(
-          PendingUpload.fromSqliteRow({
-            'id': '',
-            'image_paths': raw,
-            'latitude': 0.0,
-            'longitude': 0.0,
-            'created_at': 0,
-            'status': 'pending',
-          }).paths,
-        );
+        try {
+          final images = (jsonDecode(raw) as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+          activePaths.addAll(images.map((image) => image['path'] as String));
+        } catch (_) {
+          // A corrupt queue row must not cause cleanup to delete another batch's images.
+          return 0;
+        }
       }
     }
 

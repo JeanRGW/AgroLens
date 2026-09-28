@@ -229,8 +229,7 @@ export class UploadDetailDialogComponent implements OnInit {
         },
       );
 
-      const downloadedLabel =
-        result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
+      const downloadedLabel = result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
       const skippedLabel = result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas';
       const message =
         result.skipped > 0
@@ -286,18 +285,24 @@ export class UploadDetailDialogComponent implements OnInit {
   }
 
   hasValidCoordinates(): boolean {
-    return hasValidCoordinates(this.upload());
+    return hasValidCoordinates(this.selectedOriginal());
+  }
+
+  selectedOriginal() {
+    const upload = this.upload();
+    return upload ? findOriginalFileForIndex(upload.files, this.selectedImageIndex()) : undefined;
   }
 
   openInMap(): void {
     const u = this.upload();
     if (!u || !this.hasValidCoordinates()) {
-      this.snackBar.open('Este upload não possui coordenadas válidas.', 'Fechar', {
+      this.snackBar.open('Esta imagem não possui coordenadas.', 'Fechar', {
         duration: 6000,
       });
       return;
     }
-    openMapCoordinates(u.latitude, u.longitude);
+    const image = this.selectedOriginal()!;
+    openMapCoordinates(image.latitude!, image.longitude!);
   }
 
   goToLabeling(): void {
@@ -328,8 +333,6 @@ export class UploadDetailDialogComponent implements OnInit {
       source: u.source,
       status: u.status,
       activityDate: u.activityDate,
-      latitude: u.latitude,
-      longitude: u.longitude,
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
       fileCount: originals.length,

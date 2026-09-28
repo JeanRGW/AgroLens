@@ -21,16 +21,15 @@ function makeDetail(): UploadDetail {
     status: 'ready',
     estadioId: null,
     activityDate: '2026-01-01T00:00:00Z',
-    latitude: -15,
-    longitude: -47,
     errorMessage: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     files: [
       {
         id: 'f0',
-        uploadId: 'upload-1',
-        imageIndex: 0,
+        imageId: 'image-0',
+        latitude: -15,
+        longitude: -47,
         variant: 'original',
         objectKey: 'k0',
         contentType: 'image/jpeg',
@@ -42,8 +41,9 @@ function makeDetail(): UploadDetail {
       },
       {
         id: 'fp0',
-        uploadId: 'upload-1',
-        imageIndex: 0,
+        imageId: 'image-0',
+        latitude: -15,
+        longitude: -47,
         variant: 'preview',
         objectKey: 'kp0',
         contentType: 'image/webp',
@@ -55,8 +55,9 @@ function makeDetail(): UploadDetail {
       },
       {
         id: 'f1',
-        uploadId: 'upload-1',
-        imageIndex: 1,
+        imageId: 'image-1',
+        latitude: null,
+        longitude: null,
         variant: 'original',
         objectKey: 'k1',
         contentType: 'image/jpeg',
@@ -110,7 +111,7 @@ describe('UploadDetailDialogComponent', () => {
     uploadsSpy.getPreviewUrl.and.resolveTo({
       uploadId: 'upload-1',
       fileId: 'fp0',
-      imageIndex: 0,
+      imageId: 'image-0',
       fileName: '0.webp',
       contentType: 'image/webp',
       sizeBytes: 512,
@@ -160,13 +161,13 @@ describe('UploadDetailDialogComponent', () => {
     });
   }));
 
-  it('should match previews to originals by image index', waitForAsync(() => {
+  it('should match previews to originals by image ID', waitForAsync(() => {
     const detail = makeDetail();
-    detail.files[2].imageIndex = 2;
+    detail.files[2].imageId = 'image-2';
     detail.files.push({
       ...detail.files[1],
       id: 'fp2',
-      imageIndex: 2,
+      imageId: 'image-2',
       objectKey: 'kp2',
     });
     setup(batchResponse(), detail);

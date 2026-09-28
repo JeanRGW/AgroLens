@@ -73,8 +73,7 @@ function makeUpload(overrides: Record<string, unknown> = {}) {
 function makeAnnotation(overrides: Partial<ImageAnnotation> = {}): ImageAnnotation {
   return {
     id: 'annot-uuid-1',
-    uploadId: 'upload-uuid-1',
-    imageIndex: 0,
+    imageId: 'image-uuid-1',
     imageWidth: 1920,
     imageHeight: 1080,
     classes: ['weed', 'crop'],
@@ -99,6 +98,7 @@ describe('AnnotationsService', () => {
   const mockUploadsRepository = {
     findById: jest.fn(),
     findByIdAnyStatus: jest.fn(),
+    findFilesByUploadId: jest.fn(),
   };
 
   const mockAccessRepository = {
@@ -115,6 +115,9 @@ describe('AnnotationsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockUploadsRepository.findFilesByUploadId.mockResolvedValue([
+      { imageId: 'image-uuid-1', variant: 'original' },
+    ]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -210,17 +213,17 @@ describe('AnnotationsService', () => {
       mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(makeUpload({ userId: owner.sub }));
       mockAnnotationsRepository.findOne.mockResolvedValue(makeAnnotation());
 
-      const result = await service.getAnnotation('upload-uuid-1', 0, owner);
+      const result = await service.getAnnotation('upload-uuid-1', 'image-uuid-1', owner);
 
-      expect(result.imageIndex).toBe(0);
-      expect(mockAnnotationsRepository.findOne).toHaveBeenCalledWith('upload-uuid-1', 0);
+      expect(result.imageId).toBe('image-uuid-1');
+      expect(mockAnnotationsRepository.findOne).toHaveBeenCalledWith('image-uuid-1');
     });
 
     it('should throw NotFoundException when annotation does not exist', async () => {
       mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(makeUpload({ userId: owner.sub }));
       mockAnnotationsRepository.findOne.mockResolvedValue(undefined);
 
-      await expect(service.getAnnotation('upload-uuid-1', 0, owner)).rejects.toThrow(
+      await expect(service.getAnnotation('upload-uuid-1', 'image-uuid-1', owner)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -228,9 +231,18 @@ describe('AnnotationsService', () => {
     it('should throw NotFoundException when upload does not exist', async () => {
       mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(undefined);
 
-      await expect(service.getAnnotation('nonexistent', 0, owner)).rejects.toThrow(
+      await expect(service.getAnnotation('nonexistent', 'image-uuid-1', owner)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('does not read an image from another upload', async () => {
+      mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(makeUpload());
+      mockUploadsRepository.findFilesByUploadId.mockResolvedValue([]);
+      await expect(service.getAnnotation('upload-uuid-1', 'other-image', owner)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockAnnotationsRepository.findOne).not.toHaveBeenCalled();
     });
   });
 
@@ -250,13 +262,17 @@ describe('AnnotationsService', () => {
         makeAnnotation({ labels: validDto.labels as unknown as Record<string, unknown> }),
       );
 
-      const result = await service.upsertAnnotation('upload-uuid-1', 0, validDto, owner);
+      const result = await service.upsertAnnotation(
+        'upload-uuid-1',
+        'image-uuid-1',
+        validDto,
+        owner,
+      );
 
-      expect(result.imageIndex).toBe(0);
+      expect(result.imageId).toBe('image-uuid-1');
       expect(mockAnnotationsRepository.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          uploadId: 'upload-uuid-1',
-          imageIndex: 0,
+          imageId: 'image-uuid-1',
           imageWidth: 1920,
           imageHeight: 1080,
           classes: ['weed', 'crop'],
@@ -271,7 +287,12 @@ describe('AnnotationsService', () => {
       );
       mockAnnotationsRepository.upsert.mockResolvedValue(makeAnnotation());
 
-      const result = await service.upsertAnnotation('upload-uuid-1', 0, validDto, admin);
+      const result = await service.upsertAnnotation(
+        'upload-uuid-1',
+        'image-uuid-1',
+        validDto,
+        admin,
+      );
 
       expect(result).toBeDefined();
     });
@@ -290,7 +311,12 @@ describe('AnnotationsService', () => {
         }),
       );
 
-      const result = await service.upsertAnnotation('upload-uuid-1', 0, validDto, owner);
+      const result = await service.upsertAnnotation(
+        'upload-uuid-1',
+        'image-uuid-1',
+        validDto,
+        owner,
+      );
 
       expect(result.classes).toEqual(['weed', 'crop']);
       expect(mockAnnotationsRepository.upsert).toHaveBeenCalled();
@@ -303,16 +329,26 @@ describe('AnnotationsService', () => {
       mockAccessRepository.hasAnyActiveGrantForUpload.mockResolvedValue(true);
 
       await expect(
-        service.upsertAnnotation('upload-uuid-1', 0, validDto, otherUser),
+        service.upsertAnnotation('upload-uuid-1', 'image-uuid-1', validDto, otherUser),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('should throw NotFoundException when upload does not exist', async () => {
       mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(undefined);
 
-      await expect(service.upsertAnnotation('nonexistent', 0, validDto, owner)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.upsertAnnotation('nonexistent', 'image-uuid-1', validDto, owner),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('does not write an annotation to an image from another upload', async () => {
+      mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(makeUpload());
+      mockUploadsRepository.findFilesByUploadId.mockResolvedValue([]);
+
+      await expect(
+        service.upsertAnnotation('upload-uuid-1', 'other-image', validDto, owner),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockAnnotationsRepository.upsert).not.toHaveBeenCalled();
     });
   });
 });

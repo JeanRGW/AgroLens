@@ -1,5 +1,6 @@
 /// A presigned URL returned by `/uploads/init` for uploading a file.
 class PresignedUploadUrl {
+  final String imageId;
   final String fileId;
   final String? objectKey;
   final String? url;
@@ -8,6 +9,7 @@ class PresignedUploadUrl {
   final Map<String, String> headers;
 
   const PresignedUploadUrl({
+    required this.imageId,
     required this.fileId,
     this.objectKey,
     this.url,
@@ -18,6 +20,7 @@ class PresignedUploadUrl {
 
   factory PresignedUploadUrl.fromJson(Map<String, dynamic> json) {
     return PresignedUploadUrl(
+      imageId: json['imageId'] as String,
       fileId: (json['fileId'] ?? json['id']) as String,
       objectKey: _asNullableString(json['objectKey'] ?? json['key']),
       url: _asNullableString(json['uploadUrl'] ?? json['url']),
@@ -98,7 +101,9 @@ class UploadCompleteResponse {
 /// File metadata within an upload detail.
 class UploadFileInfo {
   final String id;
-  final int imageIndex;
+  final String imageId;
+  final double? latitude;
+  final double? longitude;
   final String variant;
   final String? objectKey;
   final String contentType;
@@ -106,7 +111,9 @@ class UploadFileInfo {
 
   const UploadFileInfo({
     required this.id,
-    required this.imageIndex,
+    required this.imageId,
+    this.latitude,
+    this.longitude,
     required this.variant,
     this.objectKey,
     required this.contentType,
@@ -116,7 +123,9 @@ class UploadFileInfo {
   factory UploadFileInfo.fromJson(Map<String, dynamic> json) {
     return UploadFileInfo(
       id: json['id'] as String,
-      imageIndex: (json['imageIndex'] as num).toInt(),
+      imageId: json['imageId'] as String,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
       variant: json['variant'] as String,
       objectKey: json['objectKey'] as String?,
       contentType: json['contentType'] as String,
@@ -136,13 +145,10 @@ class UploadDetail {
   final String cropTypeId;
   final String? estadioId;
   final String source;
-  final double latitude;
-  final double longitude;
   final DateTime activityDate;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? previewFileId;
-  final int? previewImageIndex;
   final int previewCount;
   final List<UploadFileInfo> files;
 
@@ -156,13 +162,10 @@ class UploadDetail {
     required this.cropTypeId,
     this.estadioId,
     required this.source,
-    required this.latitude,
-    required this.longitude,
     required this.activityDate,
     required this.createdAt,
     required this.updatedAt,
     this.previewFileId,
-    this.previewImageIndex,
     this.previewCount = 0,
     required this.files,
   });
@@ -187,13 +190,10 @@ class UploadDetail {
       cropTypeId: json['cropTypeId'] as String,
       estadioId: json['estadioId'] as String?,
       source: json['source'] as String,
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
       activityDate: DateTime.parse(json['activityDate'] as String),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       previewFileId: json['previewFileId'] as String?,
-      previewImageIndex: (json['previewImageIndex'] as num?)?.toInt(),
       previewCount:
           (json['previewCount'] as num?)?.toInt() ??
           (json['previewFileId'] == null ? 0 : 1),

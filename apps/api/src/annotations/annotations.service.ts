@@ -34,11 +34,11 @@ export class AnnotationsService {
   }
 
   /**
-   * Get a single annotation for an upload + imageIndex.
+   * Get a single annotation for an upload image.
    */
   async getAnnotation(
     uploadId: string,
-    imageIndex: number,
+    imageId: string,
     currentUser: AuthenticatedUser,
   ): Promise<ImageAnnotation> {
     await assertCanAccessUpload(
@@ -47,19 +47,20 @@ export class AnnotationsService {
       uploadId,
       currentUser,
     );
-    const annotation = await this.annotationsRepository.findOne(uploadId, imageIndex);
+    await this.assertImageInUpload(uploadId, imageId);
+    const annotation = await this.annotationsRepository.findOne(imageId);
     if (!annotation) {
-      throw new NotFoundException('Annotation not found for this image index');
+      throw new NotFoundException('Annotation not found for this image');
     }
     return annotation;
   }
 
   /**
-   * Upsert (last-write-wins) annotation for an upload + imageIndex.
+   * Upsert (last-write-wins) annotation for an upload image.
    */
   async upsertAnnotation(
     uploadId: string,
-    imageIndex: number,
+    imageId: string,
     dto: UpsertAnnotationDto,
     currentUser: AuthenticatedUser,
   ): Promise<ImageAnnotation> {
@@ -77,14 +78,21 @@ export class AnnotationsService {
       throw new ForbiddenException('Only the upload owner or an admin can modify annotations');
     }
 
+    await this.assertImageInUpload(uploadId, imageId);
     return this.annotationsRepository.upsert({
-      uploadId,
-      imageIndex,
+      imageId,
       imageWidth: dto.imageWidth,
       imageHeight: dto.imageHeight,
       classes: dto.classes,
       labels: dto.labels,
       updatedByUserId: currentUser.sub,
     });
+  }
+
+  private async assertImageInUpload(uploadId: string, imageId: string): Promise<void> {
+    const files = await this.uploadsRepository.findFilesByUploadId(uploadId);
+    if (!files.some((file) => file.imageId === imageId && file.variant === 'original')) {
+      throw new NotFoundException('Image not found in this upload');
+    }
   }
 }

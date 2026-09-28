@@ -169,7 +169,7 @@
             mat-flat-button
             color="accent"
             [routerLink]="['/inference']"
-            [queryParams]="{ uploadId: selectedUploadId(), imageIndex: selectedImageIndex() }"
+            [queryParams]="{ uploadId: selectedUploadId(), imageId: selectedImage()?.imageId }"
             [disabled]="!selectedUploadId()"
             matTooltip="Executa inferência nesta imagem"
           >
@@ -246,7 +246,7 @@
               type="button"
               class="thumb-btn"
               [class.selected]="item.index === selectedImageIndex()"
-              [class.annotated]="annotatedIndexes().has(item.index)"
+              [class.annotated]="annotatedIndexes().has(item.imageId)"
               (click)="selectImage(item.index)"
             >
               @if (item.thumbUrl) {
@@ -258,7 +258,7 @@
                 />
               }
               <span class="thumb-index">#{{ item.index }}</span>
-              @if (annotatedIndexes().has(item.index)) {
+              @if (annotatedIndexes().has(item.imageId)) {
                 <span class="status-dot" title="Anotada"></span>
               }
             </button>

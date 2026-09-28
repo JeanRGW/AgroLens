@@ -504,7 +504,7 @@ describe('InferenceModelService and InferenceJobService', () => {
         {
           id: 'f1',
           variant: 'original',
-          imageIndex: 0,
+          imageId: '00000000-0000-4000-8000-000000000000',
           objectKey: 'uploads/u1/0/original.jpg',
           observedEtag: 'etag-0',
           sizeBytes: 100,
@@ -512,12 +512,17 @@ describe('InferenceModelService and InferenceJobService', () => {
         {
           id: 'f2',
           variant: 'original',
-          imageIndex: 1,
+          imageId: '00000000-0000-4000-8000-000000000001',
           objectKey: 'uploads/u1/1/original.jpg',
           observedEtag: 'etag-1',
           sizeBytes: 100,
         },
-        { id: 'f3', variant: 'preview', imageIndex: 0, objectKey: 'preview.jpg' },
+        {
+          id: 'f3',
+          variant: 'preview',
+          imageId: '00000000-0000-4000-8000-000000000000',
+          objectKey: 'preview.jpg',
+        },
       ]);
       mockInferenceRepo.createJobWithImages.mockResolvedValue(makeJob());
 
@@ -532,14 +537,14 @@ describe('InferenceModelService and InferenceJobService', () => {
       expect(mockUploadsRepo.findByIdAnyStatus).toHaveBeenCalledWith('upload-uuid-1');
     });
 
-    it('should filter by imageIndexes when provided', async () => {
+    it('should filter by imageIds when provided', async () => {
       mockInferenceRepo.findModelById.mockResolvedValue(makeModel());
       mockUploadsRepo.findByIdAnyStatus.mockResolvedValue(makeUpload());
       mockUploadsRepo.findFilesByUploadId.mockResolvedValue([
         {
           id: 'f1',
           variant: 'original',
-          imageIndex: 0,
+          imageId: '00000000-0000-4000-8000-000000000000',
           objectKey: 'uploads/u1/0/original.jpg',
           observedEtag: 'etag-0',
           sizeBytes: 100,
@@ -547,7 +552,7 @@ describe('InferenceModelService and InferenceJobService', () => {
         {
           id: 'f2',
           variant: 'original',
-          imageIndex: 1,
+          imageId: '00000000-0000-4000-8000-000000000001',
           objectKey: 'uploads/u1/1/original.jpg',
           observedEtag: 'etag-1',
           sizeBytes: 100,
@@ -556,21 +561,25 @@ describe('InferenceModelService and InferenceJobService', () => {
       mockInferenceRepo.createJobWithImages.mockResolvedValue(makeJob({ imageCount: 1 }));
 
       const result = await jobService.createJob(
-        { modelId: 'model-uuid-1', uploadId: 'upload-uuid-1', imageIndexes: [0] },
+        {
+          modelId: 'model-uuid-1',
+          uploadId: 'upload-uuid-1',
+          imageIds: ['00000000-0000-4000-8000-000000000000'],
+        },
         makeCurrentUser(),
       );
 
       expect(result.imageCount).toBe(1);
     });
 
-    it('should preserve original imageIndex and fallback filename for non-zero selected index', async () => {
+    it('should keep upload image identity when selecting a subset', async () => {
       mockInferenceRepo.findModelById.mockResolvedValue(makeModel());
       mockUploadsRepo.findByIdAnyStatus.mockResolvedValue(makeUpload());
       mockUploadsRepo.findFilesByUploadId.mockResolvedValue([
         {
           id: 'f0',
           variant: 'original',
-          imageIndex: 0,
+          imageId: '00000000-0000-4000-8000-000000000000',
           objectKey: 'uploads/u1/0/original.jpg',
           observedEtag: 'etag-0',
           sizeBytes: 100,
@@ -578,7 +587,7 @@ describe('InferenceModelService and InferenceJobService', () => {
         {
           id: 'f1',
           variant: 'original',
-          imageIndex: 1,
+          imageId: '00000000-0000-4000-8000-000000000001',
           objectKey: 'uploads/u1/1/original.jpg',
           observedEtag: 'etag-1',
           sizeBytes: 100,
@@ -586,7 +595,7 @@ describe('InferenceModelService and InferenceJobService', () => {
         {
           id: 'f2',
           variant: 'original',
-          imageIndex: 2,
+          imageId: '00000000-0000-4000-8000-000000000002',
           objectKey: 'uploads/u1/2/original.jpg',
           observedEtag: 'etag-2',
           sizeBytes: 100,
@@ -596,14 +605,24 @@ describe('InferenceModelService and InferenceJobService', () => {
       mockInferenceRepo.createJobWithImages.mockResolvedValue(makeJob({ imageCount: 1 }));
 
       const result = await jobService.createJob(
-        { modelId: 'model-uuid-1', uploadId: 'upload-uuid-1', imageIndexes: [1] },
+        {
+          modelId: 'model-uuid-1',
+          uploadId: 'upload-uuid-1',
+          imageIds: ['00000000-0000-4000-8000-000000000001'],
+        },
         makeCurrentUser(),
       );
 
       expect(result.imageCount).toBe(1);
       expect(mockInferenceRepo.createUploadJobWithFence).toHaveBeenCalledWith(
         expect.anything(),
-        [expect.objectContaining({ imageIndex: 1, fileName: 'original.jpg' })],
+        [
+          expect.objectContaining({
+            imageIndex: 0,
+            uploadImageId: '00000000-0000-4000-8000-000000000001',
+            fileName: 'original.jpg',
+          }),
+        ],
         expect.anything(),
         expect.objectContaining({ actorUserId: 'user-uuid-1' }),
       );

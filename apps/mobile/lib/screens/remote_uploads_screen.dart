@@ -710,7 +710,7 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Não foi possível abrir a URL de ${file.variant} #${file.imageIndex}',
+                  'Não foi possível abrir a URL de ${file.variant} (${file.imageId})',
                 ),
               ),
             );
@@ -739,14 +739,13 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
     return originals.map((original) {
       UploadFileInfo? preview;
       for (final file in files) {
-        if (file.variant == 'preview' &&
-            file.imageIndex == original.imageIndex) {
+        if (file.variant == 'preview' && file.imageId == original.imageId) {
           preview = file;
           break;
         }
       }
       return (original, preview);
-    }).toList();
+    }).toList()..sort((a, b) => a.$1.imageId.compareTo(b.$1.imageId));
   }
 
   @override
@@ -851,8 +850,6 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                           'Data da atividade',
                           dateFormat.format(u.activityDate),
                         ),
-                        _metaRow('Latitude', u.latitude.toStringAsFixed(6)),
-                        _metaRow('Longitude', u.longitude.toStringAsFixed(6)),
                       ],
                     ),
                   ),
@@ -928,7 +925,9 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const Divider(),
-                        ..._logicalFiles(u.files).map((entry) {
+                        ..._logicalFiles(u.files).indexed.map((indexedEntry) {
+                          final index = indexedEntry.$1;
+                          final entry = indexedEntry.$2;
                           final original = entry.$1;
                           final preview = entry.$2;
                           return Padding(
@@ -947,7 +946,7 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                                           ? null
                                           : () => _showImageViewer(
                                               url,
-                                              'Imagem #${original.imageIndex}',
+                                              'Imagem #${index + 1}',
                                             ),
                                       child: Container(
                                         width: 72,
@@ -1007,10 +1006,15 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Imagem #${original.imageIndex}',
+                                        'Imagem #${index + 1}',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w500,
                                         ),
+                                      ),
+                                      Text(
+                                        original.latitude == null
+                                            ? 'Sem localização'
+                                            : '${original.latitude!.toStringAsFixed(6)}, ${original.longitude!.toStringAsFixed(6)}',
                                       ),
                                       Text(
                                         'Tipo: ${original.contentType}',
@@ -1048,7 +1052,7 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                                   onPressed: _downloadingFile
                                       ? null
                                       : () => _openDownloadUrl(original),
-                                   tooltip: 'Abrir ou baixar',
+                                  tooltip: 'Abrir ou baixar',
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(
                                     minWidth: 36,

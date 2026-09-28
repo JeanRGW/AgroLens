@@ -214,7 +214,7 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
     latitude: number;
     longitude: number;
   }>();
-  @Output() locationCleared = new EventEmitter<void>();
+  @Output() locatingChange = new EventEmitter<boolean>();
 
   private map: L.Map | null = null;
   private marker: L.CircleMarker | null = null;
@@ -259,6 +259,10 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
   ngOnDestroy(): void {
     this.destroyed = true;
     this.locationRequest++;
+    if (this.locating()) {
+      this.locating.set(false);
+      this.locatingChange.emit(false);
+    }
     if (this.locationTimer) clearTimeout(this.locationTimer);
     window.removeEventListener('online', this.updateOnline);
     window.removeEventListener('offline', this.updateOnline);
@@ -309,7 +313,6 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
       });
     } else {
       this.locationError.set('Informe latitude entre -90 e 90 e longitude entre -180 e 180.');
-      this.locationCleared.emit();
     }
   }
 
@@ -390,9 +393,11 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
       if (this.locationTimer) clearTimeout(this.locationTimer);
       this.locationError.set(message);
       this.locating.set(false);
+      this.locatingChange.emit(false);
     };
     this.locationError.set('');
     this.locating.set(true);
+    this.locatingChange.emit(true);
     this.locationTimer = setTimeout(
       () => fail('O GPS demorou demais. Vá para uma área aberta e tente novamente.'),
       25000,
@@ -406,13 +411,14 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
           return;
         }
         if (this.locationTimer) clearTimeout(this.locationTimer);
-        this.locating.set(false);
         this.accuracy.set(position.coords.accuracy);
         this.manualLat = Math.round(latitude * 1e6) / 1e6;
         this.manualLng = Math.round(longitude * 1e6) / 1e6;
         this.locationSelected.emit({ latitude, longitude });
         this.setMarker(latitude, longitude);
         this.map?.setView([latitude, longitude], 14);
+        this.locating.set(false);
+        this.locatingChange.emit(false);
       },
       (error) => {
         fail(

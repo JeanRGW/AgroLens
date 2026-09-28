@@ -21,8 +21,6 @@ function makeUpload(overrides: Partial<Upload> = {}): Upload {
     source: 'phone',
     status: 'finalizing',
     activityDate: new Date('2025-06-15'),
-    latitude: -22.9,
-    longitude: -43.1,
     errorMessage: null,
     createdAt: new Date('2025-06-15'),
     updatedAt: new Date('2025-06-15'),
@@ -35,7 +33,9 @@ function makeUploadFile(overrides: Partial<UploadFile> = {}): UploadFile {
   return {
     id: 'file-uuid-1',
     uploadId: 'upload-uuid-1',
-    imageIndex: 0,
+    imageId: overrides.imageId ?? 'image-uuid-0',
+    latitude: -22.9,
+    longitude: -43.1,
     variant: 'original',
     objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
     contentType: 'image/jpeg',
@@ -320,10 +320,10 @@ describe('FinalizationService', () => {
 
     it('should process multiple originals for a single upload', async () => {
       const upload = makeUpload();
-      const file1 = makeUploadFile({ id: 'file-1', imageIndex: 0 });
+      const file1 = makeUploadFile({ id: 'file-1', imageId: 'image-uuid-0' });
       const file2 = makeUploadFile({
         id: 'file-2',
-        imageIndex: 1,
+        imageId: 'image-uuid-1',
         objectKey: 'uploads/user-uuid-1/upload-uuid-1/1/original.png',
       });
       mockJobsRepository.claimFinalizationJob.mockResolvedValue({
@@ -365,8 +365,8 @@ describe('FinalizationService', () => {
 
     it('should abort and skip completion when touchFinalizationJob indicates lease was lost', async () => {
       const upload = makeUpload();
-      const file1 = makeUploadFile({ id: 'file-1', imageIndex: 0 });
-      const file2 = makeUploadFile({ id: 'file-2', imageIndex: 1 });
+      const file1 = makeUploadFile({ id: 'file-1', imageId: 'image-uuid-0' });
+      const file2 = makeUploadFile({ id: 'file-2', imageId: 'image-uuid-1' });
       mockJobsRepository.claimFinalizationJob.mockResolvedValue({
         id: 'job-1',
         uploadId: upload.id,

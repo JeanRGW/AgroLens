@@ -163,6 +163,7 @@ void main() {
         'status': 'draft',
         'presignedUrls': [
           {
+            'imageId': 'image-1',
             'fileId': 'file-1',
             'objectKey': 'uploads/u1/a/original.jpeg',
             'url': 'https://storage.example.com/presigned-put-1',
@@ -180,10 +181,13 @@ void main() {
           'cropTypeId': 'crop-uuid',
           'source': 'phone',
           'activityDate': '2026-06-30T12:00:00Z',
-          'latitude': -22.9,
-          'longitude': -43.1,
           'files': [
-            {'imageIndex': 0, 'contentType': 'image/jpeg'},
+            {
+              'imageId': 'image-1',
+              'contentType': 'image/jpeg',
+              'latitude': -22.9,
+              'longitude': -43.1,
+            },
           ],
         },
       );
@@ -231,7 +235,9 @@ void main() {
         'files': [
           {
             'id': 'file-1',
-            'imageIndex': 0,
+            'imageId': 'image-1',
+            'latitude': -22.9,
+            'longitude': -43.1,
             'variant': 'original',
             'objectKey': 'uploads/u1/0/original.jpeg',
             'contentType': 'image/jpeg',

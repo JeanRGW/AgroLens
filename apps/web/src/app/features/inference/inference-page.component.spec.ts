@@ -40,8 +40,6 @@ describe('InferencePageComponent', () => {
           source: 'drone',
           status: 'ready',
           activityDate: '2026-01-01',
-          latitude: 0,
-          longitude: 0,
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T00:00:00Z',
           fileCount: 2,
@@ -64,7 +62,7 @@ describe('InferencePageComponent', () => {
           provide: ActivatedRoute,
           useValue: {
             snapshot: {
-              queryParamMap: convertToParamMap({ uploadId: 'upload-1', imageIndex: '3' }),
+              queryParamMap: convertToParamMap({ uploadId: 'upload-1', imageId: 'image-3' }),
             },
           },
         },
@@ -158,10 +156,12 @@ describe('InferencePageComponent', () => {
 
     await component.submitInference();
 
-    expect(inferenceService.createUploadJob).toHaveBeenCalledWith('model-1', 'upload-1', [3]);
+    expect(inferenceService.createUploadJob).toHaveBeenCalledWith('model-1', 'upload-1', [
+      'image-3',
+    ]);
   });
 
-  it('should not reuse the query image index after changing uploads', async () => {
+  it('should not reuse the query image ID after changing uploads', async () => {
     inferenceService.createUploadJob.and.resolveTo({ id: 'job-1', status: 'queued' });
     component.selectedModelId.set('model-1');
     component.selectedUploadId.set('upload-2');

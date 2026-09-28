@@ -4,6 +4,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:agrolens/models/pending_upload.dart';
 import 'package:agrolens/services/api_client.dart';
 import 'package:agrolens/services/database_helper.dart';
+import 'package:agrolens/services/app_database.dart';
 import 'package:agrolens/services/token_storage.dart';
 import '../helpers/test_doubles.dart';
 
@@ -85,4 +86,56 @@ void main() {
     expect(await activeFile.exists(), isTrue);
     expect(await orphanFile.exists(), isFalse);
   });
+
+  test(
+    'upgrades queued images without losing legacy coordinates or paths',
+    () async {
+      final path = '${tempDir.path}/legacy.db';
+      final legacy = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, _) async {
+            await db.execute('''CREATE TABLE pending_uploads (
+        id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, image_paths TEXT NOT NULL,
+        latitude REAL NOT NULL, longitude REAL NOT NULL, created_at INTEGER NOT NULL,
+        activity_date INTEGER NOT NULL, status TEXT NOT NULL
+      )''');
+          },
+        ),
+      );
+      await legacy.insert('pending_uploads', {
+        'id': 'old-upload',
+        'owner_id': 'user-1',
+        'image_paths': '["/photos/first.jpg","/photos/second.jpg"]',
+        'latitude': -22.9,
+        'longitude': -43.1,
+        'created_at': 1,
+        'activity_date': 2,
+        'status': 'pending',
+      });
+      await legacy.close();
+
+      final upgraded = AppDatabase(factory: databaseFactoryFfi, path: path);
+      try {
+        final rows = await (await upgraded.database).query('pending_uploads');
+        expect(rows.single.containsKey('latitude'), isFalse);
+        expect(rows.single.containsKey('image_paths'), isFalse);
+        final upload = PendingUpload.fromSqliteRow(rows.single);
+        expect(upload.paths, ['/photos/first.jpg', '/photos/second.jpg']);
+        expect(upload.images.map((image) => image.latitude), [-22.9, -22.9]);
+        expect(upload.images.map((image) => image.longitude), [-43.1, -43.1]);
+        expect(upload.images.map((image) => image.imageId).toSet().length, 2);
+        final reloaded = PendingUpload.fromSqliteRow(
+          (await (await upgraded.database).query('pending_uploads')).single,
+        );
+        expect(
+          reloaded.images.map((image) => image.imageId),
+          upload.images.map((image) => image.imageId),
+        );
+      } finally {
+        await upgraded.close();
+      }
+    },
+  );
 }

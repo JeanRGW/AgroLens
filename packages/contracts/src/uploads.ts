@@ -18,27 +18,40 @@ export const FILE_VARIANTS = ["original", "preview"] as const;
 export const fileVariantSchema = z.enum(FILE_VARIANTS);
 export type FileVariant = z.infer<typeof fileVariantSchema>;
 
-export const fileDescriptorSchema = z.object({
-  imageIndex: z.coerce.number().int().min(0).optional(),
-  fileName: z.string().max(255).optional(),
-  contentType: z.string().min(1),
-  sizeBytes: z.coerce.number().int().positive().optional(),
-});
+export const fileDescriptorSchema = z
+  .object({
+    imageId: z.string().uuid(),
+    contentType: z.string().min(1),
+    sizeBytes: z.coerce.number().int().positive().optional(),
+    latitude: z.number().finite().min(-90).max(90).nullable(),
+    longitude: z.number().finite().min(-180).max(180).nullable(),
+  })
+  .refine((file) => (file.latitude === null) === (file.longitude === null), {
+    message: "Latitude and longitude must both be present or both be null",
+  });
 
 export type FileDescriptorDto = z.infer<typeof fileDescriptorSchema>;
 
-export const uploadInitSchema = z.object({
-  clientUploadId: z.string().min(1).max(255),
-  propertyId: z.string().uuid(),
-  talhaoId: z.string().uuid(),
-  cropTypeId: z.string().uuid(),
-  estadioId: z.string().uuid().optional(),
-  source: uploadSourceSchema,
-  activityDate: timestampDateSchema,
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  files: z.array(fileDescriptorSchema).min(1),
-});
+export const uploadInitSchema = z
+  .object({
+    clientUploadId: z.string().min(1).max(255),
+    propertyId: z.string().uuid(),
+    talhaoId: z.string().uuid(),
+    cropTypeId: z.string().uuid(),
+    estadioId: z.string().uuid().optional(),
+    source: uploadSourceSchema,
+    activityDate: timestampDateSchema,
+    files: z.array(fileDescriptorSchema).min(1),
+  })
+  .refine(
+    (upload) =>
+      new Set(upload.files.map((file) => file.imageId)).size ===
+      upload.files.length,
+    {
+      message: "Image IDs must be unique within an upload",
+      path: ["files"],
+    },
+  );
 
 export type UploadInitDto = z.infer<typeof uploadInitSchema>;
 
@@ -84,7 +97,7 @@ export const exportDownloadUrlsSchema = z.object({
 export type ExportDownloadUrlsDto = z.infer<typeof exportDownloadUrlsSchema>;
 
 export interface FileUploadInstruction {
-  imageIndex: number;
+  imageId: string;
   fileId: string;
   uploadUrl: string;
   objectKey: string;
@@ -110,8 +123,6 @@ export interface UploadMutationResponse {
   source: string;
   status: string;
   activityDate: Date | string;
-  latitude: number;
-  longitude: number;
   errorMessage: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -123,8 +134,6 @@ export interface UploadListItem {
   status: UploadStatus | string;
   source: UploadSource | string;
   activityDate: Date | string;
-  latitude: number;
-  longitude: number;
   createdAt: Date | string;
   updatedAt: Date | string;
   fileCount: number;
@@ -140,13 +149,13 @@ export interface UploadListItem {
   estadioId?: string | null;
   estadioName?: string | null;
   previewFileId?: string | null;
-  previewImageIndex?: number | null;
 }
 
 export interface UploadFileInfo {
   id: string;
-  uploadId: string;
-  imageIndex: number;
+  imageId: string;
+  latitude: number | null;
+  longitude: number | null;
   variant: FileVariant | string;
   objectKey: string;
   contentType: string;
@@ -185,7 +194,7 @@ export interface UploadDashboardSnapshot {
 export interface DownloadUrlItem {
   uploadId: string;
   fileId: string;
-  imageIndex: number;
+  imageId: string;
   fileName: string;
   contentType: string;
   sizeBytes: number | null;

@@ -131,11 +131,11 @@ export class FinalizationService {
     const files = await this.uploadsRepository.findFilesByUploadId(upload.id);
     const originals = files.filter((file) => file.variant === 'original');
     const previews = files.filter((file) => file.variant === 'preview');
-    const expectedPreviews = new Map(originals.map((file) => [file.imageIndex, file]));
+    const expectedPreviews = new Map(originals.map((file) => [file.imageId, file]));
     if (
       originals.length === 0 ||
       previews.length !== originals.length ||
-      previews.some((file) => !expectedPreviews.has(file.imageIndex))
+      previews.some((file) => !expectedPreviews.has(file.imageId))
     ) {
       throw new Error(
         `Ready upload ${upload.id} has incomplete file metadata; preserving ready status`,
@@ -251,7 +251,7 @@ export class FinalizationService {
     // Client PUT URLs target staging only. Persist the exact bytes we validated
     // under a server-owned key before exposing the upload as ready.
     const originalObjectKey = original.objectKey.replace(/^staging\//, '');
-    const previewObjectKey = `uploads/${upload.userId}/${upload.id}/${original.imageIndex}/preview.jpg`;
+    const previewObjectKey = `uploads/${upload.userId}/${upload.id}/${original.imageId}/preview.jpg`;
     return this.db.transaction(async (tx) => {
       // Lock upload before job, as completion, reaping and deletion do. Keep
       // these locks through the bounded PUTs: fencing metadata alone cannot
@@ -294,8 +294,7 @@ export class FinalizationService {
         });
       }
       const previewFile = {
-        uploadId: upload.id,
-        imageIndex: original.imageIndex,
+        imageId: original.imageId,
         variant: 'preview',
         objectKey: previewObjectKey,
         contentType: preview.contentType,
@@ -307,7 +306,7 @@ export class FinalizationService {
         .insert(uploadFiles)
         .values(previewFile)
         .onConflictDoUpdate({
-          target: [uploadFiles.uploadId, uploadFiles.imageIndex, uploadFiles.variant],
+          target: [uploadFiles.imageId, uploadFiles.variant],
           set: previewFile,
         });
       await tx.execute(

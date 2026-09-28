@@ -109,8 +109,6 @@ describe('Worker recovery (PostgreSQL)', () => {
         source: 'phone',
         status: 'finalizing',
         activityDate: new Date(),
-        latitude: 0,
-        longitude: 0,
       })
       .returning();
     const [job] = await db
@@ -480,12 +478,15 @@ describe('Worker recovery (PostgreSQL)', () => {
     })
       .png()
       .toBuffer();
-    const finalKey = `uploads/${userId}/${upload.id}/0/original.png`;
+    const [image] = await db
+      .insert(schema.uploadImages)
+      .values({ uploadId: upload.id })
+      .returning();
+    const finalKey = `uploads/${userId}/${upload.id}/${image.id}/original.png`;
     const stagingKey = `staging/${finalKey}`;
     const { etag } = await storage.putObject(stagingKey, buffer, 'image/png');
     await db.insert(schema.uploadFiles).values({
-      uploadId: upload.id,
-      imageIndex: 0,
+      imageId: image.id,
       variant: 'original',
       contentType: 'image/png',
       objectKey: stagingKey,
@@ -505,7 +506,17 @@ describe('Worker recovery (PostgreSQL)', () => {
       images,
       db,
     );
-    return { upload, job, property, buffer, stagingKey, finalKey, images, worker };
+    return {
+      upload,
+      job,
+      property,
+      imageId: image.id,
+      buffer,
+      stagingKey,
+      finalKey,
+      images,
+      worker,
+    };
   }
 
   it.each(['before publication', 'during publication'] as const)(
@@ -553,7 +564,7 @@ describe('Worker recovery (PostgreSQL)', () => {
         expect.arrayContaining([
           fixture.stagingKey,
           fixture.finalKey,
-          `uploads/${userId}/${fixture.upload.id}/0/preview.jpg`,
+          `uploads/${userId}/${fixture.upload.id}/${fixture.imageId}/preview.jpg`,
         ]),
       );
       expect(

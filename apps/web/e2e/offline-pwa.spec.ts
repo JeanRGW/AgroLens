@@ -114,6 +114,7 @@ test('production PWA cold-starts offline, saves all catalogs and GPS, then resum
   await page
     .locator('input[type="file"]')
     .setInputFiles({ name: 'field.png', mimeType: 'image/png', buffer: image });
+  await expect(page.locator('.image-location')).toContainText('-25.40000, -51.40000');
   await page.getByRole('button', { name: 'Salvar na fila' }).click();
   await expect(page).toHaveURL(/\/uploads\/queue$/);
   await page.reload();
@@ -126,8 +127,7 @@ test('production PWA cold-starts offline, saves all catalogs and GPS, then resum
     talhaoId,
     cropTypeId,
     estadioId,
-    latitude: -25.4,
-    longitude: -51.4,
+    files: [{ latitude: -25.4, longitude: -51.4 }],
   });
   expect(saved.files).toHaveLength(1);
 
@@ -167,7 +167,10 @@ test('production PWA cold-starts offline, saves all catalogs and GPS, then resum
     talhaoId,
     cropTypeId,
     estadioId,
-    latitude: -25.4,
-    longitude: -51.4,
   });
+  expect(detail.files).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ variant: 'original', latitude: -25.4, longitude: -51.4 }),
+    ]),
+  );
 });

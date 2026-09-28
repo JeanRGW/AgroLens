@@ -179,15 +179,49 @@
               </span>
             </div>
 
+            @if (missingLocationCount() > 0) {
+              <p class="location-warning" role="status">
+                {{ missingLocationCount() }}
+                {{ missingLocationCount() === 1 ? 'imagem precisa' : 'imagens precisam' }}
+                de localização. Use o GPS ou escolha um ponto no mapa. Para salvar sem localização,
+                será necessária uma confirmação.
+              </p>
+            }
+
             @if (previewUrls().length > 0) {
               <div class="preview-grid">
                 @for (url of previewUrls(); track url; let i = $index) {
                   <div class="preview-item">
                     <img [src]="url" alt="Prévia" />
+                    <span
+                      class="image-location"
+                      [class.missing]="
+                        imageLocations()[i]?.latitude == null ||
+                        imageLocations()[i]?.longitude == null
+                      "
+                    >
+                      {{
+                        imageLocations()[i]?.latitude == null ||
+                        imageLocations()[i]?.longitude == null
+                          ? 'Sem localização'
+                          : imageLocations()[i]!.latitude!.toFixed(5) +
+                            ', ' +
+                            imageLocations()[i]!.longitude!.toFixed(5)
+                      }}
+                    </span>
+                    <button
+                      mat-button
+                      type="button"
+                      [disabled]="gpsPending()"
+                      (click)="selectLocationTarget(i)"
+                    >
+                      Ajustar localização
+                    </button>
                     <button
                       mat-icon-button
                       type="button"
                       class="preview-remove"
+                      [disabled]="gpsPending()"
                       (click)="removeFile(i)"
                     >
                       <mat-icon>close</mat-icon>
@@ -200,20 +234,41 @@
         </mat-card>
       </div>
 
-      <!-- Right column: location -->
+      <!-- Right column: image locations -->
       <div class="upload-create__location">
         <mat-card class="section-card">
           <div class="section-card__header">
             <mat-icon>location_on</mat-icon>
-            <span>Localização</span>
+            <span>Localização das imagens</span>
           </div>
           <div class="section-card__body">
+            <p>
+              Selecione um ponto para todas as imagens importadas ou ajuste uma imagem de cada vez.
+            </p>
+            <button
+              mat-button
+              type="button"
+              [disabled]="gpsPending()"
+              (click)="selectLocationTarget(null)"
+            >
+              Ajustar imagens sem localização
+            </button>
+            @if (locationTarget() !== null) {
+              <p>Ajustando imagem {{ locationTarget()! + 1 }}</p>
+            }
+            <button mat-button type="button" [disabled]="gpsPending()" (click)="clearLocation()">
+              {{
+                locationTarget() === null
+                  ? 'Limpar localização de todas as imagens'
+                  : 'Limpar localização desta imagem'
+              }}
+            </button>
             <app-location-picker
               height="420px"
               [latitude]="latitude()"
               [longitude]="longitude()"
+              (locatingChange)="gpsPending.set($event)"
               (locationSelected)="onLocationSelected($event)"
-              (locationCleared)="latitude.set(null); longitude.set(null)"
             />
           </div>
         </mat-card>

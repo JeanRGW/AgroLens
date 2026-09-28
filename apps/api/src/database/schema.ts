@@ -182,8 +182,6 @@ export const uploads = pgTable(
     source: text('source').notNull(),
     status: text('status').notNull().default('draft'),
     activityDate: timestamp('activity_date', { withTimezone: true }).notNull(),
-    latitude: doublePrecision('latitude').notNull(),
-    longitude: doublePrecision('longitude').notNull(),
     errorMessage: text('error_message'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -224,14 +222,32 @@ export const uploads = pgTable(
   ],
 );
 
-export const uploadFiles = pgTable(
-  'upload_files',
+export const uploadImages = pgTable(
+  'upload_images',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     uploadId: uuid('upload_id')
       .notNull()
       .references(() => uploads.id, { onDelete: 'cascade' }),
-    imageIndex: integer('image_index').notNull(),
+    latitude: doublePrecision('latitude'),
+    longitude: doublePrecision('longitude'),
+  },
+  (table) => [
+    index('upload_images_upload_id_idx').on(table.uploadId, table.id),
+    check(
+      'upload_images_coordinates_check',
+      sql`(${table.latitude} IS NULL AND ${table.longitude} IS NULL) OR (${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} BETWEEN -90 AND 90 AND ${table.longitude} BETWEEN -180 AND 180)`,
+    ),
+  ],
+);
+
+export const uploadFiles = pgTable(
+  'upload_files',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    imageId: uuid('image_id')
+      .notNull()
+      .references(() => uploadImages.id, { onDelete: 'cascade' }),
     variant: text('variant').notNull(),
     objectKey: text('object_key').notNull().unique(),
     contentType: text('content_type').notNull(),
@@ -242,11 +258,7 @@ export const uploadFiles = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('upload_files_upload_image_variant_idx').on(
-      table.uploadId,
-      table.imageIndex,
-      table.variant,
-    ),
+    uniqueIndex('upload_files_image_variant_idx').on(table.imageId, table.variant),
     check('upload_files_variant_check', sql`${table.variant} in ('original', 'preview')`),
   ],
 );
@@ -300,10 +312,9 @@ export const imageAnnotations = pgTable(
   'image_annotations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    uploadId: uuid('upload_id')
+    imageId: uuid('image_id')
       .notNull()
-      .references(() => uploads.id, { onDelete: 'cascade' }),
-    imageIndex: integer('image_index').notNull(),
+      .references(() => uploadImages.id, { onDelete: 'cascade' }),
     imageWidth: integer('image_width').notNull(),
     imageHeight: integer('image_height').notNull(),
     classes: text('classes').array().notNull(),
@@ -311,9 +322,7 @@ export const imageAnnotations = pgTable(
     updatedByUserId: uuid('updated_by_user_id').references(() => users.id),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    uniqueIndex('image_annotations_upload_image_idx').on(table.uploadId, table.imageIndex),
-  ],
+  (table) => [uniqueIndex('image_annotations_image_idx').on(table.imageId)],
 );
 
 // ── Audit ────────────────────────────────────────────────────────────
@@ -513,6 +522,9 @@ export const inferenceJobImages = pgTable(
     jobId: uuid('job_id')
       .notNull()
       .references(() => inferenceJobs.id, { onDelete: 'cascade' }),
+    uploadImageId: uuid('upload_image_id').references(() => uploadImages.id, {
+      onDelete: 'set null',
+    }),
     imageIndex: integer('image_index').notNull(),
     fileName: text('file_name').notNull(),
     sourceObjectKey: text('source_object_key').notNull(),

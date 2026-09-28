@@ -21,6 +21,7 @@ import { CropTypeRecord, EstadioRecord, PropertyRecord, TalhaoRecord } from '@ag
 import { UploadDetail, UploadFilters, UploadRecord } from '../../shared/models/upload-record';
 import { ImageAnnotation, SaveAnnotationInput, YoloLabel } from '@agrolens/contracts';
 import { extractAnnotationClasses, extractYoloLabels } from '../../shared/utils/record-utils';
+import { compareImageIds } from '../../shared/utils/upload-utils';
 
 import { PageHeaderComponent } from '../../shared/components/page-header.component';
 import { UploadSidebarComponent } from './components/upload-sidebar.component';
@@ -36,6 +37,7 @@ import {
 
 export interface UploadImageItem {
   index: number;
+  imageId: string;
   imageUrl: string;
   fileId: string;
   thumbUrl?: string;
@@ -181,7 +183,7 @@ export class LabelingPageComponent implements OnInit {
     return ctid ? this.estadios().filter((e) => e.cropTypeId === ctid) : this.estadios();
   });
 
-  readonly annotatedIndexes = signal<Set<number>>(new Set());
+  readonly annotatedIndexes = signal<Set<string>>(new Set());
 
   readonly selectedUpload = computed(() => {
     const id = this.selectedUploadId();
@@ -195,23 +197,24 @@ export class LabelingPageComponent implements OnInit {
     }
     const urlCache = this.imageUrlCache();
     const thumbCache = this.thumbUrlCache();
-    const previewByIndex = new Map<number, string>();
+    const previewByImageId = new Map<string, string>();
     for (const f of detail.files) {
       if (f.variant === 'preview') {
         const url = thumbCache.get(f.id);
         if (url) {
-          previewByIndex.set(f.imageIndex, url);
+          previewByImageId.set(f.imageId, url);
         }
       }
     }
     return detail.files
       .filter((f) => f.variant === 'original')
-      .sort((a, b) => a.imageIndex - b.imageIndex)
-      .map((f) => ({
-        index: f.imageIndex,
+      .sort((a, b) => compareImageIds(a.imageId, b.imageId))
+      .map((f, index) => ({
+        index,
+        imageId: f.imageId,
         imageUrl: urlCache.get(f.id) ?? '',
         fileId: f.id,
-        thumbUrl: previewByIndex.get(f.imageIndex),
+        thumbUrl: previewByImageId.get(f.imageId),
       }));
   });
 
@@ -467,7 +470,7 @@ export class LabelingPageComponent implements OnInit {
     try {
       const annotations = await this.annotationsService.listUploadAnnotations(uploadId);
       if (generation === this.selectionGeneration) {
-        this.annotatedIndexes.set(new Set(annotations.map((a) => a.imageIndex)));
+        this.annotatedIndexes.set(new Set(annotations.map((a) => a.imageId)));
       }
     } catch {
       if (generation === this.selectionGeneration) {
@@ -530,7 +533,8 @@ export class LabelingPageComponent implements OnInit {
 
   refreshThumbnail(index: number): void {
     const file = this.currentUploadDetail()?.files.find(
-      (file) => file.variant === 'preview' && file.imageIndex === index,
+      (file) =>
+        file.variant === 'preview' && file.imageId === this.selectedUploadImages()[index]?.imageId,
     );
     if (file) void this.refreshImageUrl(file.id, true);
   }
@@ -675,8 +679,7 @@ export class LabelingPageComponent implements OnInit {
     this.savingAnnotation.set(true);
     try {
       const input: SaveAnnotationInput = {
-        uploadId: upload.id,
-        imageIndex: image.index,
+        imageId: image.imageId,
         imageWidth: this.imageNaturalWidth,
         imageHeight: this.imageNaturalHeight,
         classes: this.classes(),
@@ -687,7 +690,7 @@ export class LabelingPageComponent implements OnInit {
       this.savedAnnotation.set(snapshot);
       this.annotatedIndexes.update((set) => {
         const next = new Set(set);
-        next.add(image.index);
+        next.add(image.imageId);
         return next;
       });
       this.snackBar.open('Rótulos salvos com sucesso.', 'Fechar', { duration: 2400 });
@@ -710,7 +713,7 @@ export class LabelingPageComponent implements OnInit {
     this.loadingAnnotation.set(true);
     this.annotationLoadError.set(false);
     try {
-      const annotation = await this.annotationsService.getAnnotation(upload.id, image.index);
+      const annotation = await this.annotationsService.getAnnotation(upload.id, image.imageId);
       if (generation !== this.selectionGeneration) return;
       if (!annotation) {
         this.clearStateAndHistory();
@@ -827,9 +830,9 @@ export class LabelingPageComponent implements OnInit {
         allClasses.add(cls);
       }
 
-      const annotationByIndex = new Map(annotations.map((a) => [a.imageIndex, a]));
-      for (let i = 0; i < upload.fileCount; i++) {
-        const ann = annotationByIndex.get(i);
+      const annotationByImageId = new Map(annotations.map((a) => [a.imageId, a]));
+      for (const image of this.selectedUploadImages()) {
+        const ann = annotationByImageId.get(image.imageId);
         const hasLabels = !!ann && extractYoloLabels(ann).length > 0;
         if (hasLabels) {
           annotatedImages++;
@@ -882,9 +885,13 @@ export class LabelingPageComponent implements OnInit {
       this.snackBar.open(message, 'Fechar', { duration: 3000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
-      this.snackBar.open(`Erro ao exportar conjunto de dados${detail ? `: ${detail}` : ''}.`, 'Fechar', {
-        duration: 3000,
-      });
+      this.snackBar.open(
+        `Erro ao exportar conjunto de dados${detail ? `: ${detail}` : ''}.`,
+        'Fechar',
+        {
+          duration: 3000,
+        },
+      );
     } finally {
       this.exportingYolo.set(false);
     }

@@ -77,6 +77,7 @@ const ALL_TABLES = [
   'image_annotations',
   'audit_events',
   'upload_files',
+  'upload_images',
   'uploads',
   'estadios',
   'crop_types',

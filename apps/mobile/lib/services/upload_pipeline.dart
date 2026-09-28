@@ -52,7 +52,7 @@ class UploadPipeline {
     if (token == null) throw const ApiException(401, 'Not authenticated');
 
     final resolvedCatalogIds = await resolveUploadCatalogIds(upload);
-    final fileList = await encodeFileList(upload.paths);
+    final fileList = await encodeFileList(upload.images);
     ensureSession();
 
     final body = {
@@ -66,8 +66,6 @@ class UploadPipeline {
       // Serialize in UTC: backend activity_date is timestamptz and rejects
       // naive local strings now that init requires timezone-qualified ISO.
       'activityDate': upload.activityDate.toUtc().toIso8601String(),
-      'latitude': upload.latitude,
-      'longitude': upload.longitude,
       'files': fileList,
     };
 
@@ -110,6 +108,15 @@ class UploadPipeline {
       );
     }
 
+    final pathsByImageId = <String, String>{
+      for (final image in upload.images) image.imageId: image.path,
+    };
+    if (pathsByImageId.length != localPaths.length ||
+        presignedUrls.map((url) => url.imageId).toSet().length !=
+            localPaths.length) {
+      throw const ApiException(400, 'Duplicate or missing image IDs');
+    }
+
     for (var i = 0; i < presignedUrls.length; i++) {
       ensureSession();
       final presigned = presignedUrls[i];
@@ -118,11 +125,15 @@ class UploadPipeline {
       final presignedUrl = presigned.url;
       if (presignedUrl == null || presignedUrl.trim().isEmpty) continue;
 
-      final file = File(localPaths[i]);
-      if (!await file.exists()) {
-        throw ApiException(404, 'Local file not found: ${localPaths[i]}');
+      final path = pathsByImageId[presigned.imageId];
+      if (path == null) {
+        throw ApiException(400, 'Unknown image ID: ${presigned.imageId}');
       }
-      final ext = localPaths[i].split('.').last.toLowerCase();
+      final file = File(path);
+      if (!await file.exists()) {
+        throw ApiException(404, 'Local file not found: $path');
+      }
+      final ext = path.split('.').last.toLowerCase();
       final contentType = contentTypeForExtension(ext);
       ensureSession();
       final statusCode = await apiClient.uploadFileToPresignedUrl(
@@ -336,18 +347,21 @@ class UploadPipeline {
     await databaseHelper.updateUpload(waiting);
   }
 
-  Future<List<Map<String, dynamic>>> encodeFileList(List<String> paths) async {
+  Future<List<Map<String, dynamic>>> encodeFileList(
+    List<PendingImage> images,
+  ) async {
     final results = <Map<String, dynamic>>[];
-    for (var i = 0; i < paths.length; i++) {
-      final path = paths[i];
+    for (final image in images) {
+      final path = image.path;
       final ext = path.split('.').last.toLowerCase();
       final contentType = contentTypeForExtension(ext);
       final sizeBytes = await File(path).length();
       results.add({
-        'imageIndex': i,
-        'fileName': path.split('/').last,
+        'imageId': image.imageId,
         'contentType': contentType,
         'sizeBytes': sizeBytes,
+        'latitude': image.latitude,
+        'longitude': image.longitude,
       });
     }
     return results;

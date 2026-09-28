@@ -96,19 +96,19 @@ describe('InferenceService', () => {
       expect(api.post).toHaveBeenCalledWith('/inference/jobs', {
         modelId: 'm1',
         uploadId: 'u1',
-        imageIndexes: undefined,
+        imageIds: undefined,
       });
     });
 
-    it('should include imageIndexes when provided', async () => {
+    it('should include imageIds when provided', async () => {
       const mockResponse = { id: 'j1', status: 'queued' };
       api.post.and.returnValue(of(mockResponse));
 
-      await service.createUploadJob('m1', 'u1', [0, 1, 2]);
+      await service.createUploadJob('m1', 'u1', ['image-0', 'image-1', 'image-2']);
       expect(api.post).toHaveBeenCalledWith('/inference/jobs', {
         modelId: 'm1',
         uploadId: 'u1',
-        imageIndexes: [0, 1, 2],
+        imageIds: ['image-0', 'image-1', 'image-2'],
       });
     });
   });

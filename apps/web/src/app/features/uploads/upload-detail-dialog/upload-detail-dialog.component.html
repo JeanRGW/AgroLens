@@ -100,8 +100,12 @@
         }
 
         <div class="info-row gps-row">
-          <span class="info-label">GPS</span>
-          <span class="info-value gps-coords">{{ u.latitude }}, {{ u.longitude }}</span>
+          <span class="info-label">Localização da imagem selecionada</span>
+          <span class="info-value gps-coords">{{
+            selectedOriginal()?.latitude == null
+              ? 'Sem localização'
+              : selectedOriginal()!.latitude + ', ' + selectedOriginal()!.longitude
+          }}</span>
           <button
             mat-stroked-button
             class="map-button"

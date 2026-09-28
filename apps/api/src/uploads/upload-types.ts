@@ -2,7 +2,7 @@ import type { UploadFile } from '../database/repositories';
 // ── Response types ───────────────────────────────────────────────────
 
 export interface FileUploadInstruction {
-  imageIndex: number;
+  imageId: string;
   fileId: string;
   uploadUrl: string;
   objectKey: string;
@@ -28,8 +28,6 @@ export interface UploadMutationResponse {
   source: string;
   status: string;
   activityDate: Date;
-  latitude: number;
-  longitude: number;
   errorMessage: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -41,8 +39,6 @@ export interface UploadListItem {
   status: string;
   source: string;
   activityDate: Date;
-  latitude: number;
-  longitude: number;
   createdAt: Date;
   updatedAt: Date;
   fileCount: number;
@@ -58,7 +54,6 @@ export interface UploadListItem {
   estadioId: string | null;
   estadioName: string | null;
   previewFileId: string | null;
-  previewImageIndex: number | null;
 }
 
 export interface UploadDetailResponse {
@@ -77,8 +72,6 @@ export interface UploadDetailResponse {
   source: string;
   status: string;
   activityDate: Date;
-  latitude: number;
-  longitude: number;
   errorMessage: string | null;
   createdAt: Date;
   updatedAt: Date;

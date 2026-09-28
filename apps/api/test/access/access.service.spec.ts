@@ -64,8 +64,6 @@ function makeUpload(overrides: Partial<Upload> = {}): Upload {
     source: 'phone',
     status: 'ready',
     activityDate: new Date('2025-06-15'),
-    latitude: -22.9,
-    longitude: -43.1,
     errorMessage: null,
     createdAt: new Date('2025-06-15'),
     updatedAt: new Date('2025-06-15'),

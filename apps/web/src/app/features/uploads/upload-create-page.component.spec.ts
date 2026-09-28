@@ -1,7 +1,9 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { of } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import {
   OfflineCatalogCacheService,
@@ -11,6 +13,7 @@ import { OfflineUploadStoreService } from '../../core/services/offline-upload-st
 import { OfflineUploadSyncService } from '../../core/services/offline-upload-sync.service';
 import { UploadCreatePageComponent } from './upload-create-page.component';
 import { OfflineUpload } from '../../shared/models/offline-upload';
+import { LocationPickerComponent } from '../../shared/components/location-picker.component';
 
 const catalogs: OfflineCatalogs = {
   properties: [
@@ -82,8 +85,10 @@ describe('UploadCreatePageComponent offline collection', () => {
     component.selectedCropTypeId = 'c';
     component.onCropTypeChange();
     component.selectedEstadioId = 'e';
+    component.onFilesSelected({
+      target: { files: [new File(['image'], 'photo.png', { type: 'image/png' })], value: '' },
+    } as unknown as Event);
     component.onLocationSelected({ latitude: -25.4, longitude: -51.4 });
-    component.files.set([new File(['image'], 'photo.png', { type: 'image/png' })]);
   });
 
   it('saves blobs, the last identity, GPS and all catalog IDs without a network call', async () => {
@@ -96,14 +101,104 @@ describe('UploadCreatePageComponent offline collection', () => {
         talhaoId: 't',
         cropTypeId: 'c',
         estadioId: 'e',
-        latitude: -25.4,
-        longitude: -51.4,
+        files: [jasmine.objectContaining({ latitude: -25.4, longitude: -51.4 })],
       }),
     );
     expect(await batch.files[0].blob.text()).toBe('image');
     expect(batch.request.clientUploadId).toBeTruthy();
     expect(cache.refresh).not.toHaveBeenCalled();
     expect(sync.sync).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite an individual image point when applying a batch location', () => {
+    component.selectLocationTarget(0);
+    component.onLocationSelected({ latitude: -21, longitude: -42 });
+    component.selectLocationTarget(null);
+    component.onFilesSelected({
+      target: { files: [new File(['second'], 'second.jpg', { type: 'image/jpeg' })], value: '' },
+    } as unknown as Event);
+    expect(component.imageLocations()[1]).toEqual({ latitude: null, longitude: null });
+    expect(component.missingLocationCount()).toBe(1);
+    component.onLocationSelected({ latitude: -20, longitude: -41 });
+    expect(component.imageLocations()).toEqual([
+      { latitude: -21, longitude: -42 },
+      { latitude: -20, longitude: -41 },
+    ]);
+  });
+
+  it('applies a batch point selected before images are added to the new images', async () => {
+    component.removeFile(0);
+    component.onLocationSelected({ latitude: -22, longitude: -43 });
+    component.onFilesSelected({
+      target: { files: [new File(['photo'], 'new.png', { type: 'image/png' })], value: '' },
+    } as unknown as Event);
+
+    expect(component.imageLocations()).toEqual([{ latitude: -22, longitude: -43 }]);
+    expect(component.missingLocationCount()).toBe(0);
+    const confirm = spyOn(component['dialog'], 'open');
+    await component.onSubmit();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(store.save.calls.mostRecent().args[0].request.files[0]).toEqual(
+      jasmine.objectContaining({ latitude: -22, longitude: -43 }),
+    );
+  });
+
+  it('does not give new images a selected per-image point', () => {
+    component.selectLocationTarget(0);
+    component.onLocationSelected({ latitude: -22, longitude: -43 });
+    component.onFilesSelected({
+      target: { files: [new File(['photo'], 'new.png', { type: 'image/png' })], value: '' },
+    } as unknown as Event);
+
+    expect(component.imageLocations()[1]).toEqual({ latitude: null, longitude: null });
+  });
+
+  it('locks the target and image removal until a pending GPS request resolves', () => {
+    component.onFilesSelected({
+      target: { files: [new File(['second'], 'second.png', { type: 'image/png' })], value: '' },
+    } as unknown as Event);
+    component.selectLocationTarget(1);
+    component.clearLocation();
+    component.selectLocationTarget(0);
+    fixture.detectChanges();
+    const geolocation = spyOn(navigator.geolocation, 'getCurrentPosition');
+
+    const picker = fixture.debugElement.query(By.directive(LocationPickerComponent))
+      .componentInstance as LocationPickerComponent;
+    picker.locateUser();
+    fixture.detectChanges();
+    const previews: HTMLElement[] = Array.from(
+      fixture.nativeElement.querySelectorAll('.preview-item'),
+    );
+    expect(previews[1].querySelector('button')!.disabled).toBeTrue();
+    expect(previews[0].querySelector<HTMLButtonElement>('.preview-remove')!.disabled).toBeTrue();
+    component.selectLocationTarget(1);
+    component.removeFile(0);
+    component.clearLocation();
+    expect(component.locationTarget()).toBe(0);
+    expect(component.files().length).toBe(2);
+
+    const onSuccess = geolocation.calls.mostRecent().args[0] as PositionCallback;
+    onSuccess({ coords: { latitude: -20, longitude: -41, accuracy: 5 } } as GeolocationPosition);
+
+    expect(component.imageLocations()).toEqual([
+      { latitude: -20, longitude: -41 },
+      { latitude: null, longitude: null },
+    ]);
+    component.selectLocationTarget(1);
+    expect(component.locationTarget()).toBe(1);
+  });
+
+  it('confirms and persists locationless images as an explicit null pair', async () => {
+    component.clearLocation();
+    const confirm = spyOn(component['dialog'], 'open').and.returnValue({
+      afterClosed: () => of(true),
+    } as never);
+    await component.onSubmit();
+    expect(confirm).toHaveBeenCalled();
+    expect(store.save.calls.mostRecent().args[0].request.files[0]).toEqual(
+      jasmine.objectContaining({ latitude: null, longitude: null }),
+    );
   });
 
   it('shows only the completion card after an online upload becomes ready', async () => {
@@ -202,6 +297,8 @@ describe('UploadCreatePageComponent offline collection', () => {
     expect(normalized.name).toBe(capture.name);
     expect(normalized.lastModified).toBe(capture.lastModified);
     expect(await normalized.text()).toBe('camera bytes');
+    expect(component.missingLocationCount()).toBe(0);
+    component.onLocationSelected({ latitude: -25.4, longitude: -51.4 });
 
     await component.onSubmit();
 
@@ -221,6 +318,10 @@ describe('UploadCreatePageComponent offline collection', () => {
     component.files.set([
       new File(['png bytes'], 'capture.PNG'),
       new File(['webp bytes'], 'capture.webp'),
+    ]);
+    component.imageLocations.set([
+      { latitude: -25.4, longitude: -51.4 },
+      { latitude: -25.4, longitude: -51.4 },
     ]);
 
     await component.onSubmit();
@@ -259,12 +360,12 @@ describe('UploadCreatePageComponent offline collection', () => {
           estadioId: 'e',
           source: 'phone',
           activityDate: '2026-09-01T11:00:00Z',
-          latitude: -25.4,
-          longitude: -51.4,
           files: files.map((file) => ({
-            fileName: file.name,
+            imageId: crypto.randomUUID(),
             contentType: file.type,
             sizeBytes: file.size,
+            latitude: -25.4,
+            longitude: -51.4,
           })),
         },
         files: files.map((file) => ({ blob: file, fileName: file.name, contentType: file.type })),
@@ -286,6 +387,9 @@ describe('UploadCreatePageComponent offline collection', () => {
       component.onFilesSelected({
         target: { files: [replacement], value: '' },
       } as unknown as Event);
+      expect(component.imageLocations()[1]).toEqual({ latitude: null, longitude: null });
+      component.selectLocationTarget(1);
+      component.onLocationSelected({ latitude: -24, longitude: -50 });
 
       await component.onSubmit();
 
@@ -297,9 +401,12 @@ describe('UploadCreatePageComponent offline collection', () => {
       expect(saved.backendUploadId).toBeUndefined();
       expect(saved.status).toBe('pending');
       expect(saved.failureKind).toBeUndefined();
-      expect(saved.request.files.map((file) => file.fileName)).toEqual([
-        'keep.png',
-        'replacement.png',
+      expect(saved.files.map((file) => file.fileName)).toEqual(['keep.png', 'replacement.png']);
+      expect(
+        saved.request.files.map(({ latitude, longitude }) => ({ latitude, longitude })),
+      ).toEqual([
+        { latitude: -25.4, longitude: -51.4 },
+        { latitude: -24, longitude: -50 },
       ]);
       expect(await Promise.all(saved.files.map((file) => file.blob.text()))).toEqual([
         'keep this image',

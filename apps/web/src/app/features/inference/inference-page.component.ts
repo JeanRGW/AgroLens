@@ -106,7 +106,7 @@ export class InferencePageComponent implements OnInit {
   // Polling
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private queryUploadId: string | null = null;
-  private queryImageIndex: number | undefined;
+  private queryImageId: string | undefined;
   private jobsRequest = 0;
 
   readonly jobColumns = ['status', 'sourceType', 'progress', 'createdAt', 'expiresAt', 'actions'];
@@ -130,11 +130,7 @@ export class InferencePageComponent implements OnInit {
 
   async ngOnInit(): Promise<void> {
     this.queryUploadId = this.route.snapshot.queryParamMap.get('uploadId');
-    const imageIndexParam = this.route.snapshot.queryParamMap.get('imageIndex');
-    const imageIndex = imageIndexParam === null ? undefined : Number(imageIndexParam);
-    if (imageIndex !== undefined && Number.isInteger(imageIndex) && imageIndex >= 0) {
-      this.queryImageIndex = imageIndex;
-    }
+    this.queryImageId = this.route.snapshot.queryParamMap.get('imageId') ?? undefined;
 
     await Promise.all([this.loadModels(), this.loadUploads(), this.loadJobs()]);
 
@@ -315,14 +311,14 @@ export class InferencePageComponent implements OnInit {
   }
 
   private async submitUploadJob(): Promise<void> {
-    const imageIndexes =
-      this.selectedUploadId() === this.queryUploadId && this.queryImageIndex !== undefined
-        ? [this.queryImageIndex]
+    const imageIds =
+      this.selectedUploadId() === this.queryUploadId && this.queryImageId !== undefined
+        ? [this.queryImageId]
         : undefined;
     const response = await this.inferenceService.createUploadJob(
       this.selectedModelId(),
       this.selectedUploadId(),
-      imageIndexes,
+      imageIds,
     );
     this.snackBar.open('Execução de inferência criada com sucesso!', 'Fechar', { duration: 4000 });
     await this.router.navigate(['/inference', response.id]);

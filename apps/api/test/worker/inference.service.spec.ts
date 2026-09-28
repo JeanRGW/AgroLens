@@ -35,6 +35,7 @@ function makeImage(overrides: Partial<InferenceJobImage> = {}): InferenceJobImag
   return {
     id: 'image-uuid-1',
     jobId: 'job-uuid-1',
+    uploadImageId: null,
     imageIndex: 0,
     fileName: 'test.jpg',
     sourceObjectKey: 'temp/job-uuid-1/0.jpg',

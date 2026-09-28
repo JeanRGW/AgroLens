@@ -69,8 +69,6 @@ describe('LabelingPageComponent', () => {
       source: 'drone',
       status: 'ready',
       activityDate: '',
-      latitude: 0,
-      longitude: 0,
       createdAt: '',
       updatedAt: '',
       fileCount: 2,
@@ -80,8 +78,8 @@ describe('LabelingPageComponent', () => {
     (component as any).currentUploadDetail.set({
       id: upload.id,
       files: [
-        { id: 'file-0', imageIndex: 0, variant: 'original' },
-        { id: 'file-1', imageIndex: 1, variant: 'original' },
+        { id: 'file-0', imageId: 'image-0', variant: 'original' },
+        { id: 'file-1', imageId: 'image-1', variant: 'original' },
       ],
     });
     (component as any).imageUrlCache.set(

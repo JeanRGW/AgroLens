@@ -402,8 +402,7 @@ export class UploadsListPageComponent implements OnInit {
         },
       );
 
-      const downloadedLabel =
-        result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
+      const downloadedLabel = result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
       const skippedLabel = result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas';
       const message =
         result.skipped > 0
@@ -428,6 +427,12 @@ export class UploadsListPageComponent implements OnInit {
     const selectedRecords = this.getSelectedRecords();
     if (!selectedRecords.length) {
       this.snackBar.open('Selecione ao menos um upload para exportar.', 'Fechar', {
+        duration: 6000,
+      });
+      return;
+    }
+    if (selectedRecords.some((record) => record.status !== 'ready')) {
+      this.snackBar.open('Selecione apenas uploads prontos para exportar.', 'Fechar', {
         duration: 6000,
       });
       return;
@@ -473,9 +478,13 @@ export class UploadsListPageComponent implements OnInit {
       this.snackBar.open(message, 'Fechar', { duration: 4000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
-      this.snackBar.open(`Erro ao exportar conjunto de dados${detail ? `: ${detail}` : ''}.`, 'Fechar', {
-        duration: 6000,
-      });
+      this.snackBar.open(
+        `Erro ao exportar conjunto de dados${detail ? `: ${detail}` : ''}.`,
+        'Fechar',
+        {
+          duration: 6000,
+        },
+      );
     } finally {
       this.preparingYolo.set(false);
       this.exportingYolo.set(false);
@@ -504,23 +513,26 @@ export class UploadsListPageComponent implements OnInit {
       }
       perUploadClasses.set(record.id, new Set(uploadClasses));
 
-      const annotationByIndex = new Map(annotations.map((a) => [a.imageIndex, a]));
-      for (let i = 0; i < record.fileCount; i++) {
-        totalImages++;
-        const ann = annotationByIndex.get(i);
-        const hasLabels = !!ann && extractYoloLabels(ann).length > 0;
+      let labeledImages = 0;
+      const imageAnnotations = annotations.slice(0, record.fileCount);
+      for (const ann of imageAnnotations) {
+        const hasLabels = extractYoloLabels(ann).length > 0;
         if (hasLabels) {
           annotatedImages++;
-        } else {
-          unannotatedImages++;
+          labeledImages++;
         }
         perImageClasses.push({
-          classes: ann ? extractAnnotationClasses([ann]) : [],
+          classes: extractAnnotationClasses([ann]),
           hasAnnotation: hasLabels,
         });
       }
+      for (let i = imageAnnotations.length; i < record.fileCount; i++) {
+        perImageClasses.push({ classes: [], hasAnnotation: false });
+      }
+      totalImages += record.fileCount;
+      unannotatedImages += record.fileCount - labeledImages;
 
-      if (annotations.length === 0) {
+      if (labeledImages === 0) {
         unannotatedUploads.push({
           docId: record.id,
           displayName: record.id,

@@ -257,20 +257,20 @@ export async function createReadyUpload(
         estadioId: catalogs.estadioId,
         source: 'phone',
         activityDate: new Date().toISOString(),
-        latitude: -22.9,
-        longitude: -43.1,
         files: [
           {
-            imageIndex: 0,
+            imageId: crypto.randomUUID(),
             contentType: 'image/png',
-            fileName: 'e2e-test-0.png',
             sizeBytes: imageBuffer.length,
+            latitude: -22.9,
+            longitude: -43.1,
           },
           {
-            imageIndex: 1,
+            imageId: crypto.randomUUID(),
             contentType: 'image/png',
-            fileName: 'e2e-test-1.png',
             sizeBytes: imageBuffer.length,
+            latitude: -22.9,
+            longitude: -43.1,
           },
         ],
       }),
@@ -279,20 +279,12 @@ export async function createReadyUpload(
   );
   const initBody = (await initRes.json()) as {
     uploadId: string;
-    id?: string;
-    files: Array<{ imageIndex: number; uploadUrl: string; url?: string }>;
-    presignedUrls?: Array<{ imageIndex: number; url: string }>;
+    files: Array<{ imageId: string; uploadUrl: string }>;
   };
-
-  // Handle both backend response formats
-  const uploadId = initBody.uploadId ?? initBody.id!;
+  const uploadId = initBody.uploadId;
 
   // 2. Upload image bytes to all presigned URLs
-  const fileEntries = initBody.files ?? [];
-  const presignedUrls =
-    fileEntries.length > 0
-      ? fileEntries.map((f) => f.uploadUrl ?? f.url)
-      : (initBody.presignedUrls ?? []).map((p) => p.url);
+  const presignedUrls = initBody.files.map((file) => file.uploadUrl);
 
   for (let idx = 0; idx < presignedUrls.length; idx++) {
     const url = presignedUrls[idx];
@@ -360,10 +352,29 @@ export async function saveAnnotation(
     }>;
   },
 ): Promise<void> {
+  const detailRes = await throwIfNotOk(
+    await apiFetchAuth(`/uploads/${uploadId}`, token),
+    'Load image IDs',
+  );
+  const detail = (await detailRes.json()) as {
+    files: Array<{ imageId: string; variant: string }>;
+  };
+  const imageId = detail.files
+    .filter((file) => file.variant === 'original')
+    .sort((a, b) => (a.imageId < b.imageId ? -1 : a.imageId > b.imageId ? 1 : 0))[
+    annotation.imageIndex
+  ]?.imageId;
+  if (!imageId) throw new Error(`Image at index ${annotation.imageIndex} not found`);
   await throwIfNotOk(
-    await apiFetchAuth(`/uploads/${uploadId}/annotations/${annotation.imageIndex}`, token, {
+    await apiFetchAuth(`/uploads/${uploadId}/annotations/${imageId}`, token, {
       method: 'PUT',
-      body: JSON.stringify({ uploadId, ...annotation }),
+      body: JSON.stringify({
+        imageId,
+        imageWidth: annotation.imageWidth,
+        imageHeight: annotation.imageHeight,
+        classes: annotation.classes,
+        labels: annotation.labels,
+      }),
     }),
     'Save annotation',
   );

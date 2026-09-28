@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { UploadsController } from '../../src/uploads/uploads.controller';
 import { UploadsService } from '../../src/uploads/uploads.service';
 import { JwtAuthGuard } from '../../src/auth/guards/jwt-auth.guard';
@@ -25,6 +26,7 @@ function makeCurrentUser(overrides: Partial<AuthenticatedUser> = {}): Authentica
 
 describe('UploadsController', () => {
   let controller: UploadsController;
+  let module: TestingModule;
 
   const mockUploadsService = {
     initUpload: jest.fn(),
@@ -46,7 +48,7 @@ describe('UploadsController', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       controllers: [UploadsController],
       providers: [{ provide: UploadsService, useValue: mockUploadsService }],
     })
@@ -58,6 +60,37 @@ describe('UploadsController', () => {
   });
 
   describe('initUpload', () => {
+    it('documents the required image UUID in the generated OpenAPI request', async () => {
+      const app = module.createNestApplication();
+      await app.init();
+      try {
+        const document = SwaggerModule.createDocument(app, new DocumentBuilder().build());
+        expect(document.paths['/uploads/init']?.post?.requestBody).toMatchObject({
+          content: {
+            'application/json': {
+              schema: {
+                properties: {
+                  files: {
+                    items: {
+                      required: expect.arrayContaining([
+                        'imageId',
+                        'contentType',
+                        'latitude',
+                        'longitude',
+                      ]),
+                      properties: { imageId: { type: 'string', format: 'uuid' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+      } finally {
+        await app.close();
+      }
+    });
+
     it('should call service and return result directly', async () => {
       const expected = { uploadId: 'u1', status: 'draft', files: [] };
       mockUploadsService.initUpload.mockResolvedValue(expected);

@@ -24,19 +24,18 @@ void main() {
       'cropTypeId': 'crop-uuid-1',
       'estadioId': null,
       'source': 'phone',
-      'latitude': -22.9,
-      'longitude': -43.1,
       'activityDate': '2026-06-30T12:00:00Z',
       'createdAt': '2026-06-30T10:00:00Z',
       'updatedAt': '2026-06-30T12:05:00Z',
       'fileCount': 3,
       'previewFileId': 'preview-1',
-      'previewImageIndex': 0,
       'previewCount': 3,
       'files': [
         {
           'id': 'file-1',
-          'imageIndex': 0,
+          'imageId': 'image-1',
+          'latitude': -22.9,
+          'longitude': -43.1,
           'variant': 'original',
           'objectKey': 'uploads/u1/0/original.jpeg',
           'contentType': 'image/jpeg',
@@ -57,7 +56,6 @@ void main() {
       expect(result.first.id, 'upload-ready-1');
       expect(result.first.fileCount, 3);
       expect(result.first.previewFileId, 'preview-1');
-      expect(result.first.previewImageIndex, 0);
       expect(result.first.previewCount, 3);
       expect(result.first.status, 'ready');
 
@@ -66,8 +64,6 @@ void main() {
       expect(result.first.propertyId, 'prop-uuid-1');
       expect(result.first.talhaoId, 'talhao-uuid-1');
       expect(result.first.cropTypeId, 'crop-uuid-1');
-      expect(result.first.latitude, -22.9);
-      expect(result.first.longitude, -43.1);
       expect(result.first.createdAt, DateTime.parse('2026-06-30T10:00:00Z'));
     });
 
@@ -177,7 +173,9 @@ void main() {
         'files': [
           {
             'id': 'f1',
-            'imageIndex': 0,
+            'imageId': 'image-1',
+            'latitude': -15.5,
+            'longitude': -47.5,
             'variant': 'original',
             'objectKey': 'uploads/u/d/0/original.jpeg',
             'contentType': 'image/jpeg',
@@ -185,7 +183,9 @@ void main() {
           },
           {
             'id': 'f2',
-            'imageIndex': 0,
+            'imageId': 'image-1',
+            'latitude': -15.5,
+            'longitude': -47.5,
             'variant': 'preview',
             'objectKey': 'uploads/u/d/0/preview.jpg',
             'contentType': 'image/jpeg',

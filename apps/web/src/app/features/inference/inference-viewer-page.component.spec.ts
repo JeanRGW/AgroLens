@@ -27,6 +27,7 @@ function image(id: string, status = 'completed'): InferenceJobImageResult {
   return {
     id,
     imageIndex: id === 'a' ? 0 : 1,
+    uploadImageId: null,
     fileName: `${id}.jpg`,
     width: 640,
     height: 480,
@@ -54,6 +55,7 @@ function job(status = 'completed'): InferenceJobDetail {
     images: ['a', 'b'].map((id, imageIndex) => ({
       id,
       imageIndex,
+      uploadImageId: null,
       fileName: `${id}.jpg`,
       status,
       detectionCount: 0,

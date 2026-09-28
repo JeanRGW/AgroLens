@@ -22,7 +22,6 @@ import { JwtAuthGuard, type AuthenticatedUser } from '../auth/guards/jwt-auth.gu
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../auth/pipes/zod-validation.pipe';
 import { upsertAnnotationSchema, type UpsertAnnotationDto } from './dto/upsert-annotation.dto';
-import { BadRequestException, ParseIntPipe } from '@nestjs/common';
 
 @ApiTags('Annotations')
 @ApiBearerAuth()
@@ -50,42 +49,39 @@ export class AnnotationsController {
     return this.annotationsService.listAnnotations(uploadId, currentUser);
   }
 
-  // ── GET /uploads/:uploadId/annotations/:imageIndex ─────────────────
+  // ── GET /uploads/:uploadId/annotations/:imageId ─────────────────
 
-  @Get(':imageIndex')
+  @Get(':imageId')
   @ApiOperation({
-    summary: 'Get annotation for a specific image index',
+    summary: 'Get annotation for a specific image',
     description:
-      'Returns the annotation for the given image index. The upload must be visible to the current user.',
+      'Returns the annotation for the given image. The upload must be visible to the current user.',
   })
   @ApiParam({ name: 'uploadId', description: 'Upload UUID', format: 'uuid' })
-  @ApiParam({ name: 'imageIndex', description: 'Image index (non-negative integer)', type: Number })
-  @ApiResponse({ status: 200, description: 'Annotation for the image index' })
+  @ApiParam({ name: 'imageId', description: 'Upload image UUID', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Annotation for the image' })
   @ApiResponse({ status: 404, description: 'Upload or annotation not found' })
   async getAnnotation(
     @Param('uploadId', ParseUUIDPipe) uploadId: string,
-    @Param('imageIndex', new ParseIntPipe()) imageIndex: number,
+    @Param('imageId', ParseUUIDPipe) imageId: string,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    if (imageIndex < 0) {
-      throw new BadRequestException('imageIndex must be a non-negative integer');
-    }
-    return this.annotationsService.getAnnotation(uploadId, imageIndex, currentUser);
+    return this.annotationsService.getAnnotation(uploadId, imageId, currentUser);
   }
 
-  // ── PUT /uploads/:uploadId/annotations/:imageIndex ─────────────────
+  // ── PUT /uploads/:uploadId/annotations/:imageId ─────────────────
 
-  @Put(':imageIndex')
+  @Put(':imageId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Upsert annotation for a specific image index (last-write-wins)',
+    summary: 'Upsert annotation for a specific image (last-write-wins)',
     description:
-      'Creates or replaces the annotation for the given image index. ' +
+      'Creates or replaces the annotation for the given image. ' +
       'Only the upload owner or an admin may modify annotations. ' +
       'The payload must include imageWidth, imageHeight, classes (string array), and labels (object or array).',
   })
   @ApiParam({ name: 'uploadId', description: 'Upload UUID', format: 'uuid' })
-  @ApiParam({ name: 'imageIndex', description: 'Image index (non-negative integer)', type: Number })
+  @ApiParam({ name: 'imageId', description: 'Upload image UUID', format: 'uuid' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -116,13 +112,10 @@ export class AnnotationsController {
   @ApiResponse({ status: 404, description: 'Upload not found or not accessible' })
   async upsertAnnotation(
     @Param('uploadId', ParseUUIDPipe) uploadId: string,
-    @Param('imageIndex', new ParseIntPipe()) imageIndex: number,
+    @Param('imageId', ParseUUIDPipe) imageId: string,
     @Body(new ZodValidationPipe(upsertAnnotationSchema)) dto: UpsertAnnotationDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    if (imageIndex < 0) {
-      throw new BadRequestException('imageIndex must be a non-negative integer');
-    }
-    return this.annotationsService.upsertAnnotation(uploadId, imageIndex, dto, currentUser);
+    return this.annotationsService.upsertAnnotation(uploadId, imageId, dto, currentUser);
   }
 }

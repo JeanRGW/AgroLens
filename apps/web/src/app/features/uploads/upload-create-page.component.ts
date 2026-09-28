@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
@@ -32,12 +32,16 @@ import {
   validateUploadImages,
 } from '../../shared/utils/offline-errors';
 import { withBrowserLock } from '../../shared/utils/browser-lock';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { firstValueFrom } from 'rxjs';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-upload-create-page',
   standalone: true,
   imports: [
     MatSnackBarModule,
+    MatDialogModule,
     FormsModule,
     RouterLink,
     MatButtonModule,
@@ -62,6 +66,7 @@ export class UploadCreatePageComponent implements OnInit {
   private readonly offlineUploadSync = inject(OfflineUploadSyncService);
   private readonly authService = inject(AuthService);
   private readonly snackBar = inject(MatSnackBar);
+  private readonly dialog = inject(MatDialog);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -85,11 +90,23 @@ export class UploadCreatePageComponent implements OnInit {
   source: UploadSource = 'phone';
   readonly latitude = signal<number | null>(null);
   readonly longitude = signal<number | null>(null);
+  readonly imageLocations = signal<Array<{ latitude: number | null; longitude: number | null }>>(
+    [],
+  );
+  readonly locationTarget = signal<number | null>(null);
+  readonly gpsPending = signal(false);
   private readonly initialActivityDate = new Date();
   activityDate: Date | null = this.initialActivityDate;
   activityTime = this.initialActivityDate.toTimeString().slice(0, 5);
   readonly files = signal<File[]>([]);
   readonly previewUrls = signal<string[]>([]);
+  readonly missingLocationCount = computed(
+    () =>
+      this.files().filter((_, index) => {
+        const location = this.imageLocations()[index];
+        return location?.latitude == null || location?.longitude == null;
+      }).length,
+  );
 
   // Flow state
   readonly submitting = signal(false);
@@ -141,7 +158,15 @@ export class UploadCreatePageComponent implements OnInit {
             }),
       );
       const urls = newFiles.map((file) => URL.createObjectURL(file));
+      const batchLocation =
+        this.locationTarget() === null && this.latitude() !== null && this.longitude() !== null
+          ? { latitude: this.latitude(), longitude: this.longitude() }
+          : { latitude: null, longitude: null };
       this.files.update((current) => [...current, ...newFiles]);
+      this.imageLocations.update((locations) => [
+        ...locations,
+        ...newFiles.map(() => ({ ...batchLocation })),
+      ]);
       this.previewUrls.update((current) => [...current, ...urls]);
     } catch (error) {
       this.snackBar.open(offlineErrorMessage(error), 'Fechar', { duration: 8000 });
@@ -149,9 +174,14 @@ export class UploadCreatePageComponent implements OnInit {
   }
 
   removeFile(index: number): void {
+    if (this.gpsPending()) return;
     URL.revokeObjectURL(this.previewUrls()[index]);
     this.previewUrls.update((urls) => urls.filter((_, i) => i !== index));
     this.files.update((f) => f.filter((_, i) => i !== index));
+    this.imageLocations.update((locations) => locations.filter((_, i) => i !== index));
+    if (this.locationTarget() === index) this.locationTarget.set(null);
+    else if (this.locationTarget() !== null && this.locationTarget()! > index)
+      this.locationTarget.update((target) => target! - 1);
   }
 
   onPropertyChange(): void {
@@ -175,6 +205,34 @@ export class UploadCreatePageComponent implements OnInit {
   onLocationSelected(location: { latitude: number; longitude: number }): void {
     this.latitude.set(location.latitude);
     this.longitude.set(location.longitude);
+    const target = this.locationTarget();
+    this.imageLocations.update((locations) =>
+      locations.map((item, index) =>
+        target === index || (target === null && (item.latitude === null || item.longitude === null))
+          ? location
+          : item,
+      ),
+    );
+  }
+
+  selectLocationTarget(index: number | null): void {
+    if (this.gpsPending()) return;
+    this.locationTarget.set(index);
+    const point = index === null ? null : this.imageLocations()[index];
+    this.latitude.set(point?.latitude ?? null);
+    this.longitude.set(point?.longitude ?? null);
+  }
+
+  clearLocation(): void {
+    if (this.gpsPending()) return;
+    const target = this.locationTarget();
+    this.latitude.set(null);
+    this.longitude.set(null);
+    this.imageLocations.update((locations) =>
+      locations.map((item, index) =>
+        target === null || target === index ? { latitude: null, longitude: null } : item,
+      ),
+    );
   }
 
   async onSubmit(): Promise<void> {
@@ -188,11 +246,21 @@ export class UploadCreatePageComponent implements OnInit {
       return;
     }
 
-    if (this.latitude() == null || this.longitude() == null) {
-      this.snackBar.open('Obtenha a localização pelo GPS ou informe as coordenadas.', 'Fechar', {
-        duration: 6000,
-      });
-      return;
+    const missing = this.missingLocationCount();
+    if (missing > 0) {
+      const accepted = await firstValueFrom(
+        this.dialog
+          .open(ConfirmDialogComponent, {
+            data: {
+              title: 'Imagens sem localização',
+              message: `${missing} ${missing === 1 ? 'imagem está' : 'imagens estão'} sem coordenadas. Use Minha localização ou selecione um ponto no mapa antes de continuar, se possível. Deseja salvar sem localização mesmo assim?`,
+              confirmText: 'Salvar sem localização',
+              cancelText: 'Voltar e localizar',
+            },
+          })
+          .afterClosed(),
+      );
+      if (!accepted) return;
     }
 
     if (!this.activityDate) {
@@ -235,12 +303,12 @@ export class UploadCreatePageComponent implements OnInit {
         estadioId: this.selectedEstadioId || undefined,
         source: this.source,
         activityDate: activityDate.toISOString(),
-        latitude: this.latitude()!,
-        longitude: this.longitude()!,
         files: this.files().map((f, index) => ({
-          fileName: f.name,
+          imageId: crypto.randomUUID(),
           contentType: contentTypes[index],
           sizeBytes: f.size,
+          latitude: this.imageLocations()[index]?.latitude ?? null,
+          longitude: this.imageLocations()[index]?.longitude ?? null,
         })),
       };
 
@@ -279,6 +347,7 @@ export class UploadCreatePageComponent implements OnInit {
       await withBrowserLock(`agrolens-upload:${offlineUpload.id}`, save);
       this.revokePreviews();
       this.files.set([]);
+      this.imageLocations.set([]);
 
       if (navigator.onLine && !this.authService.reauthenticationRequired()) {
         const result = await this.offlineUploadSync.sync(offlineUpload, (p) => {
@@ -376,8 +445,12 @@ export class UploadCreatePageComponent implements OnInit {
       this.source = upload.request.source;
       this.activityDate = new Date(upload.request.activityDate);
       this.activityTime = this.activityDate.toTimeString().slice(0, 5);
-      this.latitude.set(upload.request.latitude);
-      this.longitude.set(upload.request.longitude);
+      this.imageLocations.set(
+        upload.request.files.map(({ latitude, longitude }) => ({
+          latitude: latitude != null && longitude != null ? latitude : null,
+          longitude: latitude != null && longitude != null ? longitude : null,
+        })),
+      );
       const files = upload.files.map(
         (file) => new File([file.blob], file.fileName, { type: file.contentType }),
       );

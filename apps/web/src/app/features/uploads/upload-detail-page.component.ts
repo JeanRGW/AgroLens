@@ -165,13 +165,17 @@ import {
               }
 
               <div class="info-row gps-row">
-                <span class="info-label">GPS</span>
-                <span class="gps-coords">{{ u.latitude }}, {{ u.longitude }}</span>
+                <span class="info-label">Localização da imagem selecionada</span>
+                <span class="gps-coords">{{
+                  selectedOriginal()?.latitude == null
+                    ? 'Sem localização'
+                    : selectedOriginal()!.latitude + ', ' + selectedOriginal()!.longitude
+                }}</span>
                 <button
                   mat-stroked-button
                   class="map-button"
-                  [disabled]="!hasValidCoordinates(u)"
-                  (click)="openInMap(u)"
+                  [disabled]="!hasValidCoordinates()"
+                  (click)="openInMap()"
                 >
                   <mat-icon>map</mat-icon>
                   Ver no mapa
@@ -295,7 +299,7 @@ import {
               <table class="files-table">
                 <thead>
                   <tr>
-                    <th>Índice</th>
+                    <th>Imagem</th>
                     <th>Tipo</th>
                     <th>Variação</th>
                     <th>Tamanho</th>
@@ -306,9 +310,9 @@ import {
                 <tbody>
                   @for (f of u.files; track f.id) {
                     <tr>
-                      <td>{{ f.imageIndex }}</td>
+                      <td [title]="f.imageId">{{ f.imageId.slice(0, 8) }}</td>
                       <td>{{ f.contentType }}</td>
-                       <td>{{ f.variant === 'preview' ? 'Prévia' : 'Original' }}</td>
+                      <td>{{ f.variant === 'preview' ? 'Prévia' : 'Original' }}</td>
                       <td>{{ formatSize(f.sizeBytes) }}</td>
                       <td>{{ f.width && f.height ? f.width + '×' + f.height : '—' }}</td>
                       <td>
@@ -513,18 +517,24 @@ export class UploadDetailPageComponent implements OnInit {
     this.snackBar.open(`${label} copiado.`, 'Fechar', { duration: 4000 });
   }
 
-  hasValidCoordinates(u: UploadDetail): boolean {
-    return hasValidCoordinates(u);
+  selectedOriginal(): UploadFileInfo | undefined {
+    const upload = this.upload();
+    return upload ? findOriginalFileForIndex(upload.files, this.selectedImageIndex()) : undefined;
   }
 
-  openInMap(u: UploadDetail): void {
-    if (!this.hasValidCoordinates(u)) {
-      this.snackBar.open('Este upload não possui coordenadas válidas.', 'Fechar', {
+  hasValidCoordinates(): boolean {
+    return hasValidCoordinates(this.selectedOriginal());
+  }
+
+  openInMap(): void {
+    if (!this.hasValidCoordinates()) {
+      this.snackBar.open('Esta imagem não possui coordenadas.', 'Fechar', {
         duration: 6000,
       });
       return;
     }
-    openMapCoordinates(u.latitude, u.longitude);
+    const image = this.selectedOriginal()!;
+    openMapCoordinates(image.latitude!, image.longitude!);
   }
 
   async openOriginal(): Promise<void> {
@@ -590,8 +600,6 @@ export class UploadDetailPageComponent implements OnInit {
             source: u.source,
             status: u.status,
             activityDate: u.activityDate,
-            latitude: u.latitude,
-            longitude: u.longitude,
             createdAt: u.createdAt,
             updatedAt: u.updatedAt,
             fileCount: originals.length,
@@ -603,8 +611,7 @@ export class UploadDetailPageComponent implements OnInit {
         },
       );
 
-      const downloadedLabel =
-        result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
+      const downloadedLabel = result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
       const skippedLabel = result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas';
       const message =
         result.skipped > 0

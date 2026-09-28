@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { ExportService } from './export.service';
 import { UploadsService } from './uploads.service';
 import JSZip from 'jszip';
+import type { ImageAnnotation } from '@agrolens/contracts';
 
 describe('ExportService', () => {
   let service: ExportService;
@@ -29,7 +30,7 @@ describe('ExportService', () => {
         {
           uploadId: 'u1',
           fileId: 'f1',
-          imageIndex: 0,
+          imageId: 'image-0',
           fileName: 'img.jpg',
           contentType: 'image/jpeg',
           sizeBytes: 1024,
@@ -58,7 +59,7 @@ describe('ExportService', () => {
         {
           uploadId: 'u1',
           fileId: 'f1',
-          imageIndex: 0,
+          imageId: 'image-0',
           fileName: 'one.jpg',
           contentType: 'image/jpeg',
           sizeBytes: 1,
@@ -68,7 +69,7 @@ describe('ExportService', () => {
         {
           uploadId: 'u1',
           fileId: 'f2',
-          imageIndex: 1,
+          imageId: 'image-1',
           fileName: 'two.jpg',
           contentType: 'image/jpeg',
           sizeBytes: 1,
@@ -82,6 +83,7 @@ describe('ExportService', () => {
       await service.downloadStructuredImagesZip([record], 'export-test');
 
       expect(uploadsService.getExportDownloadUrls).toHaveBeenCalledWith([{ uploadId: 'u1' }]);
+      expect(uploadsService.getExportDownloadUrls).toHaveBeenCalledTimes(1);
     });
 
     it('requests each upload once for YOLO exports', async () => {
@@ -92,6 +94,7 @@ describe('ExportService', () => {
       });
 
       expect(uploadsService.getExportDownloadUrls).toHaveBeenCalledWith([{ uploadId: 'u1' }]);
+      expect(uploadsService.getExportDownloadUrls).toHaveBeenCalledTimes(1);
     });
 
     it('reports and packages actual split counts after a partial download', async () => {
@@ -116,6 +119,33 @@ describe('ExportService', () => {
       expect(await zip.file('dataset/data.yaml')!.async('string')).toContain(
         `# Total images: 1 (train: ${train}, val: ${val})`,
       );
+    });
+
+    it('joins labels to the image ID', async () => {
+      const annotation: ImageAnnotation = {
+        imageId: 'image-1',
+        imageWidth: 100,
+        imageHeight: 100,
+        classes: ['weed'],
+        labels: [
+          { classId: 0, className: 'weed', xCenter: 0.5, yCenter: 0.5, width: 0.2, height: 0.2 },
+        ],
+      };
+      const result = await service.exportYoloDataset(
+        [record],
+        {
+          trainRatio: 0.5,
+          includeUnannotated: 'exclude',
+          enabledClasses: ['weed'],
+        },
+        new Map([['u1', [annotation]]]),
+      );
+      const blob = (service.downloadBlob as jasmine.Spy).calls.mostRecent().args[0] as Blob;
+      const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+      expect(result.downloaded).toBe(1);
+      expect(Object.keys(zip.files).some((name) => name.includes('u1_image-0.jpg'))).toBeFalse();
+      expect(Object.keys(zip.files).some((name) => name.endsWith('u1_image-1.jpg'))).toBeTrue();
+      expect(Object.keys(zip.files).some((name) => name.endsWith('u1_image-1.txt'))).toBeTrue();
     });
   });
 

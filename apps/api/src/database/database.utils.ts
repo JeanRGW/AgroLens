@@ -34,7 +34,7 @@ export function namedError(name: string, message?: string): Error {
 export function deriveUploadObjectKeys(
   userId: string,
   uploadId: string,
-  files: Array<{ objectKey?: string | null; variant?: string | null; imageIndex: number }>,
+  files: Array<{ objectKey?: string | null; variant?: string | null; imageId: string }>,
 ): Set<string> {
   const keys = new Set<string>();
   for (const file of files) {
@@ -45,7 +45,7 @@ export function deriveUploadObjectKeys(
         keys.add(finalKey);
         keys.add(`staging/${finalKey}`);
       }
-      keys.add(`uploads/${userId}/${uploadId}/${file.imageIndex}/preview.jpg`);
+      keys.add(`uploads/${userId}/${uploadId}/${file.imageId}/preview.jpg`);
     }
   }
   return keys;

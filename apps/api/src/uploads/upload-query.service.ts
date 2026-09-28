@@ -152,8 +152,6 @@ export class UploadQueryService {
         status: r.status,
         source: r.source,
         activityDate: r.activityDate,
-        latitude: r.latitude,
-        longitude: r.longitude,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
         fileCount: fileCounts.get(r.id) ?? 0,
@@ -169,7 +167,6 @@ export class UploadQueryService {
         estadioId: r.estadioId,
         estadioName: r.estadioName,
         previewFileId: preview?.id ?? null,
-        previewImageIndex: preview?.imageIndex ?? null,
       };
     });
 
@@ -267,8 +264,6 @@ export class UploadQueryService {
       source: upload.source,
       status: upload.status,
       activityDate: upload.activityDate,
-      latitude: upload.latitude,
-      longitude: upload.longitude,
       errorMessage: upload.errorMessage,
       createdAt: upload.createdAt,
       updatedAt: upload.updatedAt,
@@ -417,7 +412,7 @@ export class UploadQueryService {
       items.push({
         uploadId: file.uploadId,
         fileId: file.id,
-        imageIndex: file.imageIndex,
+        imageId: file.imageId,
         fileName: file.objectKey.split('/').pop() ?? file.objectKey,
         contentType: file.contentType,
         sizeBytes: file.sizeBytes,
@@ -489,7 +484,7 @@ export class UploadQueryService {
     return {
       uploadId,
       fileId: file.id,
-      imageIndex: file.imageIndex,
+      imageId: file.imageId,
       fileName: file.objectKey.split('/').pop() ?? file.objectKey,
       contentType: file.contentType,
       sizeBytes: file.sizeBytes,
