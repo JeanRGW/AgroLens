@@ -13,13 +13,20 @@ import '../services/database_helper.dart';
 import '../services/catalog_repository.dart';
 import '../services/location_service.dart';
 import '../utils/app_logger.dart';
-import '../utils/catalog_validation.dart';
 import '../utils/upload_validation.dart';
 import 'location_picker_screen.dart';
-import '../utils/location_defaults.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_scaffold.dart';
+
+class _SelectedImage {
+  final XFile file;
+  final String origin;
+  LatLng? location;
+  bool gpsPending = false;
+
+  _SelectedImage(this.file, {required this.origin});
+}
 
 /// Upload creation screen: select images, capture GPS (with manual fallback),
 /// fill metadata, and save to the pending uploads queue.
@@ -31,6 +38,8 @@ class CreateUploadScreen extends StatefulWidget {
   final DatabaseHelper databaseHelper;
   final CatalogRepository catalogRepository;
   final List<XFile> initialImages;
+  final ImagePicker? imagePicker;
+  final LocationService locationService;
 
   const CreateUploadScreen({
     super.key,
@@ -38,6 +47,8 @@ class CreateUploadScreen extends StatefulWidget {
     required this.databaseHelper,
     required this.catalogRepository,
     this.initialImages = const [],
+    this.imagePicker,
+    this.locationService = const LocationService(),
   });
 
   @override
@@ -47,10 +58,10 @@ class CreateUploadScreen extends StatefulWidget {
 class _CreateUploadScreenState extends State<CreateUploadScreen> {
   final _formKey = GlobalKey<FormState>();
   final _uuid = const Uuid();
-  final _picker = ImagePicker();
+  late final ImagePicker _picker;
 
   // Image selection
-  final List<XFile> _selectedImages = [];
+  final List<_SelectedImage> _selectedImages = [];
   bool _loadingImages = false;
 
   // GPS / coordinates
@@ -58,8 +69,6 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   double? _longitude;
   bool _useGps = true;
   String? _gpsError;
-  final _latController = TextEditingController();
-  final _lonController = TextEditingController();
 
   // Catalog-backed metadata (dropdown selections)
   Property? _selectedProperty;
@@ -98,20 +107,31 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   }
 
   bool _saving = false;
+  bool _confirmingExit = false;
   String? _error;
+  int get _missingLocationCount => _selectedImages
+      .where(
+        (image) => image.location == null && (!_useGps || !image.gpsPending),
+      )
+      .length;
 
   @override
   void initState() {
     super.initState();
-    _selectedImages.addAll(widget.initialImages);
+    _picker = widget.imagePicker ?? ImagePicker();
+    _selectedImages.addAll(
+      widget.initialImages.map(
+        (file) => _SelectedImage(file, origin: 'gallery'),
+      ),
+    );
     _loadCatalogs();
-    _attemptGps();
+    if (_selectedImages.isNotEmpty) {
+      _attemptGps(images: List.of(_selectedImages));
+    }
   }
 
   @override
   void dispose() {
-    _latController.dispose();
-    _lonController.dispose();
     _propertyIdController.dispose();
     _talhaoIdController.dispose();
     _cropTypeIdController.dispose();
@@ -199,55 +219,80 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     }
   }
 
-  Future<void> _attemptGps() async {
-    if (!_useGps) return;
-    if (mounted) setState(() => _gpsError = null);
+  Future<void> _attemptGps({
+    bool force = false,
+    List<_SelectedImage> images = const [],
+  }) async {
+    if ((!_useGps && !force) || (!force && images.isEmpty)) return;
+    if (mounted) {
+      setState(() {
+        _gpsError = null;
+        if (!force) {
+          for (final image in images) {
+            image.gpsPending = true;
+          }
+        }
+      });
+    }
     try {
-      final position = await const LocationService().getCurrentPosition();
-      if (mounted && _useGps) {
+      final position = await widget.locationService.getCurrentPosition();
+      if (mounted && (_useGps || force)) {
         setState(() {
           _latitude = position.latitude;
           _longitude = position.longitude;
-          _latController.text = position.latitude.toStringAsFixed(6);
-          _lonController.text = position.longitude.toStringAsFixed(6);
           _gpsError = null;
+          for (final image in force ? _selectedImages : images) {
+            if (_selectedImages.contains(image)) image.location ??= position;
+          }
         });
       }
     } on LocationException catch (e) {
-      if (mounted) {
+      if (mounted && (_useGps || force)) {
         setState(() => _gpsError = e.message);
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && (_useGps || force)) {
         setState(
           () => _gpsError = 'Não foi possível obter sua localização atual.',
         );
       }
+    } finally {
+      if (mounted && !force) {
+        setState(() {
+          for (final image in images) {
+            image.gpsPending = false;
+          }
+        });
+      }
     }
   }
 
-  LatLng? _currentCoordinateInput() {
-    return parseCoordinatePair(_latController.text, _lonController.text) ??
-        (_latitude != null && _longitude != null
-            ? LatLng(_latitude!, _longitude!)
-            : null);
-  }
-
-  Future<void> _openLocationPicker() async {
-    final current = _currentCoordinateInput();
+  Future<void> _openLocationPicker({int? imageIndex}) async {
+    final current = imageIndex == null
+        ? (_latitude != null && _longitude != null
+              ? LatLng(_latitude!, _longitude!)
+              : null)
+        : _selectedImages[imageIndex].location;
     final selected = await LocationPickerScreen.show(
       context,
       title: 'Selecionar coordenadas',
       confirmButtonLabel: 'Usar ponto selecionado',
       initialLatitude: current?.latitude,
       initialLongitude: current?.longitude,
+      showCurrentLocationButton: _useGps,
     );
     if (selected == null || !mounted) return;
     setState(() {
       _latitude = selected.latitude;
       _longitude = selected.longitude;
-      _latController.text = selected.latitude.toStringAsFixed(6);
-      _lonController.text = selected.longitude.toStringAsFixed(6);
+      _gpsError = null;
+      if (imageIndex != null && imageIndex < _selectedImages.length) {
+        _selectedImages[imageIndex].location = selected;
+      } else if (imageIndex == null) {
+        for (final image in _selectedImages) {
+          image.location ??= selected;
+        }
+      }
     });
   }
 
@@ -264,7 +309,12 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         picked = await _picker.pickMultiImage(limit: remaining);
       }
       if (mounted && picked.isNotEmpty) {
-        setState(() => _selectedImages.addAll(picked.take(remaining)));
+        final images = picked
+            .take(remaining)
+            .map((file) => _SelectedImage(file, origin: 'gallery'))
+            .toList();
+        setState(() => _selectedImages.addAll(images));
+        await _attemptGps(images: images);
       }
     } on PlatformException catch (error) {
       // Cancellation completes with null instead of throwing, so reaching
@@ -286,7 +336,32 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     try {
       final photo = await _picker.pickImage(source: ImageSource.camera);
       if (mounted && photo != null) {
-        setState(() => _selectedImages.add(photo));
+        final image = _SelectedImage(photo, origin: 'camera');
+        setState(() {
+          image.gpsPending = _useGps;
+          _selectedImages.add(image);
+          if (_useGps) _gpsError = null;
+        });
+        if (!_useGps) return;
+        try {
+          final point = await widget.locationService.getCurrentPosition();
+          if (mounted && _useGps && _selectedImages.contains(image)) {
+            setState(() => image.location ??= point);
+          }
+        } on LocationException catch (error) {
+          if (mounted && _useGps) {
+            setState(() => _gpsError = error.message);
+          }
+        } catch (_) {
+          if (mounted && _useGps) {
+            setState(
+              () => _gpsError =
+                  'Sem localização para a foto. Tente novamente ou escolha um ponto no mapa.',
+            );
+          }
+        } finally {
+          if (mounted) setState(() => image.gpsPending = false);
+        }
       }
     } on PlatformException catch (error) {
       // Cancellation completes with null instead of throwing, so reaching
@@ -311,6 +386,40 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   void _removeImage(int index) {
     if (_saving) return;
     setState(() => _selectedImages.removeAt(index));
+  }
+
+  Future<void> _requestExit() async {
+    if (_saving || _confirmingExit) return;
+    if (_selectedImages.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    _confirmingExit = true;
+    try {
+      final discard = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Descartar upload?'),
+          content: const Text(
+            'As imagens selecionadas ainda não foram salvas. Deseja sair sem salvar?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Continuar edição'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Descartar e sair'),
+            ),
+          ],
+        ),
+      );
+      if (discard == true && mounted && !_saving) Navigator.of(context).pop();
+    } finally {
+      _confirmingExit = false;
+    }
   }
 
   /// Resolve the final catalog IDs from dropdown selections or manual inputs.
@@ -364,7 +473,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     });
 
     final savedPaths = <String>[];
-    final images = List<XFile>.of(_selectedImages);
+    final images = List<_SelectedImage>.of(_selectedImages);
     final propertyId = _resolvePropertyId();
     final talhaoId = _resolveTalhaoId();
     final cropTypeId = _resolveCropTypeId();
@@ -376,26 +485,36 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
 
     try {
       final validationError = await validateUploadFiles(
-        images.map((image) => image.path).toList(),
+        images.map((image) => image.file.path).toList(),
       );
       if (!mounted) return;
       if (validationError != null) {
         setState(() => _error = validationError);
         return;
       }
-      if (_useGps) await _attemptGps();
-      if (!mounted) return;
-
-      // Use the validated fields so manual edits are persisted over GPS values.
-      final coordinates = _currentCoordinateInput();
-      if (coordinates == null) {
-        if (!_useGps || _gpsError == null) {
-          setState(() => _error = 'Informe coordenadas válidas.');
-        }
-        return;
+      final missing = images.where((image) => image.location == null).length;
+      if (missing > 0) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Imagens sem localização'),
+            content: Text(
+              '$missing ${missing == 1 ? 'imagem está' : 'imagens estão'} sem coordenadas. Salvar mesmo assim?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Voltar e localizar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Salvar sem localização'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
       }
-      final lat = coordinates.latitude;
-      final lon = coordinates.longitude;
 
       // Copy originals to app-controlled directory
       final appDir = await getApplicationDocumentsDirectory();
@@ -404,11 +523,11 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         await imagesDir.create(recursive: true);
       }
 
-      for (final xfile in images) {
-        final ext = p.extension(xfile.path).toLowerCase();
+      for (final image in images) {
+        final ext = p.extension(image.file.path).toLowerCase();
         final fileName = '${_uuid.v4()}$ext';
         final destPath = '${imagesDir.path}/$fileName';
-        final srcFile = File(xfile.path);
+        final srcFile = File(image.file.path);
         await srcFile.copy(destPath);
         savedPaths.add(destPath);
       }
@@ -422,9 +541,15 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       final upload = PendingUpload(
         id: _uuid.v4(),
         ownerId: ownerId,
-        paths: savedPaths,
-        latitude: lat,
-        longitude: lon,
+        images: [
+          for (var i = 0; i < images.length; i++)
+            PendingImage(
+              path: savedPaths[i],
+              latitude: images[i].location?.latitude,
+              longitude: images[i].location?.longitude,
+              origin: images[i].origin,
+            ),
+        ],
         createdAt: DateTime.now(),
         activityDate: DateTime.now(),
         status: PendingUploadStatus.pending,
@@ -457,15 +582,6 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  String? _validateCoordinate(
-    String? value,
-    String label,
-    double min,
-    double max,
-  ) {
-    return validateRequiredDecimal(value, label, min: min, max: max);
   }
 
   // ── Build helpers ──────────────────────────────────────────────────
@@ -531,8 +647,11 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   Widget build(BuildContext context) {
     final scaffold = CustomScaffold(
       appBar: CustomAppBar(
-        leading: CustomAppBarAction.backButton(context),
-        title: 'Novo Upload',
+        leading: CustomAppBarAction.backButton(
+          context,
+          onPressed: _requestExit,
+        ),
+        title: 'Novo upload',
       ),
       body: _loadingCatalogs
           ? const Center(child: CircularProgressIndicator())
@@ -553,7 +672,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     const SizedBox(height: 12),
                     _buildManualIdField(
                       controller: _talhaoIdController,
-                      label: 'Talhão ID',
+                      label: 'ID do talhão',
                       hintText: 'Informe o UUID do talhão',
                     ),
                     const SizedBox(height: 12),
@@ -699,10 +818,15 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         _useGps = value;
                         _gpsError = null;
                       });
-                      if (value) _attemptGps();
                     },
                     contentPadding: EdgeInsets.zero,
                   ),
+                  if (_useGps)
+                    OutlinedButton.icon(
+                      onPressed: () => _attemptGps(force: true),
+                      icon: const Icon(Icons.my_location),
+                      label: const Text('Aplicar localização atual'),
+                    ),
                   if (_gpsError != null)
                     Semantics(
                       liveRegion: true,
@@ -720,39 +844,16 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         ),
                       ),
                     ),
-                  if (!_useGps) ...[
+                  if (!_useGps)
                     SizedBox(
                       width: double.infinity,
                       child: CustomButton(
                         label: 'Selecionar no mapa',
                         icon: Icons.map_outlined,
-                        onPressed: _openLocationPicker,
+                        onPressed: () => _openLocationPicker(),
                         isOutlined: true,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _latController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Latitude',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) =>
-                          _validateCoordinate(v, 'Latitude', -90, 90),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _lonController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Longitude',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) =>
-                          _validateCoordinate(v, 'Longitude', -180, 180),
-                    ),
-                  ],
 
                   const SizedBox(height: 16),
 
@@ -817,11 +918,40 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
                               child: Image.file(
-                                File(_selectedImages[index].path),
+                                File(_selectedImages[index].file.path),
                                 width: 120,
                                 height: 120,
                                 fit: BoxFit.cover,
                                 cacheWidth: 360,
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 2,
+                              left: 2,
+                              child: Semantics(
+                                button: true,
+                                label: 'Localização da imagem ${index + 1}',
+                                child: InkWell(
+                                  onTap: () =>
+                                      _openLocationPicker(imageIndex: index),
+                                  child: Container(
+                                    color: Colors.black87,
+                                    padding: const EdgeInsets.all(3),
+                                    child: Text(
+                                      _selectedImages[index].location != null
+                                          ? 'Localizada · ajustar'
+                                          : _useGps &&
+                                                _selectedImages[index]
+                                                    .gpsPending
+                                          ? 'Localizando · ajustar'
+                                          : 'Sem localização · ajustar',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                             Positioned(
@@ -852,6 +982,17 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                       ),
                     ),
 
+                  if (_missingLocationCount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        '$_missingLocationCount ${_missingLocationCount == 1 ? 'imagem precisa' : 'imagens precisam'} de localização.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+
                   const SizedBox(height: 24),
 
                   // ── Error and save ──────────────────────────────────
@@ -864,7 +1005,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                       ),
                     ),
                   CustomButton(
-                    label: 'Confirmar e Preparar Lote',
+                    label: 'Confirmar e preparar lote',
                     icon: Icons.cloud_upload,
                     onPressed: _loadingImages ? null : _save,
                     isLoading: _saving,
@@ -874,7 +1015,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
             ),
     );
     return PopScope(
-      canPop: !_saving,
+      canPop: !_saving && _selectedImages.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _requestExit();
+      },
       child: AbsorbPointer(absorbing: _saving, child: scaffold),
     );
   }

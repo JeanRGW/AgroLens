@@ -100,6 +100,8 @@ class MockHttpClient extends http.BaseClient {
   final Map<String, List<(int, String)>> _rawResponses = {};
   final List<http.BaseRequest> _requests = [];
   Future<void> Function(http.BaseRequest)? beforeResponse;
+  Map<String, dynamic> Function(http.BaseRequest, Map<String, dynamic>)?
+  transformResponse;
 
   void queueResponse(
     String method,
@@ -162,7 +164,11 @@ class MockHttpClient extends http.BaseClient {
     }
 
     final (statusCode, responseBody) = queue.removeAt(0);
-    final bytes = utf8.encode(jsonEncode(responseBody));
+    final bytes = utf8.encode(
+      jsonEncode(
+        transformResponse?.call(request, responseBody) ?? responseBody,
+      ),
+    );
     return Future.value(
       http.StreamedResponse(
         http.ByteStream.fromBytes(bytes),

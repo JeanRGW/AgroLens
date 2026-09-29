@@ -86,7 +86,7 @@ export class UploadDetailDialogComponent implements OnInit {
       this.displayEntries.set(buildDisplayEntries(data.files));
       this.resolveDisplayEntriesBatch();
     } catch {
-      this.error.set('Nao foi possivel carregar os detalhes do upload.');
+      this.error.set('Não foi possível carregar os detalhes do upload.');
     } finally {
       this.loading.set(false);
     }
@@ -99,7 +99,7 @@ export class UploadDetailDialogComponent implements OnInit {
       const response = await this.uploadsService.getDisplayUrls(u.id);
       this.resolvedUrls.set(mapDisplayUrlsToResolvedMap(response.files, this.resolvedUrls()));
     } catch {
-      this.snackBar.open('Nao foi possivel obter as URLs de exibicao.', 'Fechar', {
+      this.snackBar.open('Não foi possível obter as URLs de exibição.', 'Fechar', {
         duration: 6000,
       });
     }
@@ -159,14 +159,14 @@ export class UploadDetailDialogComponent implements OnInit {
     const u = this.upload();
     if (!u) return;
     this.clipboard.copy(u.id);
-    this.snackBar.open('Upload ID copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do upload copiado.', 'Fechar', { duration: 4000 });
   }
 
   copyUserId(): void {
     const u = this.upload();
     if (!u) return;
     this.clipboard.copy(u.userId);
-    this.snackBar.open('ID do usuario copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do usuário copiado.', 'Fechar', { duration: 4000 });
   }
 
   copyFieldId(value: string | undefined | null, label: string): void {
@@ -211,7 +211,7 @@ export class UploadDetailDialogComponent implements OnInit {
 
     const originals = u.files.filter((f) => f.variant === 'original');
     if (!originals.length) {
-      this.snackBar.open('Este upload nao possui imagens para baixar.', 'Fechar', {
+      this.snackBar.open('Este upload não possui imagens para baixar.', 'Fechar', {
         duration: 6000,
       });
       return;
@@ -229,15 +229,17 @@ export class UploadDetailDialogComponent implements OnInit {
         },
       );
 
+      const downloadedLabel = result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
+      const skippedLabel = result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas';
       const message =
         result.skipped > 0
-          ? `Download concluido: ${result.downloaded} imagens baixadas, ${result.skipped} ignoradas.`
-          : `Download concluido: ${result.downloaded} imagens baixadas.`;
+          ? `Download concluído: ${result.downloaded} ${downloadedLabel}, ${result.skipped} ${skippedLabel}.`
+          : `Download concluído: ${result.downloaded} ${downloadedLabel}.`;
       this.snackBar.open(message, 'Fechar', { duration: 4000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       this.snackBar.open(
-        `Nao foi possivel montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
+        `Não foi possível montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
         'Fechar',
         { duration: 6000 },
       );
@@ -254,7 +256,7 @@ export class UploadDetailDialogComponent implements OnInit {
     const confirmRef = this.dialog.open(ConfirmDialogComponent, {
       data: {
         title: 'Excluir Upload',
-        message: `Tem certeza que deseja excluir o upload ${u.id}? Todas as imagens e anotacoes serao removidas permanentemente.`,
+        message: `Tem certeza que deseja excluir o upload ${u.id}? Todas as imagens e anotações serão removidas permanentemente.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         confirmColor: 'warn',
@@ -268,12 +270,12 @@ export class UploadDetailDialogComponent implements OnInit {
 
     try {
       await this.uploadsService.deleteUpload(u.id);
-      this.snackBar.open('Upload excluido com sucesso.', 'Fechar', { duration: 4000 });
+      this.snackBar.open('Upload excluído com sucesso.', 'Fechar', { duration: 4000 });
       this.dialogRef.close(true);
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       this.snackBar.open(
-        `Nao foi possivel excluir o upload${detail ? ` (${detail})` : ''}.`,
+        `Não foi possível excluir o upload${detail ? ` (${detail})` : ''}.`,
         'Fechar',
         { duration: 6000 },
       );
@@ -283,18 +285,24 @@ export class UploadDetailDialogComponent implements OnInit {
   }
 
   hasValidCoordinates(): boolean {
-    return hasValidCoordinates(this.upload());
+    return hasValidCoordinates(this.selectedOriginal());
+  }
+
+  selectedOriginal() {
+    const upload = this.upload();
+    return upload ? findOriginalFileForIndex(upload.files, this.selectedImageIndex()) : undefined;
   }
 
   openInMap(): void {
     const u = this.upload();
     if (!u || !this.hasValidCoordinates()) {
-      this.snackBar.open('Este upload nao possui coordenadas validas.', 'Fechar', {
+      this.snackBar.open('Esta imagem não possui coordenadas.', 'Fechar', {
         duration: 6000,
       });
       return;
     }
-    openMapCoordinates(u.latitude, u.longitude);
+    const image = this.selectedOriginal()!;
+    openMapCoordinates(image.latitude!, image.longitude!);
   }
 
   goToLabeling(): void {
@@ -325,8 +333,6 @@ export class UploadDetailDialogComponent implements OnInit {
       source: u.source,
       status: u.status,
       activityDate: u.activityDate,
-      latitude: u.latitude,
-      longitude: u.longitude,
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
       fileCount: originals.length,

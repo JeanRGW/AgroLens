@@ -21,7 +21,9 @@ export interface OfflineUploadDetailDialogData {
     <mat-dialog-content>
       <div class="status-row">
         <span class="status" [class]="upload.status">{{ statusLabel(upload.status) }}</span>
-        <span>{{ upload.files.length }} imagem(ns)</span>
+        <span>
+          {{ upload.files.length }} {{ upload.files.length === 1 ? 'imagem' : 'imagens' }}
+        </span>
       </div>
 
       @if (upload.errorMessage) {
@@ -57,14 +59,6 @@ export interface OfflineUploadDetailDialogData {
             <dt>Data da coleta</dt>
             <dd>{{ upload.request.activityDate | date: 'dd/MM/yyyy HH:mm' }}</dd>
           </div>
-          <div>
-            <dt>Latitude</dt>
-            <dd>{{ upload.request.latitude | number: '1.5-6' }}</dd>
-          </div>
-          <div>
-            <dt>Longitude</dt>
-            <dd>{{ upload.request.longitude | number: '1.5-6' }}</dd>
-          </div>
         </dl>
       </section>
 
@@ -75,6 +69,14 @@ export interface OfflineUploadDetailDialogData {
           <p>
             {{ selectedFile().fileName }} · {{ selectedFile().contentType }} ·
             {{ formatSize(selectedFile().blob.size) }}
+          </p>
+          <p>
+            @if (upload.request.files[selectedImageIndex()].latitude != null) {
+              {{ upload.request.files[selectedImageIndex()].latitude | number: '1.5-6' }},
+              {{ upload.request.files[selectedImageIndex()].longitude | number: '1.5-6' }}
+            } @else {
+              Sem localização
+            }
           </p>
         </div>
         <div class="thumbnail-list" role="group" aria-label="Selecionar imagem">

@@ -40,13 +40,13 @@ export class InferenceService {
   createUploadJob(
     modelId: string,
     uploadId: string,
-    imageIndexes?: number[],
+    imageIds?: string[],
   ): Promise<CreateJobResponse> {
     return firstValueFrom(
       this.api.post<CreateJobResponse>('/inference/jobs', {
         modelId,
         uploadId,
-        imageIndexes,
+        imageIds,
       }),
     );
   }

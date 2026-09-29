@@ -27,9 +27,15 @@ describe('OfflineUploadQueuePageComponent', () => {
       cropTypeId: 'c',
       source: 'phone',
       activityDate: '2026-09-01T11:00:00Z',
-      latitude: -25.4,
-      longitude: -51.4,
-      files: [{ fileName: 'photo.png', contentType: 'image/png', sizeBytes: 4 }],
+      files: [
+        {
+          imageId: 'image-0',
+          contentType: 'image/png',
+          sizeBytes: 4,
+          latitude: null,
+          longitude: null,
+        },
+      ],
     },
     files: [{ blob: new Blob(['data']), fileName: 'photo.png', contentType: 'image/png' }],
   };

@@ -26,8 +26,7 @@ export type UpsertAnnotationDto = z.infer<typeof upsertAnnotationSchema>;
 
 export const imageAnnotationSchema = z.object({
   id: z.string().uuid().optional(),
-  uploadId: z.string().uuid(),
-  imageIndex: z.number().int().min(0),
+  imageId: z.string().uuid(),
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),
   classes: z.array(z.string()),
@@ -36,15 +35,14 @@ export const imageAnnotationSchema = z.object({
     z.record(z.unknown()),
     z.array(z.unknown()),
   ]),
-  updatedByUserId: z.string().uuid().optional(),
+  updatedByUserId: z.string().uuid().nullable().optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
 });
 
 export type ImageAnnotation = z.infer<typeof imageAnnotationSchema>;
 
 export const saveAnnotationInputSchema = z.object({
-  uploadId: z.string().uuid(),
-  imageIndex: z.number().int().min(0),
+  imageId: z.string().uuid(),
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),
   classes: z.array(z.string()),

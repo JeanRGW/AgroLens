@@ -52,8 +52,7 @@ CREATE TABLE "estadios" (
 --> statement-breakpoint
 CREATE TABLE "image_annotations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"upload_id" uuid NOT NULL,
-	"image_index" integer NOT NULL,
+	"image_id" uuid NOT NULL,
 	"image_width" integer NOT NULL,
 	"image_height" integer NOT NULL,
 	"classes" text[] NOT NULL,
@@ -65,6 +64,7 @@ CREATE TABLE "image_annotations" (
 CREATE TABLE "inference_job_images" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"job_id" uuid NOT NULL,
+	"upload_image_id" uuid,
 	"image_index" integer NOT NULL,
 	"file_name" text NOT NULL,
 	"source_object_key" text NOT NULL,
@@ -191,8 +191,7 @@ CREATE TABLE "talhoes" (
 --> statement-breakpoint
 CREATE TABLE "upload_files" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"upload_id" uuid NOT NULL,
-	"image_index" integer NOT NULL,
+	"image_id" uuid NOT NULL,
 	"variant" text NOT NULL,
 	"object_key" text NOT NULL,
 	"content_type" text NOT NULL,
@@ -220,6 +219,14 @@ CREATE TABLE "upload_finalization_jobs" (
 	CONSTRAINT "upload_finalization_jobs_status_check" CHECK ("upload_finalization_jobs"."status" IN ('pending', 'running', 'completed', 'dead'))
 );
 --> statement-breakpoint
+CREATE TABLE "upload_images" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"upload_id" uuid NOT NULL,
+	"latitude" double precision,
+	"longitude" double precision,
+	CONSTRAINT "upload_images_coordinates_check" CHECK (("upload_images"."latitude" IS NULL AND "upload_images"."longitude" IS NULL) OR ("upload_images"."latitude" IS NOT NULL AND "upload_images"."longitude" IS NOT NULL AND "upload_images"."latitude" BETWEEN -90 AND 90 AND "upload_images"."longitude" BETWEEN -180 AND 180))
+);
+--> statement-breakpoint
 CREATE TABLE "uploads" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"client_upload_id" text NOT NULL,
@@ -230,8 +237,6 @@ CREATE TABLE "uploads" (
 	"source" text NOT NULL,
 	"status" text DEFAULT 'draft' NOT NULL,
 	"activity_date" timestamp with time zone NOT NULL,
-	"latitude" double precision NOT NULL,
-	"longitude" double precision NOT NULL,
 	"error_message" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -261,9 +266,10 @@ ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_target_user_id_users_id_
 ALTER TABLE "crop_types" ADD CONSTRAINT "crop_types_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "estadios" ADD CONSTRAINT "estadios_crop_type_id_crop_types_id_fk" FOREIGN KEY ("crop_type_id") REFERENCES "public"."crop_types"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "estadios" ADD CONSTRAINT "estadios_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "image_annotations" ADD CONSTRAINT "image_annotations_upload_id_uploads_id_fk" FOREIGN KEY ("upload_id") REFERENCES "public"."uploads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "image_annotations" ADD CONSTRAINT "image_annotations_image_id_upload_images_id_fk" FOREIGN KEY ("image_id") REFERENCES "public"."upload_images"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "image_annotations" ADD CONSTRAINT "image_annotations_updated_by_user_id_users_id_fk" FOREIGN KEY ("updated_by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inference_job_images" ADD CONSTRAINT "inference_job_images_job_id_inference_jobs_id_fk" FOREIGN KEY ("job_id") REFERENCES "public"."inference_jobs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inference_job_images" ADD CONSTRAINT "inference_job_images_upload_image_id_upload_images_id_fk" FOREIGN KEY ("upload_image_id") REFERENCES "public"."upload_images"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inference_jobs" ADD CONSTRAINT "inference_jobs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inference_jobs" ADD CONSTRAINT "inference_jobs_model_id_inference_models_id_fk" FOREIGN KEY ("model_id") REFERENCES "public"."inference_models"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inference_jobs" ADD CONSTRAINT "inference_jobs_upload_id_uploads_id_fk" FOREIGN KEY ("upload_id") REFERENCES "public"."uploads"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -274,8 +280,9 @@ ALTER TABLE "properties" ADD CONSTRAINT "properties_user_id_users_id_fk" FOREIGN
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "talhoes" ADD CONSTRAINT "talhoes_property_id_properties_id_fk" FOREIGN KEY ("property_id") REFERENCES "public"."properties"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "talhoes" ADD CONSTRAINT "talhoes_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "upload_files" ADD CONSTRAINT "upload_files_upload_id_uploads_id_fk" FOREIGN KEY ("upload_id") REFERENCES "public"."uploads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "upload_files" ADD CONSTRAINT "upload_files_image_id_upload_images_id_fk" FOREIGN KEY ("image_id") REFERENCES "public"."upload_images"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "upload_finalization_jobs" ADD CONSTRAINT "upload_finalization_jobs_upload_id_uploads_id_fk" FOREIGN KEY ("upload_id") REFERENCES "public"."uploads"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "upload_images" ADD CONSTRAINT "upload_images_upload_id_uploads_id_fk" FOREIGN KEY ("upload_id") REFERENCES "public"."uploads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "uploads" ADD CONSTRAINT "uploads_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "uploads" ADD CONSTRAINT "uploads_talhao_id_talhoes_id_fk" FOREIGN KEY ("talhao_id") REFERENCES "public"."talhoes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "uploads" ADD CONSTRAINT "uploads_crop_type_id_crop_types_id_fk" FOREIGN KEY ("crop_type_id") REFERENCES "public"."crop_types"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -291,7 +298,7 @@ CREATE INDEX "audit_event_type_created_idx" ON "audit_events" USING btree ("even
 CREATE UNIQUE INDEX "crop_types_user_normalized_name_idx" ON "crop_types" USING btree ("user_id","normalized_name");--> statement-breakpoint
 CREATE UNIQUE INDEX "estadios_crop_type_normalized_name_idx" ON "estadios" USING btree ("crop_type_id","normalized_name");--> statement-breakpoint
 CREATE INDEX "estadios_user_idx" ON "estadios" USING btree ("user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "image_annotations_upload_image_idx" ON "image_annotations" USING btree ("upload_id","image_index");--> statement-breakpoint
+CREATE UNIQUE INDEX "image_annotations_image_idx" ON "image_annotations" USING btree ("image_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "inference_job_images_job_image_idx" ON "inference_job_images" USING btree ("job_id","image_index");--> statement-breakpoint
 CREATE INDEX "inference_job_images_queue_idx" ON "inference_job_images" USING btree ("job_id","status","created_at") WHERE "inference_job_images"."status" in ('queued', 'running');--> statement-breakpoint
 CREATE INDEX "inference_jobs_queue_idx" ON "inference_jobs" USING btree ("status","created_at") WHERE "inference_jobs"."status" in ('queued', 'running');--> statement-breakpoint
@@ -312,9 +319,10 @@ CREATE INDEX "refresh_tokens_expires_at_idx" ON "refresh_tokens" USING btree ("e
 CREATE UNIQUE INDEX "refresh_tokens_token_hash_idx" ON "refresh_tokens" USING btree ("token_hash");--> statement-breakpoint
 CREATE UNIQUE INDEX "talhoes_property_normalized_name_idx" ON "talhoes" USING btree ("property_id","normalized_name");--> statement-breakpoint
 CREATE INDEX "talhoes_user_idx" ON "talhoes" USING btree ("user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "upload_files_upload_image_variant_idx" ON "upload_files" USING btree ("upload_id","image_index","variant");--> statement-breakpoint
+CREATE UNIQUE INDEX "upload_files_image_variant_idx" ON "upload_files" USING btree ("image_id","variant");--> statement-breakpoint
 CREATE INDEX "upload_finalization_jobs_claim_idx" ON "upload_finalization_jobs" USING btree ("status","retry_after","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "upload_finalization_jobs_active_upload_idx" ON "upload_finalization_jobs" USING btree ("upload_id") WHERE "upload_finalization_jobs"."status" IN ('pending', 'running');--> statement-breakpoint
+CREATE INDEX "upload_images_upload_id_idx" ON "upload_images" USING btree ("upload_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "uploads_user_client_upload_id_idx" ON "uploads" USING btree ("user_id","client_upload_id");--> statement-breakpoint
 CREATE INDEX "uploads_ready_created_idx" ON "uploads" USING btree ("created_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "uploads"."status" = 'ready';--> statement-breakpoint
 CREATE INDEX "uploads_cleanup_status_updated_idx" ON "uploads" USING btree ("status","updated_at","id");--> statement-breakpoint

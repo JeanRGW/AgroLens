@@ -34,6 +34,7 @@ import {
   type AllowedContentType,
 } from '../image-processing/image-processing.service';
 import { UploadQueryService, buildUploadSearchCondition } from './upload-query.service';
+import { isUniqueViolation } from '../database/database.utils';
 
 export { buildUploadSearchCondition };
 
@@ -94,17 +95,7 @@ export class UploadsService {
       }
     }
 
-    // Assign image indices if not provided
-    const fileDescriptors = dto.files.map((f, i) => ({
-      ...f,
-      imageIndex: f.imageIndex ?? i,
-    }));
-
-    // Check for duplicate image indices
-    const indices = new Set(fileDescriptors.map((f) => f.imageIndex));
-    if (indices.size !== fileDescriptors.length) {
-      throw new BadRequestException('Duplicate image indices in files array');
-    }
+    const fileDescriptors = dto.files;
 
     // Check idempotency: existing upload with same (userId, clientUploadId)?
     const existing = await this.uploadsRepository.findByClientUploadId(userId, dto.clientUploadId);
@@ -127,14 +118,13 @@ export class UploadsService {
           source: dto.source,
           status: 'draft',
           activityDate: dto.activityDate,
-          latitude: dto.latitude,
-          longitude: dto.longitude,
         },
         fileDescriptors.map((file) => ({
-          imageIndex: file.imageIndex,
-          variant: 'original' as const,
-          objectKey: (uploadId: string) =>
-            `staging/uploads/${userId}/${uploadId}/${file.imageIndex}/original.${CONTENT_TYPE_TO_EXTENSION[file.contentType as AllowedContentType]}`,
+          imageId: file.imageId,
+          latitude: file.latitude,
+          longitude: file.longitude,
+          objectKey: (uploadId: string, imageId: string) =>
+            `staging/uploads/${userId}/${uploadId}/${imageId}/original.${CONTENT_TYPE_TO_EXTENSION[file.contentType as AllowedContentType]}`,
           contentType: file.contentType,
           sizeBytes: file.sizeBytes ?? null,
         })),
@@ -145,6 +135,11 @@ export class UploadsService {
           code: error.name,
           message: 'This clientUploadId belongs to a deleted upload and cannot be reused',
         });
+      }
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          'An imageId is already in use. Generate new image IDs and retry.',
+        );
       }
       throw error;
     }
@@ -199,7 +194,13 @@ export class UploadsService {
   private async handleExistingUpload(
     existing: Upload,
     dto: UploadInitDto,
-    fileDescriptors: { imageIndex: number; contentType: string; sizeBytes?: number }[],
+    fileDescriptors: {
+      imageId: string;
+      latitude: number | null;
+      longitude: number | null;
+      contentType: string;
+      sizeBytes?: number;
+    }[],
   ): Promise<UploadInitResponse> {
     // If upload is in a terminal or in-progress state, return current status without new URLs
     if (existing.status === 'finalizing' || existing.status === 'ready') {
@@ -210,7 +211,7 @@ export class UploadsService {
         files: files
           .filter((f) => f.variant === 'original')
           .map((f) => ({
-            imageIndex: f.imageIndex,
+            imageId: f.imageId,
             fileId: f.id,
             uploadUrl: '',
             objectKey: f.objectKey,
@@ -227,20 +228,20 @@ export class UploadsService {
       (!existing.estadioId && existing.cropTypeId !== dto.cropTypeId) ||
       existing.estadioId !== (dto.estadioId ?? null) ||
       existing.source !== dto.source ||
-      existing.activityDate.getTime() !== dto.activityDate.getTime() ||
-      existing.latitude !== dto.latitude ||
-      existing.longitude !== dto.longitude;
+      existing.activityDate.getTime() !== dto.activityDate.getTime();
 
     const existingFiles = await this.uploadsRepository.findFilesByUploadId(existing.id);
     const existingOriginals = existingFiles.filter((f) => f.variant === 'original');
-    const existingByIndex = new Map(existingOriginals.map((file) => [file.imageIndex, file]));
+    const existingById = new Map(existingOriginals.map((file) => [file.imageId, file]));
 
     const filesChanged =
-      existingByIndex.size !== fileDescriptors.length ||
+      existingById.size !== fileDescriptors.length ||
       fileDescriptors.some((descriptor) => {
-        const file = existingByIndex.get(descriptor.imageIndex);
+        const file = existingById.get(descriptor.imageId);
         return (
           !file ||
+          file.latitude !== descriptor.latitude ||
+          file.longitude !== descriptor.longitude ||
           !file.objectKey.endsWith(
             `original.${CONTENT_TYPE_TO_EXTENSION[descriptor.contentType as AllowedContentType]}`,
           ) ||
@@ -258,17 +259,17 @@ export class UploadsService {
     // Return an empty URL only when the corresponding object is already in storage.
     const objectExists = await Promise.all(
       fileDescriptors.map((fd) =>
-        this.storageService.headObject(existingByIndex.get(fd.imageIndex)!.objectKey),
+        this.storageService.headObject(existingById.get(fd.imageId)!.objectKey),
       ),
     );
     const instructions: FileUploadInstruction[] = [];
     for (const [index, fd] of fileDescriptors.entries()) {
-      const existingFile = existingByIndex.get(fd.imageIndex)!;
+      const existingFile = existingById.get(fd.imageId)!;
       const objectKey = existingFile.objectKey;
 
       if (objectExists[index].exists) {
         instructions.push({
-          imageIndex: fd.imageIndex,
+          imageId: existingFile.imageId,
           fileId: existingFile.id,
           uploadUrl: '',
           objectKey,
@@ -287,7 +288,7 @@ export class UploadsService {
         );
 
         instructions.push({
-          imageIndex: fd.imageIndex,
+          imageId: existingFile.imageId,
           fileId: existingFile.id,
           uploadUrl: presigned.url,
           objectKey: presigned.objectKey,
@@ -327,8 +328,6 @@ export class UploadsService {
       source: upload.source,
       status: upload.status,
       activityDate: upload.activityDate,
-      latitude: upload.latitude,
-      longitude: upload.longitude,
       errorMessage: upload.errorMessage,
       createdAt: upload.createdAt,
       updatedAt: upload.updatedAt,
@@ -338,28 +337,25 @@ export class UploadsService {
 
   private async generateUploadInstructions(
     upload: Upload,
-    fileDescriptors: { imageIndex: number; contentType: string; sizeBytes?: number }[],
+    fileDescriptors: { imageId: string; contentType: string; sizeBytes?: number }[],
   ): Promise<FileUploadInstruction[]> {
     const instructions: FileUploadInstruction[] = [];
 
     const existingFiles = await this.uploadsRepository.findFilesByUploadId(upload.id);
     for (const fd of fileDescriptors) {
-      const ext = CONTENT_TYPE_TO_EXTENSION[fd.contentType as AllowedContentType];
-      const objectKey = `staging/uploads/${upload.userId}/${upload.id}/${fd.imageIndex}/original.${ext}`;
-
       const fileRow = existingFiles.find(
-        (file) => file.imageIndex === fd.imageIndex && file.variant === 'original',
+        (file) => file.imageId === fd.imageId && file.variant === 'original',
       );
       if (!fileRow) throw new Error(`Missing original file for upload ${upload.id}`);
 
       const presigned = await this.storageService.getPresignedPutUrl(
-        objectKey,
+        fileRow.objectKey,
         fd.contentType,
         this.presignedUrlTtlSeconds,
       );
 
       instructions.push({
-        imageIndex: fd.imageIndex,
+        imageId: fileRow.imageId,
         fileId: fileRow.id,
         uploadUrl: presigned.url,
         objectKey: presigned.objectKey,

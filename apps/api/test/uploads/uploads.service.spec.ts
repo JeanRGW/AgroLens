@@ -21,6 +21,7 @@ import { StorageService } from '../../src/storage/storage.service';
 import { EXPORT_BATCH_MAX_SIZE } from '../../src/uploads/dto/export-download.dto';
 import { uploadListSchema } from '../../src/uploads/dto/upload-list.dto';
 import { buildUploadSearchCondition } from '../../src/uploads/uploads.service';
+import type { UploadInitDto } from '../../src/uploads/dto/upload-init.dto';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -73,8 +74,6 @@ function makeUpload(overrides: Partial<Upload> = {}): Upload {
     source: 'phone',
     status: 'draft',
     activityDate: new Date('2025-06-15'),
-    latitude: -22.9,
-    longitude: -43.1,
     errorMessage: null,
     createdAt: new Date('2025-06-15'),
     updatedAt: new Date('2025-06-15'),
@@ -87,7 +86,9 @@ function makeUploadFile(overrides: Partial<UploadFile> = {}): UploadFile {
   return {
     id: 'file-uuid-1',
     uploadId: 'upload-uuid-1',
-    imageIndex: 0,
+    imageId: overrides.imageId ?? 'image-uuid-0',
+    latitude: -22.9,
+    longitude: -43.1,
     variant: 'original',
     objectKey: 'uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
     contentType: 'image/jpeg',
@@ -223,6 +224,32 @@ describe('UploadsService', () => {
     queryService = module.get<UploadQueryService>(UploadQueryService);
   });
 
+  function initUpload(
+    dto: Omit<UploadInitDto, 'files'> & {
+      files: Array<{
+        imageId?: string;
+        contentType: string;
+        sizeBytes?: number;
+        latitude?: number | null;
+        longitude?: number | null;
+      }>;
+    },
+    user: AuthenticatedUser,
+  ) {
+    return service.initUpload(
+      {
+        ...dto,
+        files: dto.files.map((file, index) => ({
+          ...file,
+          imageId: file.imageId ?? `image-uuid-${index}`,
+          latitude: file.latitude === undefined ? -22.9 : file.latitude,
+          longitude: file.longitude === undefined ? -43.1 : file.longitude,
+        })),
+      },
+      user,
+    );
+  }
+
   // ── initUpload ─────────────────────────────────────────────────────
 
   describe('initUpload', () => {
@@ -241,7 +268,7 @@ describe('UploadsService', () => {
     beforeEach(() => {
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([
         makeUploadFile(),
-        makeUploadFile({ id: 'file-uuid-2', imageIndex: 1, contentType: 'image/png' }),
+        makeUploadFile({ id: 'file-uuid-2', imageId: 'image-uuid-1', contentType: 'image/png' }),
       ]);
       // Catalog references exist
       mockCatalogRepository.findPropertyById.mockResolvedValue({ id: validDto.propertyId });
@@ -263,7 +290,7 @@ describe('UploadsService', () => {
         objectKey: 'uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
       });
 
-      const result = await service.initUpload(validDto, owner);
+      const result = await initUpload(validDto, owner);
 
       expect(result.uploadId).toBe('upload-uuid-1');
       expect(result.status).toBe('draft');
@@ -279,7 +306,7 @@ describe('UploadsService', () => {
       error.name = 'CLIENT_UPLOAD_ID_DELETED';
       mockUploadsRepository.createWithFiles.mockRejectedValueOnce(error);
 
-      await expect(service.initUpload(validDto, owner)).rejects.toMatchObject({
+      await expect(initUpload(validDto, owner)).rejects.toMatchObject({
         status: HttpStatus.CONFLICT,
         response: {
           code: 'CLIENT_UPLOAD_ID_DELETED',
@@ -288,7 +315,7 @@ describe('UploadsService', () => {
       });
     });
 
-    it('should assign image indices when not provided', async () => {
+    it('should use image IDs supplied by the client', async () => {
       mockUploadsRepository.findByClientUploadId.mockResolvedValue(undefined);
       mockStorageService.getPresignedPutUrl.mockResolvedValue({
         url: 'https://s3.example.com/presigned',
@@ -298,11 +325,11 @@ describe('UploadsService', () => {
         objectKey: 'key',
       });
 
-      await service.initUpload(validDto, owner);
+      await initUpload(validDto, owner);
 
       expect(mockUploadsRepository.createWithFiles).toHaveBeenCalledWith(expect.any(Object), [
-        expect.objectContaining({ imageIndex: 0 }),
-        expect.objectContaining({ imageIndex: 1 }),
+        expect.objectContaining({ imageId: 'image-uuid-0' }),
+        expect.objectContaining({ imageId: 'image-uuid-1' }),
       ]);
     });
 
@@ -312,14 +339,14 @@ describe('UploadsService', () => {
         files: [{ contentType: 'application/pdf' }],
       };
 
-      await expect(service.initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
+      await expect(initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
     });
 
     it('should reject too many files', async () => {
       const manyFiles = Array.from({ length: 101 }, () => ({ contentType: 'image/jpeg' }));
       const badDto = { ...validDto, files: manyFiles };
 
-      await expect(service.initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
+      await expect(initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
     });
 
     it('should reject files exceeding max size', async () => {
@@ -328,31 +355,36 @@ describe('UploadsService', () => {
         files: [{ contentType: 'image/jpeg', sizeBytes: 200 * 1024 * 1024 }],
       };
 
-      await expect(service.initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
+      await expect(initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
     });
 
-    it('should reject duplicate image indices', async () => {
-      const badDto = {
-        ...validDto,
-        files: [
-          { imageIndex: 0, contentType: 'image/jpeg' },
-          { imageIndex: 0, contentType: 'image/png' },
-        ],
-      };
-
-      await expect(service.initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
+    it('does not confuse different image IDs with identical descriptors', async () => {
+      await initUpload(
+        {
+          ...validDto,
+          files: [
+            { imageId: 'image-uuid-0', contentType: 'image/jpeg' },
+            { imageId: 'image-uuid-1', contentType: 'image/jpeg' },
+          ],
+        },
+        owner,
+      );
+      expect(mockUploadsRepository.createWithFiles).toHaveBeenCalledWith(expect.any(Object), [
+        expect.objectContaining({ imageId: 'image-uuid-0' }),
+        expect.objectContaining({ imageId: 'image-uuid-1' }),
+      ]);
     });
 
     it('should throw NotFoundException when property does not exist', async () => {
       mockCatalogRepository.findPropertyById.mockResolvedValue(undefined);
 
-      await expect(service.initUpload(validDto, owner)).rejects.toThrow(NotFoundException);
+      await expect(initUpload(validDto, owner)).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException when talhao does not exist', async () => {
       mockCatalogRepository.findTalhaoById.mockResolvedValue(undefined);
 
-      await expect(service.initUpload(validDto, owner)).rejects.toThrow(NotFoundException);
+      await expect(initUpload(validDto, owner)).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException when talhao does not belong to property', async () => {
@@ -361,13 +393,13 @@ describe('UploadsService', () => {
         propertyId: 'different-property',
       });
 
-      await expect(service.initUpload(validDto, owner)).rejects.toThrow(BadRequestException);
+      await expect(initUpload(validDto, owner)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw NotFoundException when crop type does not exist', async () => {
       mockCatalogRepository.findCropTypeById.mockResolvedValue(undefined);
 
-      await expect(service.initUpload(validDto, owner)).rejects.toThrow(NotFoundException);
+      await expect(initUpload(validDto, owner)).rejects.toThrow(NotFoundException);
     });
 
     it('should return existing upload for idempotent retry (finalizing)', async () => {
@@ -375,7 +407,7 @@ describe('UploadsService', () => {
       mockUploadsRepository.findByClientUploadId.mockResolvedValue(existing);
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([makeUploadFile()]);
 
-      const result = await service.initUpload(validDto, owner);
+      const result = await initUpload(validDto, owner);
 
       expect(result.uploadId).toBe(existing.id);
       expect(result.status).toBe('finalizing');
@@ -386,7 +418,7 @@ describe('UploadsService', () => {
       mockUploadsRepository.findByClientUploadId.mockResolvedValue(existing);
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([makeUploadFile()]);
 
-      const result = await service.initUpload(validDto, owner);
+      const result = await initUpload(validDto, owner);
 
       expect(result.uploadId).toBe(existing.id);
       expect(result.status).toBe('ready');
@@ -403,7 +435,7 @@ describe('UploadsService', () => {
         makeUploadFile({ objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/0/original.jpg' }),
         makeUploadFile({
           id: 'file-uuid-2',
-          imageIndex: 1,
+          imageId: 'image-uuid-1',
           objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/1/original.png',
           contentType: 'image/png',
         }),
@@ -416,13 +448,49 @@ describe('UploadsService', () => {
         objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
       });
 
-      const result = await service.initUpload(validDto, owner);
+      const result = await initUpload(validDto, owner);
 
       expect(result.files[0].uploadUrl).toBe('https://s3.example.com/retry');
       expect(mockStorageService.headObject).toHaveBeenCalledWith(
         'staging/uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
       );
       expect(mockStorageService.getPresignedPutUrl).toHaveBeenCalled();
+    });
+
+    it('matches retry descriptors by image ID even when client order changes', async () => {
+      mockUploadsRepository.findByClientUploadId.mockResolvedValue(
+        makeUpload({
+          propertyId: validDto.propertyId,
+          talhaoId: validDto.talhaoId,
+          cropTypeId: validDto.cropTypeId,
+        }),
+      );
+      mockUploadsRepository.findFilesByUploadId.mockResolvedValue([
+        makeUploadFile({ imageId: 'image-uuid-0', objectKey: 'staging/uploads/u/a/original.jpg' }),
+        makeUploadFile({
+          imageId: 'image-uuid-1',
+          contentType: 'image/png',
+          objectKey: 'staging/uploads/u/b/original.png',
+        }),
+      ]);
+      mockStorageService.headObject.mockResolvedValue({ exists: true });
+
+      const result = await initUpload(
+        {
+          ...validDto,
+          files: [
+            { imageId: 'image-uuid-1', contentType: 'image/png' },
+            { imageId: 'image-uuid-0', contentType: 'image/jpeg' },
+          ],
+        },
+        owner,
+      );
+
+      expect(result.files.map((file) => file.imageId)).toEqual(['image-uuid-1', 'image-uuid-0']);
+      expect(mockStorageService.headObject).toHaveBeenNthCalledWith(
+        1,
+        'staging/uploads/u/b/original.png',
+      );
     });
 
     it('should accept a retry when worker normalization changed contentType', async () => {
@@ -439,7 +507,7 @@ describe('UploadsService', () => {
         }),
         makeUploadFile({
           id: 'file-uuid-2',
-          imageIndex: 1,
+          imageId: 'image-uuid-1',
           objectKey: 'uploads/user-uuid-1/upload-uuid-1/1/original.png',
           contentType: 'image/png',
         }),
@@ -453,7 +521,7 @@ describe('UploadsService', () => {
       });
 
       await expect(
-        service.initUpload(
+        initUpload(
           { ...validDto, files: [{ contentType: 'image/png' }, validDto.files[1]] },
           owner,
         ),
@@ -472,13 +540,13 @@ describe('UploadsService', () => {
         makeUploadFile(),
         makeUploadFile({
           id: 'file-uuid-2',
-          imageIndex: 1,
+          imageId: 'image-uuid-1',
           objectKey: 'uploads/user-uuid-1/upload-uuid-1/1/original.png',
           contentType: 'image/png',
         }),
       ]);
       mockStorageService.headObject.mockResolvedValue({ exists: false });
-      await expect(service.initUpload(validDto, owner)).rejects.toThrow(ConflictException);
+      await expect(initUpload(validDto, owner)).rejects.toThrow(ConflictException);
       expect(mockStorageService.getPresignedPutUrl).not.toHaveBeenCalled();
       expect(mockUploadsRepository.renewDraft).not.toHaveBeenCalled();
     });
@@ -494,7 +562,7 @@ describe('UploadsService', () => {
         makeUploadFile({ objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/0/original.jpg' }),
         makeUploadFile({
           id: 'file-uuid-2',
-          imageIndex: 1,
+          imageId: 'image-uuid-1',
           objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/1/original.png',
           contentType: 'image/png',
         }),
@@ -516,12 +584,12 @@ describe('UploadsService', () => {
         objectKey: 'uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
       });
 
-      const resultPromise = service.initUpload(validDto, owner);
+      const resultPromise = initUpload(validDto, owner);
       await allStarted;
       expect(mockStorageService.headObject).toHaveBeenCalledTimes(2);
       releases.forEach((release) => release());
       const result = await resultPromise;
-      expect(result.files.map((file) => file.imageIndex)).toEqual([0, 1]);
+      expect(result.files.map((file) => file.imageId)).toEqual(['image-uuid-0', 'image-uuid-1']);
     });
 
     it('should skip upload when the corresponding object exists', async () => {
@@ -535,14 +603,14 @@ describe('UploadsService', () => {
         makeUploadFile(),
         makeUploadFile({
           id: 'file-uuid-2',
-          imageIndex: 1,
+          imageId: 'image-uuid-1',
           objectKey: 'uploads/user-uuid-1/upload-uuid-1/1/original.png',
           contentType: 'image/png',
         }),
       ]);
       mockStorageService.headObject.mockResolvedValue({ exists: true });
 
-      const result = await service.initUpload(validDto, owner);
+      const result = await initUpload(validDto, owner);
 
       expect(result.files.map((file) => file.uploadUrl)).toEqual(['', '']);
       expect(mockStorageService.getPresignedPutUrl).not.toHaveBeenCalled();
@@ -562,7 +630,7 @@ describe('UploadsService', () => {
         }),
         makeUploadFile({
           id: 'file-uuid-2',
-          imageIndex: 1,
+          imageId: 'image-uuid-1',
           objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/1/original.png',
           contentType: 'image/png',
           sizeBytes: 200,
@@ -576,7 +644,7 @@ describe('UploadsService', () => {
         objectKey: 'uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
       });
 
-      await expect(service.initUpload(validDto, owner)).resolves.toEqual(
+      await expect(initUpload(validDto, owner)).resolves.toEqual(
         expect.objectContaining({ uploadId: existing.id }),
       );
     });
@@ -594,7 +662,7 @@ describe('UploadsService', () => {
         makeUploadFile({ objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/0/original.jpg' }),
         makeUploadFile({
           id: 'file-uuid-2',
-          imageIndex: 1,
+          imageId: 'image-uuid-1',
           contentType: 'image/png',
           objectKey: 'staging/uploads/user-uuid-1/upload-uuid-1/1/original.png',
         }),
@@ -606,7 +674,7 @@ describe('UploadsService', () => {
         expiresAt: new Date(),
         objectKey: makeUploadFile().objectKey,
       });
-      const result = await service.initUpload(validDto, owner);
+      const result = await initUpload(validDto, owner);
 
       expect(result).toEqual(expect.objectContaining({ uploadId: existing.id, status: 'draft' }));
       expect(mockUploadsRepository.renewDraft).toHaveBeenCalledWith(existing.id);
@@ -617,7 +685,7 @@ describe('UploadsService', () => {
       mockUploadsRepository.findByClientUploadId.mockResolvedValue(existing);
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([]);
 
-      await expect(service.initUpload(validDto, owner)).rejects.toThrow(ConflictException);
+      await expect(initUpload(validDto, owner)).rejects.toThrow(ConflictException);
     });
 
     it('rejects a retry with a different activity date', async () => {
@@ -629,7 +697,7 @@ describe('UploadsService', () => {
         }),
       );
       await expect(
-        service.initUpload({ ...validDto, activityDate: new Date('2025-06-16') }, owner),
+        initUpload({ ...validDto, activityDate: new Date('2025-06-16') }, owner),
       ).rejects.toThrow(ConflictException);
       expect(mockStorageService.getPresignedPutUrl).not.toHaveBeenCalled();
     });
@@ -646,12 +714,12 @@ describe('UploadsService', () => {
         mockUploadsRepository.findByClientUploadId.mockResolvedValue(existing);
         mockUploadsRepository.findFilesByUploadId.mockResolvedValue([
           makeUploadFile(),
-          makeUploadFile({ imageIndex: 1, objectKey: 'uploads/u/id/1/original.png' }),
+          makeUploadFile({ imageId: 'image-uuid-1', objectKey: 'uploads/u/id/1/original.png' }),
         ]);
         mockStorageService.headObject.mockResolvedValue({ exists: true });
         mockUploadsRepository.renewDraft.mockResolvedValue(undefined);
         mockUploadsRepository.findById.mockResolvedValue({ ...existing, status });
-        const result = await service.initUpload(validDto, owner);
+        const result = await initUpload(validDto, owner);
         expect(result.status).toBe(status);
         expect(result.files.every((file) => file.uploadUrl === '')).toBe(true);
         expect(mockUploadsRepository.renewDraft).toHaveBeenCalledTimes(1);
@@ -669,7 +737,7 @@ describe('UploadsService', () => {
         files: [{ contentType: 'image/jpeg' }, { contentType: 'image/png' }],
       };
 
-      await expect(service.initUpload(dtoWithExtra, owner)).rejects.toThrow(ConflictException);
+      await expect(initUpload(dtoWithExtra, owner)).rejects.toThrow(ConflictException);
     });
 
     it.each([
@@ -684,12 +752,39 @@ describe('UploadsService', () => {
       mockUploadsRepository.findByClientUploadId.mockResolvedValue(existing);
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([
         makeUploadFile(),
-        makeUploadFile({ imageIndex: 1, contentType: 'image/png' }),
+        makeUploadFile({ imageId: 'image-uuid-1', contentType: 'image/png' }),
       ]);
 
       await expect(
-        service.initUpload({ ...validDto, files: [changedFile, validDto.files[1]] }, owner),
+        initUpload({ ...validDto, files: [changedFile, validDto.files[1]] }, owner),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects retries that change a recorded image location', async () => {
+      mockUploadsRepository.findByClientUploadId.mockResolvedValue(
+        makeUpload({
+          propertyId: validDto.propertyId,
+          talhaoId: validDto.talhaoId,
+          cropTypeId: validDto.cropTypeId,
+        }),
+      );
+      mockUploadsRepository.findFilesByUploadId.mockResolvedValue([
+        makeUploadFile(),
+        makeUploadFile({ id: 'file-uuid-2', imageId: 'image-uuid-1', contentType: 'image/png' }),
+      ]);
+      await expect(
+        initUpload(
+          {
+            ...validDto,
+            files: [
+              { contentType: 'image/jpeg', latitude: null, longitude: null },
+              validDto.files[1],
+            ],
+          },
+          owner,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(mockStorageService.headObject).not.toHaveBeenCalled();
     });
   });
 
@@ -722,8 +817,6 @@ describe('UploadsService', () => {
         source: 'phone',
         status: 'finalizing',
         activityDate: new Date('2025-06-15'),
-        latitude: -22.9,
-        longitude: -43.1,
         errorMessage: null,
         createdAt: new Date('2025-06-15'),
         updatedAt: new Date('2025-06-15'),
@@ -861,10 +954,10 @@ describe('UploadsService', () => {
       mockUploadsRepository.findById.mockResolvedValue(upload);
       mockUploadsRepository.findByIdEnriched.mockResolvedValue(makeEnrichedRow());
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([
-        makeUploadFile({ id: 'orig-0', imageIndex: 0, variant: 'original' }),
-        makeUploadFile({ id: 'orig-1', imageIndex: 1, variant: 'original' }),
-        makeUploadFile({ id: 'prev-1', imageIndex: 1, variant: 'preview' }),
-        makeUploadFile({ id: 'prev-0', imageIndex: 0, variant: 'preview' }),
+        makeUploadFile({ id: 'orig-0', imageId: 'image-uuid-0', variant: 'original' }),
+        makeUploadFile({ id: 'orig-1', imageId: 'image-uuid-1', variant: 'original' }),
+        makeUploadFile({ id: 'prev-1', imageId: 'image-uuid-1', variant: 'preview' }),
+        makeUploadFile({ id: 'prev-0', imageId: 'image-uuid-0', variant: 'preview' }),
       ]);
 
       const result = await service.getUploadDetail('upload-uuid-1', owner);
@@ -1266,14 +1359,14 @@ describe('UploadsService', () => {
         id: 'orig-1',
         uploadId,
         variant: 'original',
-        imageIndex: 0,
+        imageId: 'image-uuid-0',
         objectKey: 'uploads/user-uuid-1/upload-uuid-1/0/original.jpg',
       });
       const preview = makeUploadFile({
         id: 'prev-1',
         uploadId,
         variant: 'preview',
-        imageIndex: 0,
+        imageId: 'image-uuid-0',
         objectKey: 'uploads/user-uuid-1/upload-uuid-1/0/preview.webp',
       });
       mockUploadsRepository.findById.mockResolvedValue(upload);
@@ -1354,14 +1447,14 @@ describe('UploadsService', () => {
         id: 'ok',
         uploadId,
         variant: 'original',
-        imageIndex: 0,
+        imageId: 'image-uuid-0',
         objectKey: 'ok-key',
       });
       const badFile = makeUploadFile({
         id: 'bad',
         uploadId,
         variant: 'preview',
-        imageIndex: 1,
+        imageId: 'image-uuid-1',
         objectKey: 'bad-key',
       });
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([okFile, badFile]);
@@ -1380,14 +1473,14 @@ describe('UploadsService', () => {
         id: 'ok',
         uploadId,
         variant: 'original',
-        imageIndex: 0,
+        imageId: 'image-uuid-0',
         objectKey: 'k',
       });
       const withoutKey = makeUploadFile({
         id: 'nokey',
         uploadId,
         variant: 'original',
-        imageIndex: 1,
+        imageId: 'image-uuid-1',
         objectKey: '',
       });
       mockUploadsRepository.findFilesByUploadId.mockResolvedValue([withKey, withoutKey]);
@@ -1524,8 +1617,8 @@ describe('UploadsService', () => {
 
     it('should return signed URLs for all files when fileId is omitted', async () => {
       mockUploadsRepository.findOriginalsByUploadIds.mockResolvedValue([
-        makeUploadFile({ id: 'f1', uploadId: uploadId1, imageIndex: 0, objectKey: 'k1' }),
-        makeUploadFile({ id: 'f2', uploadId: uploadId1, imageIndex: 1, objectKey: 'k2' }),
+        makeUploadFile({ id: 'f1', uploadId: uploadId1, imageId: 'image-uuid-0', objectKey: 'k1' }),
+        makeUploadFile({ id: 'f2', uploadId: uploadId1, imageId: 'image-uuid-1', objectKey: 'k2' }),
       ]);
 
       const result = await service.getExportDownloadUrls(
@@ -1871,7 +1964,7 @@ describe('UploadsService', () => {
         id: 'preview-file-1',
         uploadId: 'u1',
         variant: 'preview',
-        imageIndex: 0,
+        imageId: 'image-uuid-0',
       });
       mockUploadsRepository.countWhere.mockResolvedValue(1);
       mockUploadsRepository.listWhereEnriched.mockResolvedValue(enrichedRows);
@@ -1885,7 +1978,6 @@ describe('UploadsService', () => {
       const result = await service.listUploads({ limit: 20, offset: 0 }, owner);
 
       expect(result.uploads[0].previewFileId).toBe('preview-file-1');
-      expect(result.uploads[0].previewImageIndex).toBe(0);
       expect(result.uploads[0].previewCount).toBe(2);
     });
 
@@ -1901,7 +1993,6 @@ describe('UploadsService', () => {
       const result = await service.listUploads({ limit: 20, offset: 0 }, owner);
 
       expect(result.uploads[0].previewFileId).toBeNull();
-      expect(result.uploads[0].previewImageIndex).toBeNull();
     });
 
     it('should apply userId filter', async () => {
@@ -2290,8 +2381,6 @@ describe('UploadsService', () => {
         source: 'phone',
         status: 'ready',
         activityDate: new Date('2025-06-15'),
-        latitude: -22.9,
-        longitude: -43.1,
         errorMessage: null,
         createdAt: new Date('2025-06-15'),
         updatedAt: new Date('2025-06-15'),
@@ -2324,8 +2413,6 @@ describe('UploadsService', () => {
         source: 'phone',
         status: 'ready',
         activityDate: new Date('2025-06-15'),
-        latitude: -22.9,
-        longitude: -43.1,
         errorMessage: null,
         createdAt: new Date('2025-06-15'),
         updatedAt: new Date('2025-06-15'),
@@ -2379,8 +2466,6 @@ describe('UploadsService', () => {
         source: 'phone',
         status: 'ready',
         activityDate: new Date('2025-06-15'),
-        latitude: -22.9,
-        longitude: -43.1,
         errorMessage: null,
         createdAt: new Date('2025-06-15'),
         updatedAt: new Date('2025-06-15'),

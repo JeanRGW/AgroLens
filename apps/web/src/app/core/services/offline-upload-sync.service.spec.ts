@@ -26,9 +26,15 @@ function buildUpload(overrides: Partial<OfflineUpload> = {}): OfflineUpload {
       cropTypeId: 'c1',
       source: 'phone',
       activityDate: '2025-06-01T12:00:00Z',
-      latitude: -15.5,
-      longitude: -47.5,
-      files: [{ fileName: 'a.jpg', contentType: 'image/jpeg', sizeBytes: 4 }],
+      files: [
+        {
+          imageId: 'image-0',
+          contentType: 'image/jpeg',
+          sizeBytes: 4,
+          latitude: -15.5,
+          longitude: -47.5,
+        },
+      ],
     },
     files: [{ blob: new Blob(['data']), fileName: 'a.jpg', contentType: 'image/jpeg' }],
     status: 'pending',
@@ -49,8 +55,6 @@ const readyDetail: UploadDetail = {
   source: 'phone',
   status: 'ready',
   activityDate: '2025-06-01T12:00:00Z',
-  latitude: -15.5,
-  longitude: -47.5,
   errorMessage: null,
   createdAt: '2025-06-01T12:00:00Z',
   updatedAt: '2025-06-01T12:00:01Z',
@@ -127,7 +131,15 @@ describe('OfflineUploadSyncService', () => {
 
   it('uses the resolved queued MIME type when reconstructing an untyped capture for upload', async () => {
     const upload = buildUpload();
-    upload.request.files = [{ fileName: 'capture.PNG', contentType: 'image/png', sizeBytes: 4 }];
+    upload.request.files = [
+      {
+        imageId: 'image-0',
+        contentType: 'image/png',
+        sizeBytes: 4,
+        latitude: null,
+        longitude: null,
+      },
+    ];
     upload.files = [
       { blob: new Blob(['data']), fileName: 'capture.PNG', contentType: 'image/png' },
     ];

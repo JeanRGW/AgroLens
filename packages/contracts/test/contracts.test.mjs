@@ -107,14 +107,55 @@ describe("Contracts Schema Validation", () => {
       cropTypeId: "a0000000-0000-0000-0000-000000000003",
       source: "phone",
       activityDate: "2026-01-01T12:00:00Z",
-      latitude: -23.5,
-      longitude: -46.6,
       files: [
-        { contentType: "image/jpeg", fileName: "leaf.jpg", sizeBytes: 1024 },
+        {
+          imageId: "a0000000-0000-4000-8000-000000000001",
+          contentType: "image/jpeg",
+          sizeBytes: 1024,
+          latitude: -23.5,
+          longitude: -46.6,
+        },
       ],
     });
     assert.equal(valid.files.length, 1);
     assert.ok(valid.activityDate instanceof Date);
+    assert.equal(
+      uploadInitSchema.safeParse({
+        ...valid,
+        activityDate: valid.activityDate.toISOString(),
+        files: [
+          {
+            imageId: valid.files[0].imageId,
+            contentType: "image/jpeg",
+            latitude: null,
+            longitude: null,
+          },
+        ],
+      }).success,
+      true,
+    );
+    assert.equal(
+      uploadInitSchema.safeParse({
+        ...valid,
+        activityDate: valid.activityDate.toISOString(),
+        files: [
+          {
+            imageId: valid.files[0].imageId,
+            contentType: "image/jpeg",
+            latitude: null,
+            longitude: -46.6,
+          },
+        ],
+      }).success,
+      false,
+    );
+    assert.equal(
+      uploadInitSchema.safeParse({
+        ...valid,
+        files: [valid.files[0], valid.files[0]],
+      }).success,
+      false,
+    );
   });
 
   test("yoloLabelSchema validates bounding box ranges 0..1", () => {

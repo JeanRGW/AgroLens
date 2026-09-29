@@ -18,6 +18,7 @@
  */
 
 import { INestApplication } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { eq } from 'drizzle-orm';
 import {
@@ -101,6 +102,7 @@ describe('Upload flow E2E', () => {
     // ── Step 3: Init upload ─────────────────────────────────────────────
     const imageBuffer = generateTestImageBuffer();
     const clientUploadId = 'test-client-id-001';
+    const imageId = randomUUID();
     const initResponse = await request(app.getHttpServer())
       .post('/api/uploads/init')
       .set('Authorization', `Bearer ${owner.accessToken}`)
@@ -112,14 +114,13 @@ describe('Upload flow E2E', () => {
         estadioId,
         source: 'phone',
         activityDate: new Date().toISOString(),
-        latitude: -22.9,
-        longitude: -43.1,
         files: [
           {
-            imageIndex: 0,
+            imageId,
             contentType: 'image/png',
-            fileName: 'test-image.png',
             sizeBytes: imageBuffer.length,
+            latitude: -23.1,
+            longitude: -44.2,
           },
         ],
       })
@@ -129,7 +130,7 @@ describe('Upload flow E2E', () => {
       uploadId: string;
       status: string;
       files: Array<{
-        imageIndex: number;
+        imageId: string;
         fileId: string;
         uploadUrl: string;
         objectKey: string;
@@ -144,6 +145,7 @@ describe('Upload flow E2E', () => {
     expect(initBody.files).toHaveLength(1);
 
     const fileInstruction = initBody.files[0];
+    expect(fileInstruction.imageId).toBe(imageId);
     expect(fileInstruction.method).toBe('PUT');
     expect(fileInstruction.uploadUrl).toBeTruthy();
 
@@ -178,8 +180,6 @@ describe('Upload flow E2E', () => {
         status: string;
         source: string;
         activityDate: string;
-        latitude: number;
-        longitude: number;
         createdAt: string;
         updatedAt: string;
         fileCount: number;
@@ -202,7 +202,9 @@ describe('Upload flow E2E', () => {
       status: string;
       files: Array<{
         id: string;
-        imageIndex: number;
+        imageId: string;
+        latitude: number | null;
+        longitude: number | null;
         variant: string;
         objectKey: string;
         contentType: string;
@@ -217,6 +219,25 @@ describe('Upload flow E2E', () => {
     const originalFile = detailBody.files.find((f) => f.variant === 'original');
     expect(originalFile).toBeDefined();
     expect(originalFile!.contentType).toBe('image/png');
+    for (const file of [originalFile!, previewFile!]) {
+      expect(file.imageId).toBe(fileInstruction.imageId);
+      expect(file.imageId).toBe(imageId);
+      expect([file.latitude, file.longitude]).toEqual([-23.1, -44.2]);
+    }
+
+    const annotation = await request(app.getHttpServer())
+      .put(`/api/uploads/${uploadId}/annotations/${fileInstruction.imageId}`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ imageWidth: 8, imageHeight: 8, classes: ['weed'], labels: [] })
+      .expect(200);
+    expect(annotation.body.imageId).toBe(fileInstruction.imageId);
+    const annotationList = await request(app.getHttpServer())
+      .get(`/api/uploads/${uploadId}/annotations`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .expect(200);
+    expect(annotationList.body).toEqual([
+      expect.objectContaining({ imageId: fileInstruction.imageId, classes: ['weed'] }),
+    ]);
     expect(fileInstruction.objectKey).toBe(`staging/${originalFile!.objectKey}`);
 
     // Replaying the still-valid PUT may replace staging bytes, never the ready original.
@@ -259,11 +280,13 @@ describe('Upload flow E2E', () => {
     const downloadBody = downloadResponse.body as {
       uploadId: string;
       fileId: string;
+      imageId: string;
       downloadUrl: string;
       expiresAt: string;
       contentType: string;
     };
     expect(downloadBody.downloadUrl).toBeTruthy();
+    expect(downloadBody.imageId).toBe(fileInstruction.imageId);
     expect(downloadBody.downloadUrl).toContain('X-Amz-Signature');
     const downloaded = await fetch(downloadBody.downloadUrl);
     expect(downloaded.status).toBe(200);
@@ -334,9 +357,15 @@ describe('Upload flow E2E', () => {
       estadioId,
       source: 'phone',
       activityDate: new Date().toISOString(),
-      latitude: 0,
-      longitude: 0,
-      files: [{ contentType: 'image/png', sizeBytes: 100 }],
+      files: [
+        {
+          imageId: randomUUID(),
+          contentType: 'image/png',
+          sizeBytes: 100,
+          latitude: 0,
+          longitude: 0,
+        },
+      ],
     };
     const init = await request(app.getHttpServer())
       .post('/api/uploads/init')

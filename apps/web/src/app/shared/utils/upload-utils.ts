@@ -11,11 +11,15 @@ export function getSourceLabel(source: UploadSource | string): string {
 }
 
 export function hasValidCoordinates(
-  location?: { latitude?: number; longitude?: number } | null,
+  location?: { latitude?: number | null; longitude?: number | null } | null,
 ): boolean {
-  if (!location || location.latitude === undefined || location.longitude === undefined)
-    return false;
-  return !(location.latitude === 0 && location.longitude === 0);
+  return (
+    !!location &&
+    location.latitude != null &&
+    location.longitude != null &&
+    Number.isFinite(location.latitude) &&
+    Number.isFinite(location.longitude)
+  );
 }
 
 export function openMapCoordinates(latitude: number, longitude: number): void {
@@ -46,18 +50,24 @@ export function toUtcIsoOrNull(value?: string | null): string | undefined {
   return date.toISOString();
 }
 
+export function compareImageIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function buildDisplayEntries(files: UploadFileInfo[]): string[] {
-  const previewByIndex = new Map<number, UploadFileInfo>();
+  const previewByImageId = new Map<string, UploadFileInfo>();
   for (const f of files) {
     if (f.variant === 'preview') {
-      previewByIndex.set(f.imageIndex, f);
+      previewByImageId.set(f.imageId, f);
     }
   }
 
   const entries: string[] = [];
-  const originals = files.filter((f) => f.variant === 'original');
+  const originals = files
+    .filter((f) => f.variant === 'original')
+    .sort((a, b) => compareImageIds(a.imageId, b.imageId));
   for (const original of originals) {
-    const preview = previewByIndex.get(original.imageIndex);
+    const preview = previewByImageId.get(original.imageId);
     if (preview) {
       entries.push(`preview:${preview.id}`);
     } else {
@@ -71,7 +81,9 @@ export function findOriginalFileForIndex(
   files: UploadFileInfo[],
   index: number,
 ): UploadFileInfo | undefined {
-  return files.filter((f) => f.variant === 'original')[index];
+  return files
+    .filter((f) => f.variant === 'original')
+    .sort((a, b) => compareImageIds(a.imageId, b.imageId))[index];
 }
 
 export function mapDisplayUrlsToResolvedMap(

@@ -175,7 +175,7 @@ export class InferenceRepository {
       if (upload.length !== 1) throw namedError('UPLOAD_NOT_READY');
       for (const observation of observations) {
         const rows = await tx.execute(
-          sql`SELECT observed_etag FROM upload_files WHERE id = ${observation.id} AND upload_id = ${job.uploadId} AND variant = 'original' FOR UPDATE`,
+          sql`SELECT file.observed_etag FROM upload_files file JOIN upload_images image ON file.image_id = image.id WHERE file.id = ${observation.id} AND image.upload_id = ${job.uploadId} AND file.variant = 'original' FOR UPDATE OF file`,
         );
         if (rows.length !== 1) throw namedError('UPLOAD_FILE_CHANGED');
         const existing = (rows[0] as { observed_etag: string | null }).observed_etag;

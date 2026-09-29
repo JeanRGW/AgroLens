@@ -61,7 +61,7 @@ export const createJobSchema = z
   .object({
     modelId: z.string().uuid(),
     uploadId: z.string().uuid().optional(),
-    imageIndexes: z.array(z.number().int().min(0)).optional(),
+    imageIds: z.array(z.string().uuid()).optional(),
     files: z.array(jobFileDescriptorSchema).min(1).optional(),
   })
   .refine((data) => (data.uploadId != null) !== (data.files != null), {
@@ -109,6 +109,7 @@ export interface InferenceModelAdmin extends InferenceModelSummary {
 export interface InferenceJobImageSummary {
   id: string;
   imageIndex: number;
+  uploadImageId: string | null;
   fileName: string;
   status: "queued" | "running" | "completed" | "failed" | string;
   detectionCount: number;
@@ -150,6 +151,7 @@ export interface InferenceJobListItem {
 export interface InferenceJobImageResult {
   id: string;
   imageIndex: number;
+  uploadImageId: string | null;
   fileName: string;
   width: number | null;
   height: number | null;

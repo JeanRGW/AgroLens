@@ -38,9 +38,14 @@ describe('uploadInitSchema activityDate', () => {
     talhaoId: '00000000-0000-0000-0000-000000000002',
     cropTypeId: '00000000-0000-0000-0000-000000000003',
     source: 'phone',
-    latitude: -22.9,
-    longitude: -43.1,
-    files: [{ contentType: 'image/jpeg' }],
+    files: [
+      {
+        imageId: '00000000-0000-4000-8000-000000000001',
+        contentType: 'image/jpeg',
+        latitude: -22.9,
+        longitude: -43.1,
+      },
+    ],
   };
 
   it('accepts a timezone-qualified activityDate as a Date', () => {

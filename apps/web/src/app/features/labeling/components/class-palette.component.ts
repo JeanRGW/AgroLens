@@ -13,7 +13,9 @@ import { MatIconModule } from '@angular/material/icon';
     <div class="class-palette">
       <div class="palette-header">
         <span class="palette-title">Classes</span>
-        <span class="palette-hint">{{ classes().length }} classe(s) &mdash; atalhos 1&ndash;9</span>
+        <span class="palette-hint">
+          {{ classes().length }} {{ classes().length === 1 ? 'classe' : 'classes' }} — atalhos 1–9
+        </span>
       </div>
 
       <div class="chip-list">

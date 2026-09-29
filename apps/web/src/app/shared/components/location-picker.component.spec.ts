@@ -47,12 +47,15 @@ describe('LocationPickerComponent offline GPS', () => {
 
   it('reports denied permission and allows another attempt', () => {
     const picker = TestBed.createComponent(LocationPickerComponent).componentInstance;
+    const locating = jasmine.createSpy('locating');
+    picker.locatingChange.subscribe(locating);
     geolocation.and.callFake((_success: PositionCallback, error: PositionErrorCallback) =>
       error({ code: 1 } as GeolocationPositionError),
     );
     picker.locateUser();
     expect(picker.locationError()).toContain('Permita');
     expect(picker.locating()).toBeFalse();
+    expect(locating.calls.allArgs()).toEqual([[true], [false]]);
     picker.locateUser();
     expect(geolocation).toHaveBeenCalledTimes(2);
   });
@@ -60,11 +63,14 @@ describe('LocationPickerComponent offline GPS', () => {
   it('bounds a stalled permission request and ignores late results', fakeAsync(() => {
     const picker = TestBed.createComponent(LocationPickerComponent).componentInstance;
     const selected = jasmine.createSpy('selected');
+    const locating = jasmine.createSpy('locating');
     picker.locationSelected.subscribe(selected);
+    picker.locatingChange.subscribe(locating);
     picker.locateUser();
     const callback: PositionCallback = geolocation.calls.mostRecent().args[0];
     tick(25000);
     expect(picker.locating()).toBeFalse();
+    expect(locating.calls.allArgs()).toEqual([[true], [false]]);
     expect(picker.locationError()).toContain('demorou');
     callback({ coords: { latitude: 1, longitude: 2, accuracy: 3 } } as GeolocationPosition);
     expect(selected).not.toHaveBeenCalled();
@@ -88,5 +94,29 @@ describe('LocationPickerComponent offline GPS', () => {
     button.click();
     expect(button.type).toBe('button');
     expect(fixture.componentInstance.submissions).toBe(0);
+  });
+
+  it('labels the compact map toggle without the optional qualifier', () => {
+    const fixture = TestBed.createComponent(LocationPickerComponent);
+    fixture.detectChanges();
+    const mapButton: HTMLButtonElement = fixture.nativeElement.querySelector('.map-toggle');
+    expect(mapButton.textContent).toContain('Mostrar mapa');
+    expect(mapButton.textContent).not.toContain('(opcional)');
+    expect(mapButton.classList.contains('mat-mdc-outlined-button')).toBeTrue();
+
+    fixture.componentInstance.mapVisible.set(true);
+    fixture.detectChanges();
+    expect(mapButton.textContent).toContain('Ocultar mapa');
+  });
+
+  it('does not clear an existing point while manual coordinates are incomplete', () => {
+    const picker = TestBed.createComponent(LocationPickerComponent).componentInstance;
+    picker.latitude = -25.4;
+    picker.longitude = -51.4;
+    picker.ngOnChanges({});
+    picker.manualLat = null;
+    picker.onManualCoordChange();
+    expect(picker.selectedLat()).toBe(-25.4);
+    expect(picker.selectedLng()).toBe(-51.4);
   });
 });

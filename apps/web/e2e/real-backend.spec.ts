@@ -87,7 +87,7 @@ test.describe('Real-backend critical flows', () => {
     await expect(page.getByText('AgroLens')).toBeVisible();
 
     // Main nav items (rendered as mat-list-item links)
-    for (const label of ['Dashboard', 'Uploads', 'Novo Upload', 'Anotação']) {
+    for (const label of ['Painel', 'Uploads', 'Novo upload', 'Anotação']) {
       await expect(
         page.getByRole('link', { name: label }),
         `Nav link "${label}" should be visible`,
@@ -177,7 +177,7 @@ test.describe('Real-backend critical flows', () => {
     await expect(dialog).toBeVisible({ timeout: 10_000 });
 
     // Dialog contains the info panel
-    await expect(dialog).toContainText('Informacoes');
+    await expect(dialog).toContainText('Informações');
 
     // Source badge in dialog
     await expect(dialog.locator('.source-badge').first()).toContainText('Celular');

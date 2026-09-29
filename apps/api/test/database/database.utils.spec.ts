@@ -6,7 +6,7 @@ describe('deriveUploadObjectKeys', () => {
     (objectKey) => {
       expect(
         deriveUploadObjectKeys('user', 'upload', [
-          { objectKey, variant: 'original', imageIndex: 0 },
+          { objectKey, variant: 'original', imageId: '0' },
         ]),
       ).toEqual(
         new Set([

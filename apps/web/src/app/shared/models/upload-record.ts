@@ -1,9 +1,15 @@
 import type {
   DisplayUrlsResponse,
+  DownloadUrlItem,
+  FileDescriptorDto,
+  FileUploadInstruction,
+  UploadFileInfo as ContractUploadFileInfo,
+  UploadInitResponse as ContractUploadInitResponse,
   ResolvedFileUrl,
   UnannotatedImageHandling,
   UploadSource,
   UploadStatus,
+  UploadInitDto,
   YoloExportOptions,
 } from '@agrolens/contracts';
 
@@ -38,8 +44,6 @@ export interface UploadMutationRecord {
   source: UploadSource;
   status: UploadStatus;
   activityDate: string;
-  latitude: number;
-  longitude: number;
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
@@ -61,28 +65,17 @@ export interface UploadRecord {
   source: UploadSource;
   status: UploadStatus;
   activityDate: string;
-  latitude: number;
-  longitude: number;
   createdAt: string;
   updatedAt: string;
   fileCount: number;
   user?: { id: string; fullName: string | null };
   previewFileId?: string | null;
-  previewImageIndex?: number | null;
 }
 
-export interface UploadFileInfo {
-  id: string;
-  uploadId: string;
-  imageIndex: number;
+export type UploadFileInfo = Omit<ContractUploadFileInfo, 'createdAt' | 'variant'> & {
   variant: 'original' | 'preview';
-  objectKey: string;
-  contentType: string;
-  sizeBytes: number | null;
-  width: number | null;
-  height: number | null;
   createdAt: string;
-}
+};
 
 export interface UploadDetail {
   id: string;
@@ -100,8 +93,6 @@ export interface UploadDetail {
   source: UploadSource;
   status: UploadStatus;
   activityDate: string;
-  latitude: number;
-  longitude: number;
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
@@ -136,34 +127,18 @@ export interface DashboardSnapshot {
   catalogCounts: { properties: number; talhoes: number; cropTypes: number; estadios: number };
 }
 
-export interface InitUploadRequest {
-  clientUploadId: string;
-  propertyId: string;
-  talhaoId: string;
-  cropTypeId: string;
-  estadioId?: string;
-  source: UploadSource;
+export type InitUploadRequest = Omit<UploadInitDto, 'activityDate' | 'files'> & {
   activityDate: string;
-  latitude: number;
-  longitude: number;
-  files: { fileName: string; contentType: string; sizeBytes: number }[];
-}
+  files: Array<FileDescriptorDto & { sizeBytes: number }>;
+};
 
-export interface InitUploadFileInstruction {
-  imageIndex: number;
-  fileId: string;
-  uploadUrl: string;
-  objectKey: string;
-  method: 'PUT';
-  headers: Record<string, string>;
+export type InitUploadFileInstruction = Omit<FileUploadInstruction, 'expiresAt'> & {
   expiresAt: string;
-}
+};
 
-export interface InitUploadResponse {
-  uploadId: string;
-  status: string;
+export type InitUploadResponse = Omit<ContractUploadInitResponse, 'files'> & {
   files: InitUploadFileInstruction[];
-}
+};
 
 export interface DownloadProgress {
   phase: 'downloading' | 'packaging' | 'done';
@@ -172,13 +147,4 @@ export interface DownloadProgress {
   percent: number;
 }
 
-export interface PreviewUrlResponse {
-  uploadId: string;
-  fileId: string;
-  imageIndex: number;
-  fileName: string;
-  contentType: string;
-  sizeBytes: number | null;
-  downloadUrl: string;
-  expiresAt: string;
-}
+export type PreviewUrlResponse = Omit<DownloadUrlItem, 'expiresAt'> & { expiresAt: string };

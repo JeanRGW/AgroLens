@@ -73,7 +73,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return CustomScaffold(
       appBar: CustomAppBar(
         leading: CustomAppBarAction.backButton(context),
-        title: 'Editar Perfil',
+        title: 'Editar perfil',
         subtitle: 'Atualize seus dados cadastrais',
       ),
       body: Form(
@@ -109,7 +109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 20),
                   CustomTextField(
-                    label: 'Nome Completo',
+                    label: 'Nome completo',
                     controller: _name,
                     prefixIcon: const Icon(Icons.person_outlined),
                     validator: (value) =>
@@ -141,7 +141,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 24),
             CustomButton(
-              label: 'Salvar Alterações',
+              label: 'Salvar alterações',
               onPressed: _save,
               isLoading: _saving,
               icon: Icons.save_outlined,

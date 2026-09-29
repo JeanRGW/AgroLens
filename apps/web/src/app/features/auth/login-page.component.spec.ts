@@ -101,7 +101,7 @@ describe('LoginPageComponent', () => {
     await component.login();
 
     expect(snackBar.open).toHaveBeenCalledWith(
-      'Falha no login. Verifique email e senha.',
+      'Falha no login. Verifique o email e a senha.',
       'Fechar',
       { duration: 4500 },
     );

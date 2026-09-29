@@ -29,8 +29,7 @@ describe('AnnotationsService', () => {
       const mockAnnotations = [
         {
           id: 'ann-1',
-          uploadId: 'upload-1',
-          imageIndex: 0,
+          imageId: 'image-0',
           imageWidth: 1920,
           imageHeight: 1080,
           classes: ['class-a'],
@@ -47,11 +46,10 @@ describe('AnnotationsService', () => {
   });
 
   describe('getAnnotation', () => {
-    it('should GET annotation by uploadId and imageIndex', async () => {
+    it('should GET annotation by uploadId and imageId', async () => {
       const mockAnnotation = {
         id: 'ann-1',
-        uploadId: 'upload-1',
-        imageIndex: 2,
+        imageId: 'image-2',
         imageWidth: 1920,
         imageHeight: 1080,
         classes: ['class-a'],
@@ -60,9 +58,9 @@ describe('AnnotationsService', () => {
       };
       api.get.and.returnValue(of(mockAnnotation));
 
-      const result = await service.getAnnotation('upload-1', 2);
+      const result = await service.getAnnotation('upload-1', 'image-2');
       expect(result).toEqual(mockAnnotation);
-      expect(api.get).toHaveBeenCalledWith('/uploads/upload-1/annotations/2');
+      expect(api.get).toHaveBeenCalledWith('/uploads/upload-1/annotations/image-2');
     });
 
     it('should return null on 404', async () => {
@@ -70,7 +68,7 @@ describe('AnnotationsService', () => {
         throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' })),
       );
 
-      const result = await service.getAnnotation('upload-1', 99);
+      const result = await service.getAnnotation('upload-1', 'image-99');
       expect(result).toBeNull();
     });
 
@@ -78,22 +76,21 @@ describe('AnnotationsService', () => {
       const error = new HttpErrorResponse({ status: 500, statusText: 'Server Error' });
       api.get.and.returnValue(throwError(() => error));
 
-      await expectAsync(service.getAnnotation('upload-1', 99)).toBeRejectedWith(error);
+      await expectAsync(service.getAnnotation('upload-1', 'image-99')).toBeRejectedWith(error);
     });
 
     it('should reject network errors', async () => {
       const error = new Error('Network failure');
       api.get.and.returnValue(throwError(() => error));
 
-      await expectAsync(service.getAnnotation('upload-1', 99)).toBeRejectedWith(error);
+      await expectAsync(service.getAnnotation('upload-1', 'image-99')).toBeRejectedWith(error);
     });
   });
 
   describe('upsertAnnotation', () => {
     it('should PUT annotation', async () => {
       const input = {
-        uploadId: 'upload-1',
-        imageIndex: 0,
+        imageId: 'image-0',
         imageWidth: 1920,
         imageHeight: 1080,
         classes: ['class-a'],
@@ -110,8 +107,8 @@ describe('AnnotationsService', () => {
       api.put.and.returnValue(of(mockResponse));
 
       const result = await service.upsertAnnotation('upload-1', input);
-      expect(result.id).toBe('ann-1');
-      expect(api.put).toHaveBeenCalledWith('/uploads/upload-1/annotations/0', input);
+      expect(result.imageId).toBe('image-0');
+      expect(api.put).toHaveBeenCalledWith('/uploads/upload-1/annotations/image-0', input);
     });
   });
 
@@ -120,8 +117,7 @@ describe('AnnotationsService', () => {
       const mockAnnotations1 = [
         {
           id: 'ann-1',
-          uploadId: 'u1',
-          imageIndex: 0,
+          imageId: 'image-0',
           imageWidth: 1920,
           imageHeight: 1080,
           classes: ['class-a'],
@@ -132,8 +128,7 @@ describe('AnnotationsService', () => {
       const mockAnnotations2 = [
         {
           id: 'ann-2',
-          uploadId: 'u2',
-          imageIndex: 0,
+          imageId: 'image-0',
           imageWidth: 1920,
           imageHeight: 1080,
           classes: ['class-b'],
@@ -161,8 +156,7 @@ describe('AnnotationsService', () => {
           return of([
             {
               id: 'ann-1',
-              uploadId: 'u1',
-              imageIndex: 0,
+              imageId: 'image-0',
               imageWidth: 1920,
               imageHeight: 1080,
               classes: [],

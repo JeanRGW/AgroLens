@@ -330,7 +330,9 @@ export class UploadModelDialogComponent {
           <mat-card-content>
             <div class="table-meta">
               @if (models().length > 0) {
-                <span class="count-badge">{{ models().length }} modelo(s)</span>
+                <span class="count-badge">
+                  {{ models().length }} {{ models().length === 1 ? 'modelo' : 'modelos' }}
+                </span>
               }
             </div>
 
@@ -389,7 +391,7 @@ export class UploadModelDialogComponent {
 
                   <!-- Checksum -->
                   <ng-container matColumnDef="checksum">
-                    <th mat-header-cell *matHeaderCellDef>Checksum</th>
+                    <th mat-header-cell *matHeaderCellDef>Soma de verificação</th>
                     <td mat-cell *matCellDef="let row" class="mono subtle">
                       {{ truncatedChecksum(row.sha256) }}
                     </td>

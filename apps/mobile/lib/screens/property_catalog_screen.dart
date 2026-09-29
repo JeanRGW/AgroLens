@@ -87,8 +87,8 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
         SnackBar(
           content: Text(
             created.isPendingSync
-                ? 'Propriedade salva localmente e aguarda sincronização'
-                : 'Propriedade criada com sucesso',
+                ? 'Propriedade salva localmente e será sincronizada quando houver conexão.'
+                : 'Propriedade criada com sucesso.',
           ),
         ),
       );
@@ -234,8 +234,8 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
                     Expanded(
                       child: Text(
                         _searchController.text.isNotEmpty
-                            ? '${filtered.length} resultado(s) de ${_properties.length} propriedade(s).'
-                            : '${filtered.length} propriedade(s) cadastrada(s).',
+                            ? '${filtered.length} ${filtered.length == 1 ? 'resultado' : 'resultados'} de ${_properties.length} ${_properties.length == 1 ? 'propriedade' : 'propriedades'}.'
+                            : '${filtered.length} ${filtered.length == 1 ? 'propriedade cadastrada' : 'propriedades cadastradas'}.',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: Colors.white),
@@ -468,8 +468,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         SnackBar(
           content: Text(
             created.isPendingSync
-                ? 'Talhão salvo localmente e aguarda sincronização'
-                : 'Talhão criado com sucesso',
+                ? 'Talhão salvo localmente e será sincronizado quando houver conexão.'
+                : 'Talhão criado com sucesso.',
           ),
         ),
       );

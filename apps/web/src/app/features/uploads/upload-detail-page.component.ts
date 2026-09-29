@@ -79,7 +79,7 @@ import {
           <mat-card class="info-card">
             <div class="card-header">
               <mat-icon>info</mat-icon>
-              <span>Informacoes</span>
+              <span>Informações</span>
             </div>
             <div class="card-body">
               <div class="info-row">
@@ -99,11 +99,11 @@ import {
               </div>
 
               <div class="info-row">
-                <span class="info-label">Usuario</span>
+                <span class="info-label">Usuário</span>
                 <span
                   class="info-value clickable"
                   (click)="copyUserId(u.userId)"
-                  title="Clique para copiar ID do usuario"
+                  title="Clique para copiar o ID do usuário"
                 >
                   {{ u.user?.fullName || u.userId }}
                   <mat-icon class="copy-icon">content_copy</mat-icon>
@@ -127,10 +127,10 @@ import {
               }
 
               <div class="info-row">
-                <span class="info-label">Talhao</span>
+                <span class="info-label">Talhão</span>
                 <span
                   class="info-value clickable"
-                  (click)="copyFieldId(u.talhaoId, 'Talhao')"
+                  (click)="copyFieldId(u.talhaoId, 'Talhão')"
                   title="Clique para copiar ID"
                 >
                   {{ u.talhaoName || u.talhaoId }}
@@ -152,10 +152,10 @@ import {
 
               @if (u.estadioId) {
                 <div class="info-row">
-                  <span class="info-label">Estadio</span>
+                  <span class="info-label">Estádio</span>
                   <span
                     class="info-value clickable"
-                    (click)="copyFieldId(u.estadioId!, 'Estadio')"
+                    (click)="copyFieldId(u.estadioId!, 'Estádio')"
                     title="Clique para copiar ID"
                   >
                     {{ u.estadioName || u.estadioId }}
@@ -165,13 +165,17 @@ import {
               }
 
               <div class="info-row gps-row">
-                <span class="info-label">GPS</span>
-                <span class="gps-coords">{{ u.latitude }}, {{ u.longitude }}</span>
+                <span class="info-label">Localização da imagem selecionada</span>
+                <span class="gps-coords">{{
+                  selectedOriginal()?.latitude == null
+                    ? 'Sem localização'
+                    : selectedOriginal()!.latitude + ', ' + selectedOriginal()!.longitude
+                }}</span>
                 <button
                   mat-stroked-button
                   class="map-button"
-                  [disabled]="!hasValidCoordinates(u)"
-                  (click)="openInMap(u)"
+                  [disabled]="!hasValidCoordinates()"
+                  (click)="openInMap()"
                 >
                   <mat-icon>map</mat-icon>
                   Ver no mapa
@@ -228,7 +232,7 @@ import {
                     @if (downloadingAll()) {
                       Preparando ZIP...
                     } @else {
-                      Baixar Todas
+                      Baixar todas as imagens
                     }
                   </button>
                 </div>
@@ -244,7 +248,7 @@ import {
                       mode="determinate"
                       [value]="downloadProgress()"
                     ></mat-progress-bar>
-                    <p class="download-warning">Nao feche a pagina ate concluir o download.</p>
+                    <p class="download-warning">Não feche a página até concluir o download.</p>
                   </div>
                 }
 
@@ -271,7 +275,7 @@ import {
               } @else {
                 <div class="no-images">
                   <mat-icon>image_not_supported</mat-icon>
-                  <p>Nenhuma imagem disponivel.</p>
+                  <p>Nenhuma imagem disponível.</p>
                 </div>
               }
             </div>
@@ -295,20 +299,20 @@ import {
               <table class="files-table">
                 <thead>
                   <tr>
-                    <th>Indice</th>
+                    <th>Imagem</th>
                     <th>Tipo</th>
-                    <th>Variacao</th>
+                    <th>Variação</th>
                     <th>Tamanho</th>
-                    <th>Dimensoes</th>
-                    <th>Acao</th>
+                    <th>Dimensões</th>
+                    <th>Ação</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (f of u.files; track f.id) {
                     <tr>
-                      <td>{{ f.imageIndex }}</td>
+                      <td [title]="f.imageId">{{ f.imageId.slice(0, 8) }}</td>
                       <td>{{ f.contentType }}</td>
-                      <td>{{ f.variant }}</td>
+                      <td>{{ f.variant === 'preview' ? 'Prévia' : 'Original' }}</td>
                       <td>{{ formatSize(f.sizeBytes) }}</td>
                       <td>{{ f.width && f.height ? f.width + '×' + f.height : '—' }}</td>
                       <td>
@@ -322,7 +326,7 @@ import {
                             downloadingFileId() === f.id
                               ? 'Abrindo...'
                               : f.variant === 'preview'
-                                ? 'Preview'
+                                ? 'Prévia'
                                 : 'Original'
                           }}
                         </button>
@@ -417,7 +421,7 @@ export class UploadDetailPageComponent implements OnInit {
   ngOnInit(): void {
     const uploadId = this.route.snapshot.paramMap.get('id') ?? '';
     if (!uploadId) {
-      this.error.set('ID do upload nao informado.');
+      this.error.set('ID do upload não informado.');
       this.loading.set(false);
       return;
     }
@@ -431,7 +435,7 @@ export class UploadDetailPageComponent implements OnInit {
       this.displayEntries.set(buildDisplayEntries(data.files));
       this.resolveDisplayEntriesBatch();
     } catch {
-      this.error.set('Nao foi possivel carregar os detalhes do upload.');
+      this.error.set('Não foi possível carregar os detalhes do upload.');
     } finally {
       this.loading.set(false);
     }
@@ -444,7 +448,7 @@ export class UploadDetailPageComponent implements OnInit {
       const response = await this.uploadsService.getDisplayUrls(u.id);
       this.resolvedUrls.set(mapDisplayUrlsToResolvedMap(response.files, this.resolvedUrls()));
     } catch {
-      this.snackBar.open('Nao foi possivel obter as URLs de exibicao.', 'Fechar', {
+      this.snackBar.open('Não foi possível obter as URLs de exibição.', 'Fechar', {
         duration: 6000,
       });
     }
@@ -499,12 +503,12 @@ export class UploadDetailPageComponent implements OnInit {
 
   copyUploadId(id: string): void {
     this.clipboard.copy(id);
-    this.snackBar.open('Upload ID copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do upload copiado.', 'Fechar', { duration: 4000 });
   }
 
   copyUserId(userId: string): void {
     this.clipboard.copy(userId);
-    this.snackBar.open('ID do usuario copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do usuário copiado.', 'Fechar', { duration: 4000 });
   }
 
   copyFieldId(value: string | undefined | null, label: string): void {
@@ -513,18 +517,24 @@ export class UploadDetailPageComponent implements OnInit {
     this.snackBar.open(`${label} copiado.`, 'Fechar', { duration: 4000 });
   }
 
-  hasValidCoordinates(u: UploadDetail): boolean {
-    return hasValidCoordinates(u);
+  selectedOriginal(): UploadFileInfo | undefined {
+    const upload = this.upload();
+    return upload ? findOriginalFileForIndex(upload.files, this.selectedImageIndex()) : undefined;
   }
 
-  openInMap(u: UploadDetail): void {
-    if (!this.hasValidCoordinates(u)) {
-      this.snackBar.open('Este upload nao possui coordenadas validas.', 'Fechar', {
+  hasValidCoordinates(): boolean {
+    return hasValidCoordinates(this.selectedOriginal());
+  }
+
+  openInMap(): void {
+    if (!this.hasValidCoordinates()) {
+      this.snackBar.open('Esta imagem não possui coordenadas.', 'Fechar', {
         duration: 6000,
       });
       return;
     }
-    openMapCoordinates(u.latitude, u.longitude);
+    const image = this.selectedOriginal()!;
+    openMapCoordinates(image.latitude!, image.longitude!);
   }
 
   async openOriginal(): Promise<void> {
@@ -564,7 +574,7 @@ export class UploadDetailPageComponent implements OnInit {
   async downloadAllStructured(u: UploadDetail): Promise<void> {
     const originals = u.files.filter((f) => f.variant === 'original');
     if (!originals.length) {
-      this.snackBar.open('Este upload nao possui imagens para baixar.', 'Fechar', {
+      this.snackBar.open('Este upload não possui imagens para baixar.', 'Fechar', {
         duration: 6000,
       });
       return;
@@ -590,8 +600,6 @@ export class UploadDetailPageComponent implements OnInit {
             source: u.source,
             status: u.status,
             activityDate: u.activityDate,
-            latitude: u.latitude,
-            longitude: u.longitude,
             createdAt: u.createdAt,
             updatedAt: u.updatedAt,
             fileCount: originals.length,
@@ -603,15 +611,17 @@ export class UploadDetailPageComponent implements OnInit {
         },
       );
 
+      const downloadedLabel = result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
+      const skippedLabel = result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas';
       const message =
         result.skipped > 0
-          ? `Download concluido: ${result.downloaded} imagens baixadas, ${result.skipped} ignoradas.`
-          : `Download concluido: ${result.downloaded} imagens baixadas.`;
+          ? `Download concluído: ${result.downloaded} ${downloadedLabel}, ${result.skipped} ${skippedLabel}.`
+          : `Download concluído: ${result.downloaded} ${downloadedLabel}.`;
       this.snackBar.open(message, 'Fechar', { duration: 4000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       this.snackBar.open(
-        `Nao foi possivel montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
+        `Não foi possível montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
         'Fechar',
         { duration: 6000 },
       );
@@ -633,12 +643,12 @@ export class UploadDetailPageComponent implements OnInit {
 
     try {
       await this.uploadsService.deleteUpload(u.id);
-      this.snackBar.open('Upload excluido com sucesso.', 'Fechar', { duration: 4000 });
+      this.snackBar.open('Upload excluído com sucesso.', 'Fechar', { duration: 4000 });
       await this.router.navigate(['/uploads']);
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       this.snackBar.open(
-        `Nao foi possivel excluir o upload${detail ? ` (${detail})` : ''}.`,
+        `Não foi possível excluir o upload${detail ? ` (${detail})` : ''}.`,
         'Fechar',
         { duration: 6000 },
       );

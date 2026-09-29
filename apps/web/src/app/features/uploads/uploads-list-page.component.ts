@@ -353,7 +353,7 @@ export class UploadsListPageComponent implements OnInit {
 
   copyUploadId(uploadId: string): void {
     this.clipboard.copy(uploadId);
-    this.snackBar.open('Upload ID copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do upload copiado.', 'Fechar', { duration: 4000 });
   }
 
   openDetails(record: UploadRecord): void {
@@ -366,7 +366,7 @@ export class UploadsListPageComponent implements OnInit {
 
   copyUserId(userId: string): void {
     this.clipboard.copy(userId);
-    this.snackBar.open('ID do usuario copiado.', 'Fechar', { duration: 4000 });
+    this.snackBar.open('ID do usuário copiado.', 'Fechar', { duration: 4000 });
   }
 
   // ── Bulk export actions ──────────────────────────────────────────
@@ -402,16 +402,18 @@ export class UploadsListPageComponent implements OnInit {
         },
       );
 
+      const downloadedLabel = result.downloaded === 1 ? 'imagem baixada' : 'imagens baixadas';
+      const skippedLabel = result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas';
       const message =
         result.skipped > 0
-          ? `Download concluido: ${result.downloaded} imagens baixadas, ${result.skipped} ignoradas.`
-          : `Download concluido: ${result.downloaded} imagens baixadas.`;
+          ? `Download concluído: ${result.downloaded} ${downloadedLabel}, ${result.skipped} ${skippedLabel}.`
+          : `Download concluído: ${result.downloaded} ${downloadedLabel}.`;
 
       this.snackBar.open(message, 'Fechar', { duration: 4000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       this.snackBar.open(
-        `Nao foi possivel montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
+        `Não foi possível montar o arquivo de download${detail ? ` (${detail})` : ''}.`,
         'Fechar',
         { duration: 6000 },
       );
@@ -425,6 +427,12 @@ export class UploadsListPageComponent implements OnInit {
     const selectedRecords = this.getSelectedRecords();
     if (!selectedRecords.length) {
       this.snackBar.open('Selecione ao menos um upload para exportar.', 'Fechar', {
+        duration: 6000,
+      });
+      return;
+    }
+    if (selectedRecords.some((record) => record.status !== 'ready')) {
+      this.snackBar.open('Selecione apenas uploads prontos para exportar.', 'Fechar', {
         duration: 6000,
       });
       return;
@@ -464,15 +472,19 @@ export class UploadsListPageComponent implements OnInit {
 
       const message =
         result.skipped > 0
-          ? `Dataset exportado: ${result.downloaded} imagens (treino: ${result.trainCount}, validacao: ${result.valCount}), ${result.skipped} ignoradas.`
-          : `Dataset exportado: ${result.downloaded} imagens (treino: ${result.trainCount}, validacao: ${result.valCount}).`;
+          ? `Conjunto de dados exportado: ${result.downloaded} ${result.downloaded === 1 ? 'imagem' : 'imagens'} (treino: ${result.trainCount}, validação: ${result.valCount}), ${result.skipped} ${result.skipped === 1 ? 'imagem ignorada' : 'imagens ignoradas'}.`
+          : `Conjunto de dados exportado: ${result.downloaded} ${result.downloaded === 1 ? 'imagem' : 'imagens'} (treino: ${result.trainCount}, validação: ${result.valCount}).`;
 
       this.snackBar.open(message, 'Fechar', { duration: 4000 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
-      this.snackBar.open(`Erro ao exportar dataset${detail ? `: ${detail}` : ''}.`, 'Fechar', {
-        duration: 6000,
-      });
+      this.snackBar.open(
+        `Erro ao exportar conjunto de dados${detail ? `: ${detail}` : ''}.`,
+        'Fechar',
+        {
+          duration: 6000,
+        },
+      );
     } finally {
       this.preparingYolo.set(false);
       this.exportingYolo.set(false);
@@ -501,23 +513,26 @@ export class UploadsListPageComponent implements OnInit {
       }
       perUploadClasses.set(record.id, new Set(uploadClasses));
 
-      const annotationByIndex = new Map(annotations.map((a) => [a.imageIndex, a]));
-      for (let i = 0; i < record.fileCount; i++) {
-        totalImages++;
-        const ann = annotationByIndex.get(i);
-        const hasLabels = !!ann && extractYoloLabels(ann).length > 0;
+      let labeledImages = 0;
+      const imageAnnotations = annotations.slice(0, record.fileCount);
+      for (const ann of imageAnnotations) {
+        const hasLabels = extractYoloLabels(ann).length > 0;
         if (hasLabels) {
           annotatedImages++;
-        } else {
-          unannotatedImages++;
+          labeledImages++;
         }
         perImageClasses.push({
-          classes: ann ? extractAnnotationClasses([ann]) : [],
+          classes: extractAnnotationClasses([ann]),
           hasAnnotation: hasLabels,
         });
       }
+      for (let i = imageAnnotations.length; i < record.fileCount; i++) {
+        perImageClasses.push({ classes: [], hasAnnotation: false });
+      }
+      totalImages += record.fileCount;
+      unannotatedImages += record.fileCount - labeledImages;
 
-      if (annotations.length === 0) {
+      if (labeledImages === 0) {
         unannotatedUploads.push({
           docId: record.id,
           displayName: record.id,

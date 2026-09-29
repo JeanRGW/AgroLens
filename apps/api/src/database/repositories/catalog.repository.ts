@@ -8,6 +8,7 @@ import {
   cropTypes,
   estadios,
   uploadFiles,
+  uploadImages,
   objectDeletionJobs,
 } from '../schema';
 import { deriveUploadObjectKeys } from '../database.utils';
@@ -54,19 +55,20 @@ export class CatalogRepository {
     const files = await tx
       .select()
       .from(uploadFiles)
-      .where(inArray(uploadFiles.uploadId, uploadIds));
+      .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+      .where(inArray(uploadImages.uploadId, uploadIds));
     const filesByUpload = new Map<string, typeof files>();
     for (const file of files) {
-      const group = filesByUpload.get(file.uploadId) ?? [];
+      const group = filesByUpload.get(file.upload_images.uploadId) ?? [];
       group.push(file);
-      filesByUpload.set(file.uploadId, group);
+      filesByUpload.set(file.upload_images.uploadId, group);
     }
     const runAfter = new Date(Date.now() + 7 * 86400000);
     for (const upload of uploadsToDelete) {
       const keys = deriveUploadObjectKeys(
         upload.user_id,
         upload.id,
-        filesByUpload.get(upload.id) ?? [],
+        (filesByUpload.get(upload.id) ?? []).map((row) => row.upload_files),
       );
       if (keys.size) {
         await tx

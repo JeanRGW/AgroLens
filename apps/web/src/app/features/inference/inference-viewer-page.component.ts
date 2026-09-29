@@ -91,12 +91,12 @@ const TERMINAL_STATUSES = new Set(['completed', 'failed']);
     <section class="viewer-page">
       <app-page-header
         eyebrow="Inferência"
-        title="Visualização do Job"
+        title="Visualização da execução"
         [subtitle]="job()?.id || ''"
       />
 
       @if (loadingJob()) {
-        <app-loading-state message="Carregando job..." />
+        <app-loading-state message="Carregando execução..." />
       } @else if (jobError()) {
         <div class="error-banner">{{ jobError() }}</div>
       } @else {
@@ -939,7 +939,7 @@ export class InferenceViewerPageComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     const jobId = this.route.snapshot.paramMap.get('jobId');
     if (!jobId) {
-      this.jobError.set('ID do job não encontrado.');
+      this.jobError.set('ID da execução não encontrado.');
       this.loadingJob.set(false);
       return;
     }
@@ -1182,7 +1182,7 @@ export class InferenceViewerPageComponent implements OnInit {
       if (selected) await this.loadImage(selected, true);
     } catch (err: unknown) {
       if (this.destroyRef.destroyed) return;
-      const msg = err instanceof Error ? err.message : 'Erro ao carregar job';
+      const msg = err instanceof Error ? err.message : 'Erro ao carregar a execução.';
       this.jobError.set(msg);
       this.snackBar.open(msg, 'Fechar', { duration: 6000 });
     } finally {

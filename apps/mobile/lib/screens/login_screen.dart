@@ -27,9 +27,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String? _emailValidator(String? v) => v == null || v.trim().isEmpty
-      ? 'Por favor, insira seu email'
+      ? 'Por favor, insira seu email.'
       : !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v.trim())
-      ? 'Por favor, insira um email válido'
+      ? 'Por favor, insira um email válido.'
       : null;
   Future<void> _forgot() async {
     await Navigator.of(context).push(
@@ -194,7 +194,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     CustomButton(
-                      label: 'Criar Conta',
+                      label: 'Criar conta',
                       onPressed: widget.onRegisterTap,
                       isOutlined: true,
                       icon: Icons.person_add_outlined,

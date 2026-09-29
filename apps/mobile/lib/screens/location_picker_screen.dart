@@ -50,6 +50,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   final MapController _mapController = MapController();
   late LatLng _selectedPoint;
   bool _isLocating = false;
+  bool _hasSelectedPoint = false;
   String? _gpsError;
 
   @override
@@ -59,7 +60,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       latitude: widget.initialLatitude,
       longitude: widget.initialLongitude,
     );
-    if (widget.initialLatitude == null || widget.initialLongitude == null) {
+    _hasSelectedPoint =
+        widget.initialLatitude != null && widget.initialLongitude != null;
+    if (widget.showCurrentLocationButton &&
+        (widget.initialLatitude == null || widget.initialLongitude == null)) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _centerOnCurrentLocation(),
       );
@@ -79,6 +83,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
       setState(() {
         _selectedPoint = point;
+        _hasSelectedPoint = true;
         _gpsError = null;
       });
       _mapController.move(point, 17);
@@ -106,7 +111,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                 minZoom: 3,
                 maxZoom: 19,
                 onTap: (_, point) {
-                  setState(() => _selectedPoint = point);
+                  setState(() {
+                    _selectedPoint = point;
+                    _hasSelectedPoint = true;
+                  });
                 },
               ),
               children: [
@@ -114,20 +122,21 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'app.rgw.agrolens.app',
                 ),
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: _selectedPoint,
-                      width: 48,
-                      height: 48,
-                      child: const Icon(
-                        Icons.location_pin,
-                        size: 44,
-                        color: Colors.red,
+                if (_hasSelectedPoint)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _selectedPoint,
+                        width: 48,
+                        height: 48,
+                        child: const Icon(
+                          Icons.location_pin,
+                          size: 44,
+                          color: Colors.red,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 const SimpleAttributionWidget(
                   source: Text('OpenStreetMap contributors'),
                 ),
@@ -146,11 +155,20 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 8),
-                Text('Latitude: ${_selectedPoint.latitude.toStringAsFixed(6)}'),
-                const SizedBox(height: 4),
-                Text(
-                  'Longitude: ${_selectedPoint.longitude.toStringAsFixed(6)}',
-                ),
+                if (_hasSelectedPoint) ...[
+                  Text(
+                    'Latitude: ${_selectedPoint.latitude.toStringAsFixed(6)}',
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Longitude: ${_selectedPoint.longitude.toStringAsFixed(6)}',
+                  ),
+                ] else
+                  Text(
+                    widget.showCurrentLocationButton
+                        ? 'Nenhum ponto escolhido. Toque no mapa ou use Minha localização.'
+                        : 'Nenhum ponto escolhido. Toque no mapa.',
+                  ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -176,8 +194,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: () =>
-                            Navigator.of(context).pop(_selectedPoint),
+                        onPressed: _hasSelectedPoint
+                            ? () => Navigator.of(context).pop(_selectedPoint)
+                            : null,
                         icon: const Icon(Icons.check),
                         label: Text(widget.confirmButtonLabel),
                       ),

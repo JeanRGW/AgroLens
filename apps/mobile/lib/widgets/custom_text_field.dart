@@ -69,7 +69,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
           prefixIcon: widget.prefixIcon,
           suffixIcon: widget.obscureText
               ? IconButton(
-                  tooltip: _obscured ? 'Show password' : 'Hide password',
+                  tooltip: _obscured ? 'Mostrar senha' : 'Ocultar senha',
                   icon: Icon(
                     _obscured ? Icons.visibility_off : Icons.visibility,
                   ),

@@ -29,24 +29,41 @@ export const DEFAULT_LONGITUDE = -51.4541;
   imports: [FormsModule, MatButtonModule, MatFormFieldModule, MatIconModule, MatInputModule],
   template: `
     <div class="location-picker">
-      <div class="location-picker__toolbar">
-        <button
-          mat-stroked-button
-          type="button"
-          class="locate-btn"
-          (click)="locateUser()"
-          [disabled]="locating()"
-        >
-          <mat-icon>{{ locating() ? 'hourglass_empty' : 'my_location' }}</mat-icon>
-          {{ locating() ? 'Localizando...' : 'Minha localização' }}
-        </button>
+      @if (gpsButtonEnabled || mapToggleEnabled) {
+        <div class="location-picker__toolbar">
+          @if (gpsButtonEnabled) {
+            <button
+              mat-stroked-button
+              type="button"
+              class="locate-btn"
+              (click)="locateUser()"
+              [disabled]="locating()"
+            >
+              <mat-icon>{{ locating() ? 'hourglass_empty' : 'my_location' }}</mat-icon>
+              {{ locating() ? 'Localizando...' : 'Minha localização' }}
+            </button>
+          }
+          @if (mapToggleEnabled) {
+            <button
+              mat-stroked-button
+              type="button"
+              class="map-toggle"
+              (click)="toggleMap()"
+              [disabled]="!online()"
+              [attr.aria-expanded]="mapVisible()"
+            >
+              <mat-icon aria-hidden="true">map</mat-icon>
+              {{ mapVisible() ? 'Ocultar mapa' : 'Mostrar mapa' }}
+            </button>
+          }
+        </div>
+      }
 
-        @if (selectedLat() !== null && selectedLng() !== null) {
-          <span class="coordinates">
-            {{ selectedLat()!.toFixed(6) }}, {{ selectedLng()!.toFixed(6) }}
-          </span>
-        }
-      </div>
+      @if (selectedLat() !== null && selectedLng() !== null) {
+        <span class="coordinates">
+          {{ selectedLat()!.toFixed(6) }}, {{ selectedLng()!.toFixed(6) }}
+        </span>
+      }
 
       @if (accuracy() !== null) {
         <span class="location-picker__hint"
@@ -56,18 +73,13 @@ export const DEFAULT_LONGITUDE = -51.4541;
       @if (locationError()) {
         <p class="location-picker__error" role="alert">{{ locationError() }}</p>
       }
-      <button
-        mat-button
-        type="button"
-        (click)="toggleMap()"
-        [disabled]="!online()"
-        [attr.aria-expanded]="mapVisible()"
-      >
-        <mat-icon>map</mat-icon>{{ mapVisible() ? 'Ocultar mapa' : 'Mostrar mapa (opcional)' }}
-      </button>
       @if (!online()) {
         <p class="location-picker__hint">
-          Mapa indisponível offline. Use Minha localização para obter o GPS.
+          {{
+            gpsButtonEnabled
+              ? 'Mapa indisponível offline. Use Minha localização para obter o GPS.'
+              : 'Mapa indisponível offline. Volte e ative o GPS.'
+          }}
         </p>
       }
 
@@ -78,54 +90,56 @@ export const DEFAULT_LONGITUDE = -51.4541;
         [style.height]="height"
       ></div>
 
-      <button
-        mat-button
-        type="button"
-        class="manual-toggle"
-        [attr.aria-expanded]="showManualCoordinates()"
-        (click)="toggleManualCoordinates()"
-      >
-        <mat-icon>edit_location_alt</mat-icon>
-        {{
-          showManualCoordinates()
-            ? 'Ocultar coordenadas manuais'
-            : 'Informar coordenadas manualmente'
-        }}
-      </button>
+      @if (manualCoordinatesEnabled) {
+        <button
+          mat-button
+          type="button"
+          class="manual-toggle"
+          [attr.aria-expanded]="showManualCoordinates()"
+          (click)="toggleManualCoordinates()"
+        >
+          <mat-icon>edit_location_alt</mat-icon>
+          {{
+            showManualCoordinates()
+              ? 'Ocultar coordenadas manuais'
+              : 'Informar coordenadas manualmente'
+          }}
+        </button>
 
-      @if (showManualCoordinates()) {
-        <div class="location-picker__manual">
-          <mat-form-field appearance="outline" class="coord-field">
-            <mat-label>Latitude</mat-label>
-            <input
-              matInput
-              type="number"
-              step="any"
-              [(ngModel)]="manualLat"
-              name="manualLat"
-              placeholder="-25.3905"
-              (ngModelChange)="onManualCoordChange()"
-            />
-          </mat-form-field>
+        @if (showManualCoordinates()) {
+          <div class="location-picker__manual">
+            <mat-form-field appearance="outline" class="coord-field">
+              <mat-label>Latitude</mat-label>
+              <input
+                matInput
+                type="number"
+                step="any"
+                [(ngModel)]="manualLat"
+                name="manualLat"
+                placeholder="-25.3905"
+                (ngModelChange)="onManualCoordChange()"
+              />
+            </mat-form-field>
 
-          <mat-form-field appearance="outline" class="coord-field">
-            <mat-label>Longitude</mat-label>
-            <input
-              matInput
-              type="number"
-              step="any"
-              [(ngModel)]="manualLng"
-              name="manualLng"
-              placeholder="-51.4541"
-              (ngModelChange)="onManualCoordChange()"
-            />
-          </mat-form-field>
-        </div>
+            <mat-form-field appearance="outline" class="coord-field">
+              <mat-label>Longitude</mat-label>
+              <input
+                matInput
+                type="number"
+                step="any"
+                [(ngModel)]="manualLng"
+                name="manualLng"
+                placeholder="-51.4541"
+                (ngModelChange)="onManualCoordChange()"
+              />
+            </mat-form-field>
+          </div>
+        }
+
+        <p class="location-picker__hint">
+          Use o GPS, clique no mapa ou insira coordenadas manualmente.
+        </p>
       }
-
-      <p class="location-picker__hint">
-        Use o GPS, clique no mapa ou insira coordenadas manualmente.
-      </p>
     </div>
   `,
   styles: `
@@ -139,21 +153,31 @@ export const DEFAULT_LONGITUDE = -51.4541;
     .location-picker__toolbar {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       flex-wrap: wrap;
 
-      .locate-btn mat-icon {
-        margin-right: 4px;
+      button {
+        height: 36px;
+        padding-inline: 12px;
+        font-size: 0.8125rem;
       }
 
-      .coordinates {
-        font-family: var(--agri-mono);
-        font-size: 0.82rem;
-        color: var(--agri-text-secondary);
-        background: var(--agri-fill-subtle);
-        padding: 4px 10px;
-        border-radius: 6px;
+      mat-icon {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+        margin-right: 4px;
       }
+    }
+
+    .coordinates {
+      align-self: flex-start;
+      font-family: var(--agri-mono);
+      font-size: 0.82rem;
+      color: var(--agri-text-secondary);
+      background: var(--agri-fill-subtle);
+      padding: 4px 10px;
+      border-radius: 6px;
     }
 
     .location-picker__map {
@@ -209,12 +233,15 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
   @Input() longitude: number | null = null;
   @Input() height = '400px';
   @Input() initialZoom = 10;
+  @Input() gpsButtonEnabled = true;
+  @Input() mapToggleEnabled = true;
+  @Input() manualCoordinatesEnabled = true;
 
   @Output() locationSelected = new EventEmitter<{
     latitude: number;
     longitude: number;
   }>();
-  @Output() locationCleared = new EventEmitter<void>();
+  @Output() locatingChange = new EventEmitter<boolean>();
 
   private map: L.Map | null = null;
   private marker: L.CircleMarker | null = null;
@@ -259,6 +286,10 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
   ngOnDestroy(): void {
     this.destroyed = true;
     this.locationRequest++;
+    if (this.locating()) {
+      this.locating.set(false);
+      this.locatingChange.emit(false);
+    }
     if (this.locationTimer) clearTimeout(this.locationTimer);
     window.removeEventListener('online', this.updateOnline);
     window.removeEventListener('offline', this.updateOnline);
@@ -309,7 +340,6 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
       });
     } else {
       this.locationError.set('Informe latitude entre -90 e 90 e longitude entre -180 e 180.');
-      this.locationCleared.emit();
     }
   }
 
@@ -390,9 +420,11 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
       if (this.locationTimer) clearTimeout(this.locationTimer);
       this.locationError.set(message);
       this.locating.set(false);
+      this.locatingChange.emit(false);
     };
     this.locationError.set('');
     this.locating.set(true);
+    this.locatingChange.emit(true);
     this.locationTimer = setTimeout(
       () => fail('O GPS demorou demais. Vá para uma área aberta e tente novamente.'),
       25000,
@@ -406,13 +438,14 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
           return;
         }
         if (this.locationTimer) clearTimeout(this.locationTimer);
-        this.locating.set(false);
         this.accuracy.set(position.coords.accuracy);
         this.manualLat = Math.round(latitude * 1e6) / 1e6;
         this.manualLng = Math.round(longitude * 1e6) / 1e6;
         this.locationSelected.emit({ latitude, longitude });
         this.setMarker(latitude, longitude);
         this.map?.setView([latitude, longitude], 14);
+        this.locating.set(false);
+        this.locatingChange.emit(false);
       },
       (error) => {
         fail(

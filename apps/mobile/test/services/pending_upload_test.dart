@@ -174,8 +174,8 @@ void main() {
 
       expect(restored.id, upload.id);
       expect(restored.imagePaths, upload.imagePaths);
-      expect(restored.latitude, upload.latitude);
-      expect(restored.longitude, upload.longitude);
+      expect(restored.images.first.latitude, upload.images.first.latitude);
+      expect(restored.images.first.longitude, upload.images.first.longitude);
       expect(restored.status, upload.status);
       expect(restored.backendUploadId, upload.backendUploadId);
       expect(restored.propertyId, upload.propertyId);
@@ -187,5 +187,31 @@ void main() {
         isTrue,
       );
     });
+
+    test(
+      'persists independent image locations including explicit nulls through retries',
+      () {
+        final upload = PendingUpload(
+          id: 'mixed-locations',
+          createdAt: DateTime.now(),
+          images: [
+            PendingImage(
+              path: '/photos/camera.jpg',
+              latitude: -22.9,
+              longitude: -43.1,
+              origin: 'camera',
+            ),
+            PendingImage(path: '/photos/gallery.jpg', origin: 'gallery'),
+          ],
+        );
+        final restored = PendingUpload.fromSqliteRow(upload.toSqliteRow());
+        final retry = restored.copyWith(status: PendingUploadStatus.failed);
+        expect(retry.images.first.latitude, -22.9);
+        expect(retry.images.last.latitude, isNull);
+        expect(retry.images.last.longitude, isNull);
+        expect(retry.images.first.origin, 'camera');
+        expect(retry.images.first.imageId, upload.images.first.imageId);
+      },
+    );
   });
 }

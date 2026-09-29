@@ -51,7 +51,7 @@ export class ForgotPasswordPageComponent {
       await this.authService.requestPasswordReset(email);
       this.submitted.set(true);
       this.snackBar.open(
-        'Se o email estiver cadastrado, enviamos um link de redefinição.',
+        'Se o email estiver cadastrado, enviaremos um link de redefinição.',
         'Fechar',
         { duration: 5000 },
       );

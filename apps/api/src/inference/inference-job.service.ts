@@ -95,6 +95,7 @@ export interface JobDetailResponse {
 export interface ImageResultResponse {
   id: string;
   imageIndex: number;
+  uploadImageId: string | null;
   fileName: string;
   status: string;
   detections: unknown;
@@ -175,13 +176,7 @@ export class InferenceJobService {
     };
 
     if (dto.uploadId) {
-      return this.createUploadJob(
-        dto.uploadId,
-        dto.imageIndexes,
-        model,
-        modelSnapshot,
-        currentUser,
-      );
+      return this.createUploadJob(dto.uploadId, dto.imageIds, model, modelSnapshot, currentUser);
     }
 
     if (dto.files) {
@@ -193,7 +188,7 @@ export class InferenceJobService {
 
   private async createUploadJob(
     uploadId: string,
-    imageIndexes: number[] | undefined,
+    imageIds: string[] | undefined,
     model: InferenceModel,
     modelSnapshot: ModelSnapshot,
     currentUser: AuthenticatedUser,
@@ -211,8 +206,11 @@ export class InferenceJobService {
       throw new BadRequestException('No original images found in the upload');
 
     let filtered = originals;
-    if (imageIndexes && imageIndexes.length > 0) {
-      filtered = originals.filter((f) => imageIndexes.includes(f.imageIndex));
+    if (imageIds && imageIds.length > 0) {
+      filtered = originals.filter((file) => imageIds.includes(file.imageId));
+      if (filtered.length !== new Set(imageIds).size) {
+        throw new BadRequestException('One or more requested images are not in this upload');
+      }
     }
 
     if (filtered.length === 0) {
@@ -251,9 +249,10 @@ export class InferenceJobService {
       });
     }
     const observedById = new Map(observations.map((observation) => [observation.id, observation]));
-    const imageData = filtered.map((file) => ({
-      imageIndex: file.imageIndex,
-      fileName: file.objectKey.split('/').pop() ?? `image_${file.imageIndex}`,
+    const imageData = filtered.map((file, index) => ({
+      imageIndex: index,
+      uploadImageId: file.imageId,
+      fileName: file.objectKey.split('/').pop() ?? `image_${file.imageId}`,
       sourceObjectKey: file.objectKey,
       status: 'queued' as const,
       observedEtag: observedById.get(file.id)?.observedEtag,
@@ -520,6 +519,7 @@ export class InferenceJobService {
       images: images.map((img) => ({
         id: img.id,
         imageIndex: img.imageIndex,
+        uploadImageId: img.uploadImageId,
         fileName: img.fileName,
         status: img.status,
         detectionCount: Array.isArray(img.detections) ? img.detections.length : 0,
@@ -565,6 +565,7 @@ export class InferenceJobService {
     return {
       id: image.id,
       imageIndex: image.imageIndex,
+      uploadImageId: image.uploadImageId,
       fileName: image.fileName,
       status: image.status,
       detections: image.detections,

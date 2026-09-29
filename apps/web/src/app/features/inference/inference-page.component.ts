@@ -106,7 +106,7 @@ export class InferencePageComponent implements OnInit {
   // Polling
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private queryUploadId: string | null = null;
-  private queryImageIndex: number | undefined;
+  private queryImageId: string | undefined;
   private jobsRequest = 0;
 
   readonly jobColumns = ['status', 'sourceType', 'progress', 'createdAt', 'expiresAt', 'actions'];
@@ -130,11 +130,7 @@ export class InferencePageComponent implements OnInit {
 
   async ngOnInit(): Promise<void> {
     this.queryUploadId = this.route.snapshot.queryParamMap.get('uploadId');
-    const imageIndexParam = this.route.snapshot.queryParamMap.get('imageIndex');
-    const imageIndex = imageIndexParam === null ? undefined : Number(imageIndexParam);
-    if (imageIndex !== undefined && Number.isInteger(imageIndex) && imageIndex >= 0) {
-      this.queryImageIndex = imageIndex;
-    }
+    this.queryImageId = this.route.snapshot.queryParamMap.get('imageId') ?? undefined;
 
     await Promise.all([this.loadModels(), this.loadUploads(), this.loadJobs()]);
 
@@ -169,7 +165,7 @@ export class InferencePageComponent implements OnInit {
 
     for (const f of newFiles) {
       if (f.size > 25 * 1024 * 1024) {
-        this.snackBar.open(`Arquivo "${f.name}" excede 25MB.`, 'Fechar', { duration: 6000 });
+        this.snackBar.open(`Arquivo "${f.name}" excede 25 MB.`, 'Fechar', { duration: 6000 });
         return;
       }
     }
@@ -194,7 +190,7 @@ export class InferencePageComponent implements OnInit {
         await this.submitTempJob();
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao criar job de inferência';
+      const msg = err instanceof Error ? err.message : 'Erro ao criar execução de inferência.';
       this.error.set(msg);
       this.snackBar.open(msg, 'Fechar', { duration: 6000 });
     } finally {
@@ -213,8 +209,8 @@ export class InferencePageComponent implements OnInit {
   async confirmDeleteJob(row: InferenceJobListItem): Promise<void> {
     const dialogRef = this.dialog.open(ConfirmDialogComponent, {
       data: {
-        title: 'Excluir job',
-        message: `Deseja realmente excluir o job "${row.id}"?`,
+        title: 'Excluir execução',
+        message: `Deseja realmente excluir a execução "${row.id}"?`,
         confirmText: 'Excluir',
       } as ConfirmDialogData,
     });
@@ -223,10 +219,10 @@ export class InferencePageComponent implements OnInit {
     if (result) {
       try {
         await this.inferenceService.deleteJob(row.id);
-        this.snackBar.open('Job excluído com sucesso.', 'Fechar', { duration: 4000 });
+        this.snackBar.open('Execução excluída com sucesso.', 'Fechar', { duration: 4000 });
         await this.loadJobs();
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erro ao excluir job';
+        const msg = err instanceof Error ? err.message : 'Erro ao excluir a execução.';
         this.snackBar.open(msg, 'Fechar', { duration: 6000 });
       }
     }
@@ -315,16 +311,16 @@ export class InferencePageComponent implements OnInit {
   }
 
   private async submitUploadJob(): Promise<void> {
-    const imageIndexes =
-      this.selectedUploadId() === this.queryUploadId && this.queryImageIndex !== undefined
-        ? [this.queryImageIndex]
+    const imageIds =
+      this.selectedUploadId() === this.queryUploadId && this.queryImageId !== undefined
+        ? [this.queryImageId]
         : undefined;
     const response = await this.inferenceService.createUploadJob(
       this.selectedModelId(),
       this.selectedUploadId(),
-      imageIndexes,
+      imageIds,
     );
-    this.snackBar.open('Job de inferência criado com sucesso!', 'Fechar', { duration: 4000 });
+    this.snackBar.open('Execução de inferência criada com sucesso!', 'Fechar', { duration: 4000 });
     await this.router.navigate(['/inference', response.id]);
   }
 
@@ -362,7 +358,7 @@ export class InferencePageComponent implements OnInit {
     }
 
     await this.inferenceService.completeTempJob(response.id);
-    this.snackBar.open('Job de inferência criado com sucesso!', 'Fechar', { duration: 4000 });
+    this.snackBar.open('Execução de inferência criada com sucesso!', 'Fechar', { duration: 4000 });
     await this.router.navigate(['/inference', response.id]);
   }
 

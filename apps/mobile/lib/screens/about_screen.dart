@@ -16,7 +16,7 @@ class AboutScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Sobre o Projeto',
+                  'Sobre o projeto',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -45,7 +45,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'Uma solução mobile de coleta, categorização e sincronização de imagens destinadas ao treinamento de modelos de IA. Desenvolvida com tecnologias modernas, permite capturar e enviar imagens e metadados, incluindo informações de cultivo e localização.\n\nO sistema oferece sincronização automática em nuvem, suporte a operação offline e organização por culturas, talhões e propriedades. Com uma interface intuitiva e recursos robustos, facilita o processo de coleta de imagens.',
+                    'Uma solução móvel para coleta, categorização e sincronização de imagens destinadas ao treinamento de modelos de IA. Desenvolvida com tecnologias modernas, permite capturar e enviar imagens e metadados, incluindo informações sobre cultivo e localização.\n\nO sistema oferece sincronização automática na nuvem, suporte à operação offline e organização por culturas, talhões e propriedades. Com uma interface intuitiva e recursos robustos, facilita o processo de coleta de imagens.',
                     style: TextStyle(height: 1.6),
                     textAlign: TextAlign.justify,
                   ),
@@ -59,7 +59,7 @@ class AboutScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Instituições Parceiras',
+                  'Instituições parceiras',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -85,7 +85,7 @@ class AboutScreen extends StatelessWidget {
                     ],
                   ),
                   child: const Text(
-                    'Desenvolvido com apoio de instituições de pesquisa e desenvolvimento agrícola, contribuindo para inovação no setor.',
+                    'Desenvolvido com o apoio de instituições de pesquisa e desenvolvimento agrícola, o que contribui para a inovação no setor.',
                     textAlign: TextAlign.center,
                   ),
                 ),

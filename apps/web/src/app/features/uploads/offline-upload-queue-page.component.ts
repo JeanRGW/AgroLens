@@ -84,7 +84,10 @@ import { withBrowserLock } from '../../shared/utils/browser-lock';
                   <img class="queue-preview" [src]="previewUrl(upload)" alt="Prévia do lote" />
                 }
                 <div class="queue-summary">
-                  <strong>{{ upload.files.length }} imagem(ns)</strong>
+                  <strong>
+                    {{ upload.files.length }}
+                    {{ upload.files.length === 1 ? 'imagem' : 'imagens' }}
+                  </strong>
                   <span>{{ upload.request.activityDate | date: 'dd/MM/yyyy HH:mm' }}</span>
                   <span class="status" [class]="upload.status">{{
                     statusLabel(upload.status)

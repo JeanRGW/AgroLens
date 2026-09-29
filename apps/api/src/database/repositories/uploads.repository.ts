@@ -1,10 +1,11 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { eq, and, isNull, inArray, desc, sql, getTableColumns, type SQL } from 'drizzle-orm';
+import { eq, and, isNull, inArray, asc, desc, sql, getTableColumns, type SQL } from 'drizzle-orm';
 import { DATABASE_CONNECTION, type DatabaseConnection } from '../database.constants';
 import { deriveUploadObjectKeys, namedError } from '../database.utils';
 import {
   uploads,
+  uploadImages,
   uploadFiles,
   users,
   properties,
@@ -19,8 +20,19 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 
 export type Upload = InferSelectModel<typeof uploads> & { propertyId: string };
 export type NewUpload = InferInsertModel<typeof uploads>;
-export type UploadFile = InferSelectModel<typeof uploadFiles>;
+export type UploadFile = InferSelectModel<typeof uploadFiles> & {
+  uploadId: string;
+  latitude: number | null;
+  longitude: number | null;
+};
 export type NewUploadFile = InferInsertModel<typeof uploadFiles>;
+
+const fileColumns = {
+  ...getTableColumns(uploadFiles),
+  uploadId: uploadImages.uploadId,
+  latitude: uploadImages.latitude,
+  longitude: uploadImages.longitude,
+};
 
 const uploadColumns = { ...getTableColumns(uploads), propertyId: talhoes.propertyId };
 // INSERT/UPDATE RETURNING cannot join; resolve the same authoritative relationship.
@@ -44,8 +56,6 @@ export interface EnrichedUploadRow {
   status: string;
   source: string;
   activityDate: Date;
-  latitude: number;
-  longitude: number;
   createdAt: Date;
   updatedAt: Date;
   userId: string;
@@ -110,9 +120,10 @@ export class UploadsRepository {
   async createWithFiles(
     data: NewUpload,
     files: Array<{
-      imageIndex: number;
-      variant: 'original';
-      objectKey: (uploadId: string) => string;
+      imageId: string;
+      latitude: number | null;
+      longitude: number | null;
+      objectKey: (uploadId: string, imageId: string) => string;
       contentType: string;
       sizeBytes: number | null;
     }>,
@@ -156,11 +167,20 @@ export class UploadsRepository {
         return { upload: existing, created: false };
       }
       if (files.length) {
+        const images = files.map((file) => ({
+          id: file.imageId,
+          uploadId: upload.id,
+          latitude: file.latitude,
+          longitude: file.longitude,
+        }));
+        await tx.insert(uploadImages).values(images);
         await tx.insert(uploadFiles).values(
-          files.map((file) => ({
-            ...file,
-            objectKey: file.objectKey(upload.id),
-            uploadId: upload.id,
+          files.map((file, index) => ({
+            imageId: images[index].id,
+            variant: 'original',
+            objectKey: file.objectKey(upload.id, images[index].id),
+            contentType: file.contentType,
+            sizeBytes: file.sizeBytes,
           })),
         );
       }
@@ -217,7 +237,11 @@ export class UploadsRepository {
       for (const raw of rows as unknown as Array<Record<string, unknown>>) {
         const uploadId = String(raw.id);
         const userId = String(raw.user_id);
-        const files = await tx.select().from(uploadFiles).where(eq(uploadFiles.uploadId, uploadId));
+        const files = await tx
+          .select(fileColumns)
+          .from(uploadFiles)
+          .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+          .where(eq(uploadImages.uploadId, uploadId));
         const keys = deriveUploadObjectKeys(userId, uploadId, files);
 
         const updated =
@@ -260,7 +284,13 @@ export class UploadsRepository {
           .where(
             and(
               eq(uploadFiles.id, seal.id),
-              eq(uploadFiles.uploadId, uploadId),
+              inArray(
+                uploadFiles.imageId,
+                tx
+                  .select({ id: uploadImages.id })
+                  .from(uploadImages)
+                  .where(eq(uploadImages.uploadId, uploadId)),
+              ),
               eq(uploadFiles.variant, 'original'),
             ),
           )
@@ -293,7 +323,11 @@ export class UploadsRepository {
         .returning({ id: uploads.id });
       if (deleted.length !== 1) return { deleted: false, files: [] };
 
-      const files = await tx.select().from(uploadFiles).where(eq(uploadFiles.uploadId, uploadId));
+      const files = await tx
+        .select(fileColumns)
+        .from(uploadFiles)
+        .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+        .where(eq(uploadImages.uploadId, uploadId));
       const keys = deriveUploadObjectKeys(upload.user_id, uploadId, files);
       const jobs = [...keys].map((objectKey) => ({ objectKey, uploadId, runAfter }));
       if (jobs.length > 0) await tx.insert(objectDeletionJobs).values(jobs);
@@ -377,8 +411,6 @@ export class UploadsRepository {
         status: uploads.status,
         source: uploads.source,
         activityDate: uploads.activityDate,
-        latitude: uploads.latitude,
-        longitude: uploads.longitude,
         createdAt: uploads.createdAt,
         updatedAt: uploads.updatedAt,
         userId: uploads.userId,
@@ -420,8 +452,6 @@ export class UploadsRepository {
         status: uploads.status,
         source: uploads.source,
         activityDate: uploads.activityDate,
-        latitude: uploads.latitude,
-        longitude: uploads.longitude,
         createdAt: uploads.createdAt,
         updatedAt: uploads.updatedAt,
         userId: uploads.userId,
@@ -448,16 +478,17 @@ export class UploadsRepository {
   }
 
   /**
-   * For each upload ID, return the first preview file (lowest imageIndex).
+   * For each upload ID, return the first preview in image order.
    * Returns a Map keyed by uploadId.
    */
   async findFirstPreviewByUploadIds(uploadIds: string[]): Promise<Map<string, UploadFile>> {
     if (uploadIds.length === 0) return new Map();
     const rows = await this.db
-      .selectDistinctOn([uploadFiles.uploadId])
+      .selectDistinctOn([uploadImages.uploadId], fileColumns)
       .from(uploadFiles)
-      .where(and(inArray(uploadFiles.uploadId, uploadIds), eq(uploadFiles.variant, 'preview')))
-      .orderBy(uploadFiles.uploadId, uploadFiles.imageIndex, uploadFiles.id);
+      .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+      .where(and(inArray(uploadImages.uploadId, uploadIds), eq(uploadFiles.variant, 'preview')))
+      .orderBy(uploadImages.uploadId, uploadImages.id, uploadFiles.id);
     return new Map(rows.map((row) => [row.uploadId, row]));
   }
 
@@ -471,12 +502,13 @@ export class UploadsRepository {
     if (uploadIds.length === 0) return new Map();
     const rows = await this.db
       .select({
-        uploadId: uploadFiles.uploadId,
+        uploadId: uploadImages.uploadId,
         count: sql<number>`count(*)::int`,
       })
       .from(uploadFiles)
-      .where(and(inArray(uploadFiles.uploadId, uploadIds), eq(uploadFiles.variant, variant)))
-      .groupBy(uploadFiles.uploadId);
+      .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+      .where(and(inArray(uploadImages.uploadId, uploadIds), eq(uploadFiles.variant, variant)))
+      .groupBy(uploadImages.uploadId);
     return new Map(rows.map((r) => [r.uploadId, r.count]));
   }
 
@@ -495,7 +527,7 @@ export class UploadsRepository {
       .insert(uploadFiles)
       .values(data)
       .onConflictDoUpdate({
-        target: [uploadFiles.uploadId, uploadFiles.imageIndex, uploadFiles.variant],
+        target: [uploadFiles.imageId, uploadFiles.variant],
         set: {
           objectKey: data.objectKey,
           contentType: data.contentType,
@@ -505,24 +537,35 @@ export class UploadsRepository {
         },
       })
       .returning();
-    return row;
+    return (await this.findFileById(row.id))!;
   }
 
   async findFilesByUploadId(uploadId: string): Promise<UploadFile[]> {
-    return this.db.select().from(uploadFiles).where(eq(uploadFiles.uploadId, uploadId));
+    return this.db
+      .select(fileColumns)
+      .from(uploadFiles)
+      .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+      .where(eq(uploadImages.uploadId, uploadId))
+      .orderBy(asc(uploadImages.id), asc(uploadFiles.variant));
   }
 
   async findOriginalsByUploadIds(uploadIds: string[]): Promise<UploadFile[]> {
     if (uploadIds.length === 0) return [];
     return this.db
-      .select()
+      .select(fileColumns)
       .from(uploadFiles)
-      .where(and(inArray(uploadFiles.uploadId, uploadIds), eq(uploadFiles.variant, 'original')))
-      .orderBy(uploadFiles.uploadId, uploadFiles.imageIndex);
+      .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+      .where(and(inArray(uploadImages.uploadId, uploadIds), eq(uploadFiles.variant, 'original')))
+      .orderBy(uploadImages.uploadId, uploadImages.id);
   }
 
   async findFileById(id: string): Promise<UploadFile | undefined> {
-    const [row] = await this.db.select().from(uploadFiles).where(eq(uploadFiles.id, id)).limit(1);
+    const [row] = await this.db
+      .select(fileColumns)
+      .from(uploadFiles)
+      .innerJoin(uploadImages, eq(uploadFiles.imageId, uploadImages.id))
+      .where(eq(uploadFiles.id, id))
+      .limit(1);
     return row;
   }
 }

@@ -113,7 +113,7 @@ describe('UploadsService', () => {
         status: 'draft',
         files: [
           {
-            imageIndex: 0,
+            imageId: 'image-0',
             fileId: 'f0',
             uploadUrl: 'https://example.com/upload',
             objectKey: 'key',
@@ -132,9 +132,15 @@ describe('UploadsService', () => {
         cropTypeId: 'crop-1',
         source: 'phone',
         activityDate: '2025-06-01T12:00:00Z',
-        latitude: -15.5,
-        longitude: -47.5,
-        files: [{ fileName: 'photo.jpg', contentType: 'image/jpeg', sizeBytes: 1024 }],
+        files: [
+          {
+            imageId: 'image-0',
+            contentType: 'image/jpeg',
+            sizeBytes: 1024,
+            latitude: -15.5,
+            longitude: -47.5,
+          },
+        ],
       };
 
       const result = await service.initUpload(request);
@@ -143,9 +149,11 @@ describe('UploadsService', () => {
       expect(result.files[0].uploadUrl).toBe('https://example.com/upload');
       expect(api.postJson).toHaveBeenCalledWith('/uploads/init', request, undefined, 20000);
       expect(request.files[0]).toEqual({
-        fileName: 'photo.jpg',
+        imageId: 'image-0',
         contentType: 'image/jpeg',
         sizeBytes: 1024,
+        latitude: -15.5,
+        longitude: -47.5,
       });
     });
   });
@@ -164,8 +172,6 @@ describe('UploadsService', () => {
           source: 'phone' as UploadSource,
           status: 'finalizing',
           activityDate: '2025-01-01T00:00:00Z',
-          latitude: 0,
-          longitude: 0,
           errorMessage: null,
           createdAt: '2025-01-01T00:00:00Z',
           updatedAt: '2025-01-01T00:00:00Z',
@@ -197,8 +203,6 @@ describe('UploadsService', () => {
         source: 'phone',
         status: 'ready',
         activityDate: '2025-01-01T00:00:00Z',
-        latitude: 0,
-        longitude: 0,
         errorMessage: null,
         createdAt: '2025-01-01T00:00:00Z',
         updatedAt: '2025-01-01T00:00:00Z',
@@ -217,7 +221,7 @@ describe('UploadsService', () => {
         {
           uploadId: 'u1',
           fileId: 'f1',
-          imageIndex: 0,
+          imageId: 'image-0',
           fileName: 'img.jpg',
           contentType: 'image/jpeg',
           sizeBytes: 1024,
@@ -257,7 +261,7 @@ describe('UploadsService', () => {
       const mockResponse = {
         uploadId: 'u1',
         fileId: 'f-preview',
-        imageIndex: 0,
+        imageId: 'image-0',
         fileName: 'preview.webp',
         contentType: 'image/webp',
         sizeBytes: 5120,

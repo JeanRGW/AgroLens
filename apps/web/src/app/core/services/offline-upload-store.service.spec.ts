@@ -14,9 +14,15 @@ function buildUpload(overrides: Partial<OfflineUpload> = {}): OfflineUpload {
       cropTypeId: 'c1',
       source: 'phone',
       activityDate: '2025-06-01T12:00:00Z',
-      latitude: -15.5,
-      longitude: -47.5,
-      files: [{ fileName: 'a.jpg', contentType: 'image/jpeg', sizeBytes: 4 }],
+      files: [
+        {
+          imageId: 'image-0',
+          contentType: 'image/jpeg',
+          sizeBytes: 4,
+          latitude: -15.5,
+          longitude: -47.5,
+        },
+      ],
     },
     files: [{ blob: new Blob(['data']), fileName: 'a.jpg', contentType: 'image/jpeg' }],
     status: 'pending',

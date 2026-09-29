@@ -265,12 +265,31 @@ describe('Database integrity (e2e)', () => {
         source: 'phone',
         status: 'failed',
         activityDate: new Date(),
-        latitude: 0,
-        longitude: 0,
       })
       .returning();
     return upload;
   }
+
+  it('requires both image coordinates or neither, while accepting a real (0, 0) point', async () => {
+    const upload = await uploadFixture();
+    await expect(
+      db.insert(schema.uploadImages).values({
+        uploadId: upload.id,
+        latitude: -22.9,
+        longitude: null,
+      }),
+    ).rejects.toThrow();
+    await db.insert(schema.uploadImages).values({
+      uploadId: upload.id,
+      latitude: null,
+      longitude: null,
+    });
+    await db.insert(schema.uploadImages).values({
+      uploadId: upload.id,
+      latitude: 0,
+      longitude: 0,
+    });
+  });
 
   it('filters and paginates grants on live owned resources across all five resource types', async () => {
     const upload = await uploadFixture();
@@ -358,7 +377,7 @@ describe('Database integrity (e2e)', () => {
     expect((await list(adminAuth)).body.total).toBe(8);
   });
 
-  it('selects the lowest preview index per upload and batches only originals', async () => {
+  it('selects the lowest preview image ID per upload and batches only originals', async () => {
     const first = await uploadFixture();
     const [second] = await db
       .insert(schema.uploads)
@@ -368,18 +387,32 @@ describe('Database integrity (e2e)', () => {
         clientUploadId: randomUUID(),
       })
       .returning();
+    const expectedPreviewIds = new Map<string, string>();
+    const imageIdsByUpload = new Map<string, string[]>();
     for (const upload of [first, second]) {
+      const orderedIds = Array.from({ length: 4 }, () => randomUUID()).sort();
+      expectedPreviewIds.set(upload.id, orderedIds[0]);
+      imageIdsByUpload.set(upload.id, orderedIds);
+      const images = await db
+        .insert(schema.uploadImages)
+        .values(
+          [orderedIds[2], orderedIds[0], orderedIds[1], orderedIds[3]].map((id) => ({
+            uploadId: upload.id,
+            id,
+            latitude: null,
+            longitude: null,
+          })),
+        )
+        .returning();
       await db.insert(schema.uploadFiles).values([
-        ...[9, 2, 5].map((imageIndex) => ({
-          uploadId: upload.id,
-          imageIndex,
+        ...images.slice(0, 3).map((image) => ({
+          imageId: image.id,
           variant: 'preview' as const,
-          objectKey: `${upload.id}/${imageIndex}.jpg`,
+          objectKey: `${upload.id}/${image.id}.jpg`,
           contentType: 'image/jpeg',
         })),
         {
-          uploadId: upload.id,
-          imageIndex: 0,
+          imageId: images[3].id,
           variant: 'original' as const,
           objectKey: `${upload.id}/original.jpg`,
           contentType: 'image/jpeg',
@@ -390,10 +423,17 @@ describe('Database integrity (e2e)', () => {
     const ids = [first.id, second.id, randomUUID()];
     const previews = await repository.findFirstPreviewByUploadIds(ids);
     expect(previews.size).toBe(2);
-    expect([...previews.values()].every((file) => file.imageIndex === 2)).toBe(true);
+    expect(
+      [...previews.values()].every(
+        (file) => file.imageId === expectedPreviewIds.get(file.uploadId),
+      ),
+    ).toBe(true);
     const originals = await repository.findOriginalsByUploadIds(ids);
     expect(originals).toHaveLength(2);
     expect(originals.every((file) => file.variant === 'original')).toBe(true);
+    expect((await repository.findFilesByUploadId(first.id)).map((file) => file.imageId)).toEqual(
+      imageIdsByUpload.get(first.id),
+    );
     expect(await repository.findFirstPreviewByUploadIds([])).toEqual(new Map());
     expect(await repository.findOriginalsByUploadIds([])).toEqual([]);
   });
@@ -414,15 +454,16 @@ describe('Database integrity (e2e)', () => {
       source: 'phone',
       status: 'ready',
       activityDate: new Date(),
-      latitude: 0,
-      longitude: 0,
     });
     expect(upload.propertyId).toBe(property.id);
+    const [image] = await db
+      .insert(schema.uploadImages)
+      .values({ uploadId: upload.id })
+      .returning();
     const [file] = await db
       .insert(schema.uploadFiles)
       .values({
-        uploadId: upload.id,
-        imageIndex: 0,
+        imageId: image.id,
         variant: 'original',
         objectKey: `uploads/${upload.id}/0.jpg`,
         contentType: 'image/jpeg',

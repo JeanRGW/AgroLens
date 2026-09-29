@@ -108,12 +108,11 @@ test('production PWA cold-starts offline, saves all catalogs and GPS, then resum
   await choose(page, 'talhaoId', names.talhao);
   await choose(page, 'cropTypeId', names.crop);
   await choose(page, 'estadioId', names.estadio);
-  await page.getByRole('button', { name: 'Minha localização' }).click();
-  await expect(page.locator('.coordinates')).toContainText('-25.400000, -51.400000');
-  await expect(page.locator('.location-picker__map')).toBeHidden();
   await page
-    .locator('input[type="file"]')
+    .locator('input[type="file"].gallery-input')
     .setInputFiles({ name: 'field.png', mimeType: 'image/png', buffer: image });
+  await expect(page.locator('.image-location')).toContainText('-25.40000, -51.40000');
+  await expect(page.locator('.location-warning')).toHaveCount(0);
   await page.getByRole('button', { name: 'Salvar na fila' }).click();
   await expect(page).toHaveURL(/\/uploads\/queue$/);
   await page.reload();
@@ -126,8 +125,7 @@ test('production PWA cold-starts offline, saves all catalogs and GPS, then resum
     talhaoId,
     cropTypeId,
     estadioId,
-    latitude: -25.4,
-    longitude: -51.4,
+    files: [{ latitude: -25.4, longitude: -51.4 }],
   });
   expect(saved.files).toHaveLength(1);
 
@@ -167,7 +165,10 @@ test('production PWA cold-starts offline, saves all catalogs and GPS, then resum
     talhaoId,
     cropTypeId,
     estadioId,
-    latitude: -25.4,
-    longitude: -51.4,
   });
+  expect(detail.files).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ variant: 'original', latitude: -25.4, longitude: -51.4 }),
+    ]),
+  );
 });

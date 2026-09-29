@@ -100,7 +100,7 @@ import { CropTypeRecord } from '@agrolens/contracts';
                   <app-autocomplete-field
                     class="full-span"
                     label="Usuário"
-                    placeholder="Buscar por nome, e-mail ou ID"
+                    placeholder="Buscar por nome, email ou ID"
                     [searchControl]="form.controls.userEmail"
                     [valueControl]="form.controls.userId"
                     [searchFn]="searchUserOptions"

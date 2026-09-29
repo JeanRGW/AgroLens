@@ -46,6 +46,7 @@ void main() {
         'status': 'draft',
         'presignedUrls': [
           {
+            'imageId': 'image-1',
             'fileId': 'f1',
             'objectKey': 'uploads/u/0/original.jpeg',
             'url': 'https://storage.example.com/put-1',
@@ -71,6 +72,7 @@ void main() {
         'status': 'draft',
         'files': [
           {
+            'imageId': 'image-2',
             'id': 'backend-file-id',
             'key': 'uploads/u/0/original.jpeg',
             'uploadUrl': 'https://garage:3900/bucket/presigned-put',
@@ -102,6 +104,7 @@ void main() {
         'status': 'draft',
         'files': [
           {
+            'imageId': 'image-3',
             'id': 'existing-file-id',
             'key': 'uploads/u/0/original.jpeg',
             'uploadUrl': null,

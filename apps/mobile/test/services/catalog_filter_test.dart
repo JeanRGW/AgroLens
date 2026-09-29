@@ -266,15 +266,15 @@ void main() {
         'cropTypeId': 'crop-uuid',
         'estadioId': 'estadio-uuid',
         'source': 'drone',
-        'latitude': -15.5,
-        'longitude': -47.5,
         'activityDate': '2026-06-30T12:00:00Z',
         'createdAt': '2026-06-30T10:00:00Z',
         'updatedAt': '2026-07-01T08:00:00Z',
         'files': [
           {
             'id': 'file-1',
-            'imageIndex': 0,
+            'imageId': 'image-1',
+            'latitude': -15.5,
+            'longitude': -47.5,
             'variant': 'original',
             'objectKey': 'uploads/u/0/original.jpeg',
             'contentType': 'image/jpeg',
@@ -288,8 +288,8 @@ void main() {
       expect(detail.status, 'ready');
       expect(detail.estadioId, 'estadio-uuid');
       expect(detail.source, 'drone');
-      expect(detail.latitude, -15.5);
-      expect(detail.longitude, -47.5);
+      expect(detail.files.first.latitude, -15.5);
+      expect(detail.files.first.longitude, -47.5);
       expect(detail.files.length, 1);
       expect(detail.files.first.variant, 'original');
     });

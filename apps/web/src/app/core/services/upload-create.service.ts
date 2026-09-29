@@ -86,8 +86,17 @@ export class UploadCreateService {
     await options?.onInitialized(initResult.uploadId);
 
     const fileInstructions = initResult.files;
-    if (!Array.isArray(fileInstructions) || fileInstructions.length === 0) {
-      throw new Error('Resposta do servidor inválida: nenhuma instrução de arquivo recebida');
+    if (!Array.isArray(fileInstructions) || fileInstructions.length !== files.length) {
+      throw new Error('Resposta do servidor inválida: instruções de arquivo incompletas');
+    }
+    const localFiles = new Map(
+      request.files.map((descriptor, index) => [descriptor.imageId, files[index]]),
+    );
+    if (
+      localFiles.size !== files.length ||
+      new Set(fileInstructions.map((instruction) => instruction.imageId)).size !== files.length
+    ) {
+      throw new Error('Resposta do servidor inválida: IDs de imagem duplicados');
     }
 
     if (initResult.status === 'ready') {
@@ -101,7 +110,7 @@ export class UploadCreateService {
       this.emitProgress(
         onProgress,
         'finalizing',
-        'Processando previews...',
+        'Processando prévias...',
         files.length,
         files.length,
         0,
@@ -113,9 +122,9 @@ export class UploadCreateService {
     for (let i = 0; i < fileInstructions.length; i++) {
       options?.assertIdentity();
       const instruction = fileInstructions[i];
-      const file = files[instruction.imageIndex];
+      const file = localFiles.get(instruction.imageId);
       if (!file) {
-        throw new Error(`Arquivo com índice ${instruction.imageIndex} não encontrado na seleção`);
+        throw new Error(`Arquivo da imagem ${instruction.imageId} não encontrado na seleção`);
       }
 
       this.emitProgress(
@@ -181,7 +190,7 @@ export class UploadCreateService {
     this.emitProgress(
       onProgress,
       'finalizing',
-      'Processando previews...',
+      'Processando prévias...',
       files.length,
       files.length,
       0,

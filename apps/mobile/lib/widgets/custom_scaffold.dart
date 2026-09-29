@@ -28,12 +28,12 @@ class CustomScaffold extends StatelessWidget {
         appBar ??
         (hasAppBar
             ? AppBar(
-                title: Text(title ?? 'Custom Scaffold'),
+                title: Text(title ?? 'AgroLens'),
                 centerTitle: true,
                 leading: returnToPrevious
                     ? IconButton(
                         icon: const Icon(Icons.arrow_back),
-                        tooltip: 'Back',
+                        tooltip: 'Voltar',
                         onPressed: () => Navigator.of(context).pop(),
                       )
                     : null,

@@ -24,7 +24,7 @@
   } @else {
     @if (upload(); as u) {
       <div class="info-panel">
-        <h3>Informacoes</h3>
+        <h3>Informações</h3>
 
         <div class="info-row">
           <span class="info-label">Origem</span>
@@ -34,11 +34,11 @@
         </div>
 
         <div class="info-row">
-          <span class="info-label">Usuario</span>
+          <span class="info-label">Usuário</span>
           <span
             class="info-value clickable"
             (click)="copyUserId()"
-            title="Clique para copiar ID do usuario"
+            title="Clique para copiar o ID do usuário"
           >
             {{ u.user?.fullName || u.userId }}
             <mat-icon class="copy-icon">content_copy</mat-icon>
@@ -62,10 +62,10 @@
         }
 
         <div class="info-row">
-          <span class="info-label">Talhao</span>
+          <span class="info-label">Talhão</span>
           <span
             class="info-value clickable"
-            (click)="copyFieldId(u.talhaoId, 'Talhao')"
+            (click)="copyFieldId(u.talhaoId, 'Talhão')"
             title="Clique para copiar ID"
           >
             {{ u.talhaoName || u.talhaoId }}
@@ -87,10 +87,10 @@
 
         @if (u.estadioId) {
           <div class="info-row">
-            <span class="info-label">Estadio</span>
+            <span class="info-label">Estádio</span>
             <span
               class="info-value clickable"
-              (click)="copyFieldId(u.estadioId!, 'Estadio')"
+              (click)="copyFieldId(u.estadioId!, 'Estádio')"
               title="Clique para copiar ID"
             >
               {{ u.estadioName || u.estadioId }}
@@ -100,8 +100,12 @@
         }
 
         <div class="info-row gps-row">
-          <span class="info-label">GPS</span>
-          <span class="info-value gps-coords">{{ u.latitude }}, {{ u.longitude }}</span>
+          <span class="info-label">Localização da imagem selecionada</span>
+          <span class="info-value gps-coords">{{
+            selectedOriginal()?.latitude == null
+              ? 'Sem localização'
+              : selectedOriginal()!.latitude + ', ' + selectedOriginal()!.longitude
+          }}</span>
           <button
             mat-stroked-button
             class="map-button"
@@ -155,7 +159,7 @@
               @if (downloadingAll()) {
                 Preparando ZIP...
               } @else {
-                Baixar Todas
+                Baixar todas as imagens
               }
             </button>
           </div>
@@ -168,7 +172,7 @@
                 <span class="download-percent">{{ downloadProgress() }}%</span>
               </div>
               <mat-progress-bar mode="determinate" [value]="downloadProgress()"></mat-progress-bar>
-              <p class="download-warning">Nao feche a pagina ate concluir o download.</p>
+              <p class="download-warning">Não feche a página até concluir o download.</p>
             </div>
           }
 
@@ -195,7 +199,7 @@
         } @else {
           <div class="no-images">
             <mat-icon>image_not_supported</mat-icon>
-            <p>Nenhuma imagem disponivel.</p>
+            <p>Nenhuma imagem disponível.</p>
           </div>
         }
       </div>

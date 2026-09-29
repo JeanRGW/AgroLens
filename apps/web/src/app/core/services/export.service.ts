@@ -68,8 +68,6 @@ export class ExportService {
       'source',
       'status',
       'fileCount',
-      'latitude',
-      'longitude',
       'activityDate',
       'createdAt',
       'updatedAt',
@@ -85,8 +83,6 @@ export class ExportService {
         r.source,
         r.status,
         r.fileCount,
-        r.latitude,
-        r.longitude,
         r.activityDate,
         r.createdAt,
         r.updatedAt,
@@ -146,8 +142,7 @@ export class ExportService {
         batch.map(async (u) => {
           const { blob, ext } = await this.fetchImageBlob(u.downloadUrl);
           const safeId = this.sanitizeFileName(u.uploadId);
-          const paddedIndex = String(u.imageIndex + 1).padStart(3, '0');
-          zip.file(`${safeId}/${paddedIndex}.${ext}`, blob);
+          zip.file(`${safeId}/${u.imageId}.${ext}`, blob);
           return true;
         }),
       );
@@ -209,7 +204,8 @@ export class ExportService {
 
     const classIndexMap = new Map(globalClasses.map((name, idx) => [name, idx]));
 
-    const allImages = this.buildImageItems(uploads, annotationsMap, enabledClassSet, options);
+    const urlItems = await this.getExportUrls(uploads.map(({ id }) => ({ uploadId: id })));
+    const allImages = this.buildImageItems(urlItems, annotationsMap, enabledClassSet, options);
 
     if (allImages.length === 0) {
       onProgress?.({ phase: 'done', processed: 0, total: 0, percent: 100 });
@@ -232,14 +228,10 @@ export class ExportService {
     const valImages = shuffled.slice(trainCount);
 
     // Request all signed URLs up front
-    const urlItems = await this.getExportUrls(
-      [...new Set(allImages.map((item) => item.uploadId))].map((uploadId) => ({ uploadId })),
-    );
-
-    // Build URL lookup map keyed by "uploadId:imageIndex"
+    // Match files and annotations by stable image identity.
     const urlMap = new Map<string, (typeof urlItems)[0]>();
     for (const u of urlItems) {
-      urlMap.set(`${u.uploadId}:${u.imageIndex}`, u);
+      urlMap.set(u.imageId, u);
     }
 
     const zip = new JSZip();
@@ -254,8 +246,8 @@ export class ExportService {
 
     const processImage = async (item: YoloImageItem, split: 'train' | 'val') => {
       const safeUploadId = this.sanitizeFileName(item.uploadId);
-      const baseName = `${safeUploadId}_${item.imageIndex}`;
-      const urlEntry = urlMap.get(`${item.uploadId}:${item.imageIndex}`);
+      const baseName = `${safeUploadId}_${item.imageId}`;
+      const urlEntry = urlMap.get(item.imageId);
 
       if (!urlEntry) {
         skipped++;
@@ -379,37 +371,31 @@ export class ExportService {
   }
 
   private buildImageItems(
-    uploads: UploadRecord[],
+    files: DownloadUrlItem[],
     annotationsMap: Map<string, ImageAnnotation[]> | undefined,
     enabledClassSet: Set<string>,
     options: YoloExportOptions,
   ): YoloImageItem[] {
     const images: YoloImageItem[] = [];
-    for (const upload of uploads) {
-      const annotations = annotationsMap?.get(upload.id) || [];
-      const annotationByIndex = new Map(annotations.map((a) => [a.imageIndex, a]));
+    for (const file of files) {
+      const annotations = annotationsMap?.get(file.uploadId) || [];
+      const annotation = annotations.find((ann) => ann.imageId === file.imageId);
+      const hasAnnotation = !!annotation && extractYoloLabels(annotation).length > 0;
+      const hasEnabledAnnotation =
+        hasAnnotation &&
+        extractYoloLabels(annotation!).some((label) =>
+          enabledClassSet.has(label.className?.trim() || ''),
+        );
 
-      for (let i = 0; i < upload.fileCount; i++) {
-        const annotation = annotationByIndex.get(i);
-        const hasAnnotation = !!annotation && extractYoloLabels(annotation).length > 0;
-        const hasEnabledAnnotation =
-          hasAnnotation &&
-          extractYoloLabels(annotation!).some((label) =>
-            enabledClassSet.has(label.className?.trim() || ''),
-          );
+      const effectivelyUnannotated = !hasAnnotation || !hasEnabledAnnotation;
+      if (effectivelyUnannotated && options.includeUnannotated === 'exclude') continue;
 
-        const effectivelyUnannotated = !hasAnnotation || !hasEnabledAnnotation;
-        if (effectivelyUnannotated && options.includeUnannotated === 'exclude') {
-          continue;
-        }
-
-        images.push({
-          uploadId: upload.id,
-          imageIndex: i,
-          annotation,
-          hasEnabledAnnotation,
-        });
-      }
+      images.push({
+        uploadId: file.uploadId,
+        imageId: file.imageId,
+        annotation,
+        hasEnabledAnnotation,
+      });
     }
     return images;
   }
@@ -471,7 +457,7 @@ export class ExportService {
 /** Internal type for tracking images during YOLO export. */
 interface YoloImageItem {
   uploadId: string;
-  imageIndex: number;
+  imageId: string;
   annotation?: ImageAnnotation;
   hasEnabledAnnotation: boolean;
 }

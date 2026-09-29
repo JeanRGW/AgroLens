@@ -20,14 +20,14 @@ interface MenuItem {
 }
 
 const mainMenu: MenuItem[] = [
-  { label: 'Dashboard', icon: 'dashboard', route: '/dashboard' },
+  { label: 'Painel', icon: 'dashboard', route: '/dashboard' },
   { label: 'Uploads', icon: 'photo_library', route: '/uploads' },
   { label: 'Anotação', icon: 'crop_free', route: '/labeling' },
   { label: 'Inferência', icon: 'science', route: '/inference' },
 ];
 
 const collectionMenu: MenuItem[] = [
-  { label: 'Novo Upload', icon: 'add_photo_alternate', route: '/uploads/new' },
+  { label: 'Novo upload', icon: 'add_photo_alternate', route: '/uploads/new' },
   { label: 'Fila offline', icon: 'sync', route: '/uploads/queue' },
 ];
 
@@ -379,7 +379,7 @@ export class AppShellComponent {
     { initialValue: false },
   );
   readonly sidenavOpened = signal(false);
-  readonly userDisplay = computed(() => this.user()?.fullName || this.user()?.email || 'Usuario');
+  readonly userDisplay = computed(() => this.user()?.fullName || this.user()?.email || 'Usuário');
   readonly userInitial = computed(() => {
     const base = this.user()?.fullName || this.user()?.email || 'U';
     return base.trim().charAt(0).toUpperCase();

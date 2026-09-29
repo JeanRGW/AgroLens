@@ -55,8 +55,6 @@ export class UploadsController {
         'cropTypeId',
         'source',
         'activityDate',
-        'latitude',
-        'longitude',
         'files',
       ],
       properties: {
@@ -67,16 +65,19 @@ export class UploadsController {
         estadioId: { type: 'string', format: 'uuid' },
         source: { type: 'string', enum: ['drone', 'phone', 'mixed'] },
         activityDate: { type: 'string', format: 'date-time' },
-        latitude: { type: 'number', example: -22.9 },
-        longitude: { type: 'number', example: -43.1 },
         files: {
           type: 'array',
           items: {
             type: 'object',
-            required: ['contentType'],
+            required: ['imageId', 'contentType', 'latitude', 'longitude'],
             properties: {
-              imageIndex: { type: 'integer', minimum: 0 },
-              fileName: { type: 'string' },
+              imageId: {
+                type: 'string',
+                format: 'uuid',
+                description: 'Client-generated image UUID; reuse it when retrying this upload',
+              },
+              latitude: { type: 'number', nullable: true, example: -22.9 },
+              longitude: { type: 'number', nullable: true, example: -43.1 },
               contentType: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp'] },
               sizeBytes: { type: 'integer' },
             },

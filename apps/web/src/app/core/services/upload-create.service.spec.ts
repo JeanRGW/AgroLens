@@ -27,8 +27,6 @@ const FAKE_RECORD_READY: UploadMutationRecord = {
   source: 'phone',
   status: 'ready',
   activityDate: '2025-06-01T12:00:00Z',
-  latitude: -15.5,
-  longitude: -47.5,
   errorMessage: null,
   createdAt: '2025-06-01T12:00:00Z',
   updatedAt: '2025-06-01T12:00:01Z',
@@ -46,8 +44,6 @@ const FAKE_DETAIL_READY: UploadDetail = {
   source: 'phone',
   status: 'ready',
   activityDate: '2025-06-01T12:00:00Z',
-  latitude: -15.5,
-  longitude: -47.5,
   errorMessage: null,
   createdAt: '2025-06-01T12:00:00Z',
   updatedAt: '2025-06-01T12:00:01Z',
@@ -70,7 +66,7 @@ const FAKE_INIT_RESPONSE: InitUploadResponse = {
   status: 'draft',
   files: [
     {
-      imageIndex: 0,
+      imageId: 'image-0',
       fileId: 'file-0',
       uploadUrl: 'https://presigned.example.com/0',
       objectKey: 'key0',
@@ -79,7 +75,7 @@ const FAKE_INIT_RESPONSE: InitUploadResponse = {
       expiresAt: '2025-06-01T12:15:00Z',
     },
     {
-      imageIndex: 1,
+      imageId: 'image-1',
       fileId: 'file-1',
       uploadUrl: 'https://presigned.example.com/1',
       objectKey: 'key1',
@@ -121,11 +117,21 @@ describe('UploadCreateService', () => {
       cropTypeId: 'c1',
       source: 'phone',
       activityDate: '2025-06-01T12:00:00Z',
-      latitude: -15.5,
-      longitude: -47.5,
       files: [
-        { fileName: 'a.jpg', contentType: 'image/jpeg', sizeBytes: 100 },
-        { fileName: 'b.jpg', contentType: 'image/jpeg', sizeBytes: 200 },
+        {
+          imageId: 'image-0',
+          contentType: 'image/jpeg',
+          sizeBytes: 100,
+          latitude: -15.5,
+          longitude: -47.5,
+        },
+        {
+          imageId: 'image-1',
+          contentType: 'image/jpeg',
+          sizeBytes: 200,
+          latitude: -15.5,
+          longitude: -47.5,
+        },
       ],
     };
 
@@ -173,11 +179,31 @@ describe('UploadCreateService', () => {
       expect(progressSpy).toHaveBeenCalledWith(jasmine.objectContaining({ phase: 'ready' }));
     });
 
-    it('should throw if a file for a presigned URL index is missing', async () => {
+    it('matches reversed retry instructions to local files by image ID', async () => {
+      uploadsService.initUpload.and.resolveTo({
+        ...FAKE_INIT_RESPONSE,
+        files: [...FAKE_INIT_RESPONSE.files].reverse(),
+      });
+      uploadsService.completeUpload.and.resolveTo(FAKE_RECORD_READY);
+      uploadsService.getUpload.and.resolveTo(FAKE_DETAIL_READY);
+
+      await service.createUpload(request, fakeFiles);
+
+      expect(window.fetch).toHaveBeenCalledWith(
+        'https://presigned.example.com/1',
+        jasmine.objectContaining({ body: fakeFiles[1] }),
+      );
+      expect(window.fetch).toHaveBeenCalledWith(
+        'https://presigned.example.com/0',
+        jasmine.objectContaining({ body: fakeFiles[0] }),
+      );
+    });
+
+    it('should reject incomplete presigned instructions', async () => {
       uploadsService.initUpload.and.resolveTo(FAKE_INIT_RESPONSE);
 
       await expectAsync(service.createUpload(request, fakeFiles.slice(0, 1))).toBeRejectedWithError(
-        /Arquivo com índice 1 não encontrado/,
+        /instruções de arquivo incompletas/,
       );
     });
 
@@ -276,7 +302,7 @@ describe('UploadCreateService', () => {
         status: 'draft',
         files: [
           {
-            imageIndex: 0,
+            imageId: 'image-0',
             fileId: 'f0',
             uploadUrl: 'https://new-backend.example.com/upload/0',
             objectKey: 'uploads/u1/upload-new/0/original.jpg',
@@ -289,7 +315,7 @@ describe('UploadCreateService', () => {
       const singleFile = [new File(['data'], 'photo.jpg', { type: 'image/jpeg' })];
       const singleFileRequest: InitUploadRequest = {
         ...request,
-        files: [{ fileName: 'photo.jpg', contentType: 'image/jpeg', sizeBytes: 100 }],
+        files: [request.files[0]],
       };
 
       uploadsService.initUpload.and.resolveTo(newFormatResponse);
@@ -318,7 +344,7 @@ describe('UploadCreateService', () => {
       uploadsService.initUpload.and.resolveTo(emptyFilesResponse);
 
       await expectAsync(service.createUpload(request, fakeFiles)).toBeRejectedWithError(
-        /nenhuma instrução de arquivo/,
+        /instruções de arquivo incompletas/,
       );
     });
 
@@ -328,7 +354,7 @@ describe('UploadCreateService', () => {
         status: 'draft',
         files: [
           {
-            imageIndex: 0,
+            imageId: 'image-0',
             fileId: 'f0',
             uploadUrl: '', // Already uploaded
             objectKey: 'key0',
@@ -337,7 +363,7 @@ describe('UploadCreateService', () => {
             expiresAt: '2025-06-01T12:15:00Z',
           },
           {
-            imageIndex: 1,
+            imageId: 'image-1',
             fileId: 'f1',
             uploadUrl: 'https://presigned.example.com/1',
             objectKey: 'key1',
@@ -417,16 +443,26 @@ describe('UploadCreateService polling request deadlines', () => {
             cropTypeId: 'c1',
             source: 'phone',
             activityDate: '2025-06-01T12:00:00Z',
-            latitude: -15.5,
-            longitude: -47.5,
-            files: [{ fileName: file.name, contentType: file.type, sizeBytes: file.size }],
+            files: [
+              {
+                imageId: 'image-0',
+                contentType: file.type,
+                sizeBytes: file.size,
+                latitude: -15.5,
+                longitude: -47.5,
+              },
+            ],
           },
           [file],
           undefined,
           { userId: 'u1', assertIdentity: () => undefined, onInitialized: initialized },
         )
         .catch(failed);
-      http.expectOne('/api/uploads/init').flush({ ...FAKE_INIT_RESPONSE, status: 'finalizing' });
+      http.expectOne('/api/uploads/init').flush({
+        ...FAKE_INIT_RESPONSE,
+        status: 'finalizing',
+        files: [FAKE_INIT_RESPONSE.files[0]],
+      });
       flushMicrotasks();
 
       for (let i = 0; i < completedPolls; i++) {

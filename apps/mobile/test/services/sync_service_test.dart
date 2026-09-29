@@ -42,6 +42,37 @@ void main() {
 
   setUp(() async {
     mockHttp = MockHttpClient();
+    mockHttp.transformResponse = (request, body) {
+      if (request.method != 'POST' ||
+          request.url.path != '/api/uploads/init' ||
+          request is! http.Request) {
+        return body;
+      }
+      final descriptors =
+          (jsonDecode(request.body) as Map<String, dynamic>)['files']
+              as List<dynamic>;
+      final files = (body['files'] ?? body['presignedUrls']) as List<dynamic>?;
+      if (files == null) return body;
+      return {
+        ...body,
+        if (body.containsKey('files'))
+          'files': [
+            for (var i = 0; i < files.length; i++)
+              {
+                ...(files[i] as Map<String, dynamic>),
+                'imageId': (descriptors[i] as Map<String, dynamic>)['imageId'],
+              },
+          ]
+        else
+          'presignedUrls': [
+            for (var i = 0; i < files.length; i++)
+              {
+                ...(files[i] as Map<String, dynamic>),
+                'imageId': (descriptors[i] as Map<String, dynamic>)['imageId'],
+              },
+          ],
+      };
+    };
     apiClient = ApiClient(
       httpClient: mockHttp,
       env: const EnvConfig(apiBaseUrl: 'https://test.api/api'),
@@ -166,6 +197,7 @@ void main() {
       final pending = switch (step) {
         'originals' => syncService.stepUploadOriginals(upload, upload.paths, [
           PresignedUploadUrl.fromJson({
+            'imageId': upload.images.single.imageId,
             'fileId': 'file',
             'objectKey': 'original',
             'url': 'https://storage.example.com/original',
@@ -644,16 +676,6 @@ void main() {
       final imgPath = '/tmp/upload_original_test.jpg';
       await createTempFile(imgPath, 'fake_image_bytes');
 
-      final presignedUrls = [
-        PresignedUploadUrl(
-          fileId: 'f1',
-          objectKey: 'uploads/u/0/original.jpeg',
-          url: 'https://storage.example.com/put-test-file',
-          expiresAt: DateTime.now().add(const Duration(hours: 1)),
-          headers: {'x-amz-meta-user': 'mobile'},
-        ),
-      ];
-
       // Mock the PUT — request.url.path will be '/put-test-file'
       mockHttp.queueResponse('PUT', '/put-test-file', 200, {});
 
@@ -668,6 +690,16 @@ void main() {
         cropTypeId: 'c',
         source: 'phone',
       );
+      final presignedUrls = [
+        PresignedUploadUrl(
+          imageId: upload.images.single.imageId,
+          fileId: 'f1',
+          objectKey: 'uploads/u/0/original.jpeg',
+          url: 'https://storage.example.com/put-test-file',
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+          headers: {'x-amz-meta-user': 'mobile'},
+        ),
+      ];
 
       final result = await syncService.stepUploadOriginals(upload, [
         imgPath,
@@ -687,22 +719,6 @@ void main() {
       await createTempFile(firstPath, 'existing_bytes');
       await createTempFile(secondPath, 'missing_bytes');
 
-      final presignedUrls = [
-        const PresignedUploadUrl(
-          fileId: 'existing-file',
-          objectKey: 'uploads/u/0/original.jpeg',
-          url: null,
-          method: 'GET',
-          expiresAt: null,
-        ),
-        PresignedUploadUrl(
-          fileId: 'missing-file',
-          objectKey: 'uploads/u/1/original.jpeg',
-          url: 'https://storage.example.com/put-missing',
-          expiresAt: DateTime.now().add(const Duration(hours: 1)),
-        ),
-      ];
-
       mockHttp.queueResponse('PUT', '/put-missing', 200, {});
 
       final upload = PendingUpload(
@@ -716,6 +732,23 @@ void main() {
         cropTypeId: 'c',
         source: 'phone',
       );
+      final presignedUrls = [
+        PresignedUploadUrl(
+          imageId: upload.images.first.imageId,
+          fileId: 'existing-file',
+          objectKey: 'uploads/u/0/original.jpeg',
+          url: null,
+          method: 'GET',
+          expiresAt: null,
+        ),
+        PresignedUploadUrl(
+          imageId: upload.images.last.imageId,
+          fileId: 'missing-file',
+          objectKey: 'uploads/u/1/original.jpeg',
+          url: 'https://storage.example.com/put-missing',
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+        ),
+      ];
 
       final result = await syncService.stepUploadOriginals(upload, [
         firstPath,
@@ -731,6 +764,46 @@ void main() {
 
       await File(firstPath).delete();
       await File(secondPath).delete();
+    });
+
+    test('matches reordered presigned URLs to image IDs', () async {
+      final firstPath = '/tmp/upload_id_first.png';
+      final secondPath = '/tmp/upload_id_second.jpg';
+      await createTempFile(firstPath, 'first');
+      await createTempFile(secondPath, 'second');
+      addTearDown(() async {
+        await File(firstPath).delete();
+        await File(secondPath).delete();
+      });
+      final upload = PendingUpload(
+        id: 'reordered',
+        paths: [firstPath, secondPath],
+        createdAt: DateTime.now(),
+      );
+      mockHttp.queueResponse('PUT', '/first', 200, {});
+      mockHttp.queueResponse('PUT', '/second', 200, {});
+
+      await syncService.stepUploadOriginals(upload, upload.paths, [
+        PresignedUploadUrl(
+          imageId: upload.images[1].imageId,
+          fileId: 'b',
+          url: 'https://storage.example.com/second',
+        ),
+        PresignedUploadUrl(
+          imageId: upload.images[0].imageId,
+          fileId: 'a',
+          url: 'https://storage.example.com/first',
+        ),
+      ]);
+
+      final puts = mockHttp.requests
+          .where((request) => request.method == 'PUT')
+          .toList();
+      expect(puts.map((request) => request.url.path), ['/second', '/first']);
+      expect(puts.map((request) => request.headers['Content-Type']), [
+        'image/jpeg',
+        'image/png',
+      ]);
     });
 
     test('throws on file count mismatch', () async {
