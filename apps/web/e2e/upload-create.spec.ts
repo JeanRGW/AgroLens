@@ -119,7 +119,9 @@ test.describe('Upload creation via UI', () => {
     await expect(dateInput).not.toBeEmpty({ timeout: 3_000 });
 
     // ── Manual map selection ──────────────────────────────────────────
-    await page.getByRole('switch', { name: 'Usar localização automática (GPS)' }).uncheck();
+    const gpsSwitch = page.getByRole('switch', { name: 'Usar localização automática (GPS)' });
+    await gpsSwitch.click();
+    await expect(gpsSwitch).toHaveAttribute('aria-checked', 'false');
     await expect(page.locator('.upload-create__map-panel')).toBeVisible();
 
     // ── File upload via hidden file input ────────────────────────────

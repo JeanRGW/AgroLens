@@ -139,17 +139,17 @@ test.describe('Annotation save and export flow', () => {
     await expect(dialog).toBeVisible({ timeout: 10_000 });
 
     // Dialog title
-    await expect(dialog.getByText('Exportar Dataset YOLO')).toBeVisible();
+    await expect(dialog.getByText('Exportar conjunto de dados YOLO')).toBeVisible();
 
     // Summary section
     await expect(dialog.getByText('Resumo')).toBeVisible();
 
-    // The "Exportar Dataset" confirm button should be present.
+    // The export confirm button should be present.
     // NOTE: With only 1 annotated image the train/val split yields trainCount=0,
     // which disables the button.  We verify the button exists and the dialog
     // rendered correctly without asserting enabled state.
     const confirmBtn = dialog.getByRole('button', {
-      name: /Exportar Dataset/,
+      name: /Exportar conjunto de dados/,
     });
     await expect(confirmBtn).toBeVisible();
 
@@ -283,13 +283,13 @@ test.describe('Annotation save and export flow', () => {
     await expect(dialog).toBeVisible({ timeout: 10_000 });
 
     // Dialog title
-    await expect(dialog.getByText('Exportar Dataset YOLO')).toBeVisible();
+    await expect(dialog.getByText('Exportar conjunto de dados YOLO')).toBeVisible();
 
     // With both images annotated (annotatedImages=2, totalImages=2),
     // the default 'exclude' mode gives effectiveImageCount=2,
-    // trainCount=1, valCount=1 → Exportar Dataset button is enabled.
+    // trainCount=1, valCount=1 → export button is enabled.
     const confirmBtn = dialog.getByRole('button', {
-      name: /Exportar Dataset/,
+      name: /Exportar conjunto de dados/,
     });
     await expect(confirmBtn).toBeVisible();
     await expect(confirmBtn).toBeEnabled({ timeout: 5_000 });
@@ -299,7 +299,7 @@ test.describe('Annotation save and export flow', () => {
       timeout: 60_000,
     });
 
-    // Click "Exportar Dataset" to trigger the YOLO export
+    // Click the export button to trigger the YOLO export
     await confirmBtn.click();
 
     // Wait for dialog to close

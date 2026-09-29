@@ -233,6 +233,21 @@ describe('UploadCreatePageComponent offline collection', () => {
     expect(action()?.disabled).toBeFalse();
   });
 
+  it('turns automatic GPS off through the visible switch and opens the inline map', () => {
+    component.online.set(true);
+    component.setUseGps(true);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const gpsSwitch = page.querySelector<HTMLButtonElement>('mat-slide-toggle [role="switch"]')!;
+    expect(gpsSwitch.getAttribute('aria-checked')).toBe('true');
+
+    gpsSwitch.click();
+    fixture.detectChanges();
+    expect(component.useGps()).toBeFalse();
+    expect(gpsSwitch.getAttribute('aria-checked')).toBe('false');
+    expect(page.querySelector('.upload-create__map-panel')).not.toBeNull();
+  });
+
   it('hides camera capture on desktop and keeps the gallery picker', () => {
     fixture.detectChanges();
     const page: HTMLElement = fixture.nativeElement;

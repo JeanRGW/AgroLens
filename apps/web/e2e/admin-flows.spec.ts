@@ -73,7 +73,7 @@ async function createUserViaUi(page: Page): Promise<CreatedUser> {
 
   await page.getByRole('button', { name: /Registrar novo usuário/ }).click();
   const dialog = page.locator('mat-dialog-container');
-  await expect(dialog.getByText('Registrar novo usuario')).toBeVisible();
+  await expect(dialog.getByText('Registrar novo usuário')).toBeVisible();
 
   // Material applies initial focus after the opening animation finishes.
   const nameInput = dialog.getByLabel('Nome completo');
@@ -85,9 +85,9 @@ async function createUserViaUi(page: Page): Promise<CreatedUser> {
   await page.getByRole('option', { name: 'Usuário' }).click();
   await dialog.locator('input[formcontrolname="password"]').fill(password);
   await dialog.locator('input[formcontrolname="confirmPassword"]').fill(password);
-  await dialog.getByRole('button', { name: /Registrar usuario/ }).click();
+  await dialog.getByRole('button', { name: /Registrar usuário/ }).click();
 
-  await expect(dialog.getByText('Usuario registrado com sucesso!')).toBeVisible();
+  await expect(dialog.getByText('Usuário registrado com sucesso!')).toBeVisible();
 
   await dialog.getByRole('button', { name: /Concluir/ }).click();
   await expect(dialog).not.toBeVisible();
