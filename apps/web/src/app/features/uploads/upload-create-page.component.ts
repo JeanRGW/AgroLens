@@ -1,4 +1,13 @@
-import { Component, computed, DestroyRef, inject, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  OnInit,
+  signal,
+  ViewChild,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
@@ -11,6 +20,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MAT_DATE_LOCALE, provideNativeDateAdapter } from '@angular/material/core';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 import { AuthService } from '../../core/services/auth.service';
 import {
@@ -36,6 +46,29 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
+interface ImageLocationPoint {
+  latitude: number;
+  longitude: number;
+}
+
+interface MapSelection {
+  file: File | null;
+  latitude: number | null;
+  longitude: number | null;
+  point: ImageLocationPoint | null;
+}
+
+export function isMobileCameraDevice(
+  userAgent: string,
+  platform: string,
+  maxTouchPoints: number,
+): boolean {
+  // Browsers cannot reliably report whether a file input opens native camera capture.
+  return (
+    /Android|iPhone|iPad|iPod/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1)
+  );
+}
+
 @Component({
   selector: 'app-upload-create-page',
   standalone: true,
@@ -52,15 +85,18 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     MatInputModule,
     MatProgressBarModule,
     MatSelectModule,
+    MatSlideToggleModule,
     PageHeaderComponent,
     LoadingStateComponent,
     LocationPickerComponent,
   ],
   providers: [{ provide: MAT_DATE_LOCALE, useValue: 'pt-BR' }, provideNativeDateAdapter()],
+  host: { '(window:beforeunload)': 'onBeforeUnload($event)' },
   templateUrl: './upload-create-page.component.html',
   styleUrl: './upload-create-page.component.scss',
 })
 export class UploadCreatePageComponent implements OnInit {
+  @ViewChild('locationSection') locationSection?: ElementRef<HTMLElement>;
   private readonly catalogCache = inject(OfflineCatalogCacheService);
   private readonly offlineUploadStore = inject(OfflineUploadStoreService);
   private readonly offlineUploadSync = inject(OfflineUploadSyncService);
@@ -93,8 +129,18 @@ export class UploadCreatePageComponent implements OnInit {
   readonly imageLocations = signal<Array<{ latitude: number | null; longitude: number | null }>>(
     [],
   );
-  readonly locationTarget = signal<number | null>(null);
+  readonly useGps = signal(true);
   readonly gpsPending = signal(false);
+  readonly gpsError = signal('');
+  readonly gpsTargets = signal<ReadonlySet<File>>(new Set());
+  readonly mapSelection = signal<MapSelection | null>(null);
+  readonly cameraCaptureAvailable = isMobileCameraDevice(
+    navigator.userAgent,
+    navigator.platform,
+    navigator.maxTouchPoints,
+  );
+  private gpsRequest = 0;
+  private gpsTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly initialActivityDate = new Date();
   activityDate: Date | null = this.initialActivityDate;
   activityTime = this.initialActivityDate.toTimeString().slice(0, 5);
@@ -102,9 +148,12 @@ export class UploadCreatePageComponent implements OnInit {
   readonly previewUrls = signal<string[]>([]);
   readonly missingLocationCount = computed(
     () =>
-      this.files().filter((_, index) => {
+      this.files().filter((file, index) => {
         const location = this.imageLocations()[index];
-        return location?.latitude == null || location?.longitude == null;
+        return (
+          (location?.latitude == null || location?.longitude == null) &&
+          (!this.useGps() || !this.gpsTargets().has(file))
+        );
       }).length,
   );
 
@@ -120,18 +169,46 @@ export class UploadCreatePageComponent implements OnInit {
     pollAttempts: number;
   } | null>(null);
   readonly completedUploadId = signal<string | null>(null);
+  private batchSaved = false;
 
   // All talhoes and estadios for client-side filtering
   private allTalhoes: TalhaoRecord[] = [];
   private allEstadios: EstadioRecord[] = [];
 
+  async canDeactivate(): Promise<boolean> {
+    if (this.submitting() && !this.batchSaved) return false;
+    if (!this.files().length) return true;
+    return !!(await firstValueFrom(
+      this.dialog
+        .open(ConfirmDialogComponent, {
+          data: {
+            title: 'Descartar upload?',
+            message: this.editing()
+              ? 'As alterações neste lote ainda não foram salvas. Deseja sair sem salvar?'
+              : 'As imagens selecionadas ainda não foram salvas. Deseja sair sem salvar?',
+            confirmText: 'Descartar e sair',
+            cancelText: 'Continuar edição',
+          },
+        })
+        .afterClosed(),
+    ));
+  }
+
+  onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.files().length || (this.submitting() && !this.batchSaved)) event.preventDefault();
+  }
+
   async ngOnInit(): Promise<void> {
-    const updateOnline = () => this.online.set(navigator.onLine);
+    const updateOnline = () => {
+      this.online.set(navigator.onLine);
+      if (!navigator.onLine) this.mapSelection.set(null);
+    };
     addEventListener('online', updateOnline);
     addEventListener('offline', updateOnline);
     this.destroyRef.onDestroy(() => {
       removeEventListener('online', updateOnline);
       removeEventListener('offline', updateOnline);
+      this.cancelGpsRequest();
       this.revokePreviews();
     });
     await this.loadCatalogs();
@@ -142,6 +219,10 @@ export class UploadCreatePageComponent implements OnInit {
   onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     if (!input.files?.length) return;
+    if (this.gpsPending()) {
+      input.value = '';
+      return;
+    }
 
     const selectedFiles = Array.from(input.files);
 
@@ -158,16 +239,13 @@ export class UploadCreatePageComponent implements OnInit {
             }),
       );
       const urls = newFiles.map((file) => URL.createObjectURL(file));
-      const batchLocation =
-        this.locationTarget() === null && this.latitude() !== null && this.longitude() !== null
-          ? { latitude: this.latitude(), longitude: this.longitude() }
-          : { latitude: null, longitude: null };
       this.files.update((current) => [...current, ...newFiles]);
       this.imageLocations.update((locations) => [
         ...locations,
-        ...newFiles.map(() => ({ ...batchLocation })),
+        ...newFiles.map(() => ({ latitude: null, longitude: null })),
       ]);
       this.previewUrls.update((current) => [...current, ...urls]);
+      if (this.useGps()) this.requestGps(newFiles);
     } catch (error) {
       this.snackBar.open(offlineErrorMessage(error), 'Fechar', { duration: 8000 });
     }
@@ -175,13 +253,12 @@ export class UploadCreatePageComponent implements OnInit {
 
   removeFile(index: number): void {
     if (this.gpsPending()) return;
+    const removedFile = this.files()[index];
     URL.revokeObjectURL(this.previewUrls()[index]);
     this.previewUrls.update((urls) => urls.filter((_, i) => i !== index));
     this.files.update((f) => f.filter((_, i) => i !== index));
     this.imageLocations.update((locations) => locations.filter((_, i) => i !== index));
-    if (this.locationTarget() === index) this.locationTarget.set(null);
-    else if (this.locationTarget() !== null && this.locationTarget()! > index)
-      this.locationTarget.update((target) => target! - 1);
+    if (this.mapSelection()?.file === removedFile) this.cancelMap();
   }
 
   onPropertyChange(): void {
@@ -202,10 +279,11 @@ export class UploadCreatePageComponent implements OnInit {
     );
   }
 
-  onLocationSelected(location: { latitude: number; longitude: number }): void {
+  onLocationSelected(location: ImageLocationPoint, file?: File): void {
+    const target = file ? this.files().indexOf(file) : null;
+    if (target === -1) return;
     this.latitude.set(location.latitude);
     this.longitude.set(location.longitude);
-    const target = this.locationTarget();
     this.imageLocations.update((locations) =>
       locations.map((item, index) =>
         target === index || (target === null && (item.latitude === null || item.longitude === null))
@@ -215,29 +293,141 @@ export class UploadCreatePageComponent implements OnInit {
     );
   }
 
-  selectLocationTarget(index: number | null): void {
-    if (this.gpsPending()) return;
-    this.locationTarget.set(index);
-    const point = index === null ? null : this.imageLocations()[index];
-    this.latitude.set(point?.latitude ?? null);
-    this.longitude.set(point?.longitude ?? null);
+  setUseGps(enabled: boolean): void {
+    this.useGps.set(enabled);
+    this.gpsError.set('');
+    if (enabled) {
+      this.mapSelection.set(null);
+      return;
+    }
+    this.cancelGpsRequest();
+    if (this.online() && !this.mapSelection()) this.openMap();
   }
 
-  clearLocation(): void {
-    if (this.gpsPending()) return;
-    const target = this.locationTarget();
-    this.latitude.set(null);
-    this.longitude.set(null);
-    this.imageLocations.update((locations) =>
-      locations.map((item, index) =>
-        target === null || target === index ? { latitude: null, longitude: null } : item,
-      ),
+  applyCurrentLocation(): void {
+    if (!this.useGps() || this.mapSelection()) return;
+    const missingFiles = this.files().filter((_, index) => {
+      const location = this.imageLocations()[index];
+      return location?.latitude == null || location?.longitude == null;
+    });
+    this.requestGps(missingFiles);
+  }
+
+  openMap(index: number | null = null): void {
+    if (!this.online() || this.gpsPending() || this.mapSelection()) return;
+    const file = index === null ? null : this.files()[index];
+    if (index !== null && !file) return;
+    const point = index === null ? null : this.imageLocations()[index];
+    const latitude = file ? (point?.latitude ?? null) : this.latitude();
+    const longitude = file ? (point?.longitude ?? null) : this.longitude();
+    this.mapSelection.set({
+      file,
+      latitude,
+      longitude,
+      point: latitude !== null && longitude !== null ? { latitude, longitude } : null,
+    });
+    if (index !== null && window.matchMedia('(max-width: 900px)').matches) {
+      this.locationSection?.nativeElement.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  onMapDraftSelected(point: ImageLocationPoint): void {
+    this.mapSelection.update((selection) => (selection ? { ...selection, point } : null));
+  }
+
+  cancelMap(): void {
+    this.mapSelection.set(null);
+  }
+
+  confirmMap(): void {
+    const selection = this.mapSelection();
+    if (!selection?.point) return;
+    this.onLocationSelected(selection.point, selection.file ?? undefined);
+    this.mapSelection.set(null);
+  }
+
+  private requestGps(targetFiles: File[]): void {
+    if (this.gpsPending() || !this.useGps()) return;
+    this.gpsError.set('');
+    if (!navigator.geolocation) {
+      this.gpsError.set('GPS indisponível. Abra o aplicativo em HTTPS e ative a localização.');
+      return;
+    }
+
+    const request = ++this.gpsRequest;
+    const targets = new Set(targetFiles);
+    this.gpsTargets.set(targets);
+    this.gpsPending.set(true);
+    const finish = (point: ImageLocationPoint | null, message = '') => {
+      if (this.destroyRef.destroyed || request !== this.gpsRequest) return;
+      this.gpsRequest++;
+      if (this.gpsTimer) clearTimeout(this.gpsTimer);
+      this.gpsTimer = null;
+      if (point) {
+        this.latitude.set(point.latitude);
+        this.longitude.set(point.longitude);
+        this.imageLocations.update((locations) =>
+          locations.map((item, index) =>
+            targets.has(this.files()[index]) && (item.latitude === null || item.longitude === null)
+              ? point
+              : item,
+          ),
+        );
+      } else {
+        this.gpsError.set(message);
+      }
+      this.gpsTargets.set(new Set());
+      this.gpsPending.set(false);
+    };
+    this.gpsTimer = setTimeout(
+      () => finish(null, 'O GPS demorou demais. Vá para uma área aberta e tente novamente.'),
+      25000,
     );
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          if (
+            !Number.isFinite(latitude) ||
+            !Number.isFinite(longitude) ||
+            latitude < -90 ||
+            latitude > 90 ||
+            longitude < -180 ||
+            longitude > 180
+          ) {
+            finish(null, 'O dispositivo retornou uma localização inválida. Tente novamente.');
+            return;
+          }
+          finish({ latitude, longitude });
+        },
+        (error) =>
+          finish(
+            null,
+            error.code === 1
+              ? 'Permita o acesso à localização nas configurações do navegador e tente novamente.'
+              : error.code === 3
+                ? 'O GPS demorou demais. Vá para uma área aberta e tente novamente.'
+                : 'Localização indisponível. Verifique o GPS e tente novamente.',
+          ),
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+      );
+    } catch {
+      finish(null, 'Não foi possível obter sua localização atual.');
+    }
+  }
+
+  private cancelGpsRequest(): void {
+    this.gpsRequest++;
+    if (this.gpsTimer) clearTimeout(this.gpsTimer);
+    this.gpsTimer = null;
+    this.gpsTargets.set(new Set());
+    this.gpsPending.set(false);
   }
 
   async onSubmit(): Promise<void> {
     if (
       this.submitting() ||
+      this.gpsPending() ||
       this.files().length === 0 ||
       !this.selectedPropertyId ||
       !this.selectedTalhaoId ||
@@ -253,7 +443,7 @@ export class UploadCreatePageComponent implements OnInit {
           .open(ConfirmDialogComponent, {
             data: {
               title: 'Imagens sem localização',
-              message: `${missing} ${missing === 1 ? 'imagem está' : 'imagens estão'} sem coordenadas. Use Minha localização ou selecione um ponto no mapa antes de continuar, se possível. Deseja salvar sem localização mesmo assim?`,
+              message: `${missing} ${missing === 1 ? 'imagem está' : 'imagens estão'} sem coordenadas. Use o GPS ou selecione um ponto no mapa quando estiver online, se possível. Deseja salvar sem localização mesmo assim?`,
               confirmText: 'Salvar sem localização',
               cancelText: 'Voltar e localizar',
             },
@@ -269,6 +459,7 @@ export class UploadCreatePageComponent implements OnInit {
     }
 
     this.submitting.set(true);
+    this.batchSaved = false;
     this.error.set('');
     this.progress.set(null);
     this.completedUploadId.set(null);
@@ -345,6 +536,7 @@ export class UploadCreatePageComponent implements OnInit {
         await this.offlineUploadStore.save(offlineUpload);
       };
       await withBrowserLock(`agrolens-upload:${offlineUpload.id}`, save);
+      this.batchSaved = true;
       this.revokePreviews();
       this.files.set([]);
       this.imageLocations.set([]);

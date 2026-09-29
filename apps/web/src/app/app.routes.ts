@@ -3,6 +3,7 @@ import { adminGuard } from './core/guards/admin.guard';
 import { authGuard } from './core/guards/auth.guard';
 import { inferenceEnabledGuard } from './core/guards/inference-enabled.guard';
 import type { LabelingPageComponent } from './features/labeling/labeling-page.component';
+import type { UploadCreatePageComponent } from './features/uploads/upload-create-page.component';
 
 export const routes: Routes = [
   {
@@ -51,6 +52,7 @@ export const routes: Routes = [
       },
       {
         path: 'uploads/new',
+        canDeactivate: [(component: UploadCreatePageComponent) => component.canDeactivate()],
         loadComponent: () =>
           import('./features/uploads/upload-create-page.component').then(
             (m) => m.UploadCreatePageComponent,

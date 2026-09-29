@@ -62,7 +62,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     );
     _hasSelectedPoint =
         widget.initialLatitude != null && widget.initialLongitude != null;
-    if (widget.initialLatitude == null || widget.initialLongitude == null) {
+    if (widget.showCurrentLocationButton &&
+        (widget.initialLatitude == null || widget.initialLongitude == null)) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _centerOnCurrentLocation(),
       );
@@ -163,8 +164,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                     'Longitude: ${_selectedPoint.longitude.toStringAsFixed(6)}',
                   ),
                 ] else
-                  const Text(
-                    'Nenhum ponto escolhido. Toque no mapa ou use Minha localização.',
+                  Text(
+                    widget.showCurrentLocationButton
+                        ? 'Nenhum ponto escolhido. Toque no mapa ou use Minha localização.'
+                        : 'Nenhum ponto escolhido. Toque no mapa.',
                   ),
                 const SizedBox(height: 12),
                 Row(

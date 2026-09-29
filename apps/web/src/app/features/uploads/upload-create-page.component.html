@@ -161,17 +161,45 @@
           </div>
           <div class="section-card__body">
             <div class="file-input-area">
+              @if (cameraCaptureAvailable) {
+                <input
+                  type="file"
+                  #cameraInput
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  capture="environment"
+                  (change)="onFilesSelected($event)"
+                  [disabled]="gpsPending()"
+                  class="file-input-hidden camera-input"
+                />
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="camera-button"
+                  [disabled]="gpsPending()"
+                  (click)="cameraInput.click()"
+                >
+                  <mat-icon>photo_camera</mat-icon>
+                  Câmera
+                </button>
+              }
               <input
                 type="file"
                 #fileInput
                 multiple
                 accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                 (change)="onFilesSelected($event)"
-                class="file-input-hidden"
+                [disabled]="gpsPending()"
+                class="file-input-hidden gallery-input"
               />
-              <button mat-stroked-button type="button" (click)="fileInput.click()">
-                <mat-icon>add_photo_alternate</mat-icon>
-                Selecionar imagens
+              <button
+                mat-stroked-button
+                type="button"
+                class="gallery-button"
+                [disabled]="gpsPending()"
+                (click)="fileInput.click()"
+              >
+                <mat-icon>photo_library</mat-icon>
+                Galeria
               </button>
               <span class="file-count">
                 {{ files().length }}
@@ -183,8 +211,14 @@
               <p class="location-warning" role="status">
                 {{ missingLocationCount() }}
                 {{ missingLocationCount() === 1 ? 'imagem precisa' : 'imagens precisam' }}
-                de localização. Use o GPS ou escolha um ponto no mapa. Para salvar sem localização,
-                será necessária uma confirmação.
+                de localização.
+                {{
+                  useGps()
+                    ? 'Aplique a localização atual'
+                    : online()
+                      ? 'Escolha um ponto no mapa'
+                      : 'Ative o GPS para localizar offline'
+                }}.
               </p>
             }
 
@@ -196,14 +230,17 @@
                     <span
                       class="image-location"
                       [class.missing]="
-                        imageLocations()[i]?.latitude == null ||
-                        imageLocations()[i]?.longitude == null
+                        (imageLocations()[i]?.latitude == null ||
+                          imageLocations()[i]?.longitude == null) &&
+                        (!useGps() || !gpsTargets().has(files()[i]))
                       "
                     >
                       {{
                         imageLocations()[i]?.latitude == null ||
                         imageLocations()[i]?.longitude == null
-                          ? 'Sem localização'
+                          ? useGps() && gpsTargets().has(files()[i])
+                            ? 'Localizando...'
+                            : 'Sem localização'
                           : imageLocations()[i]!.latitude!.toFixed(5) +
                             ', ' +
                             imageLocations()[i]!.longitude!.toFixed(5)
@@ -212,16 +249,18 @@
                     <button
                       mat-button
                       type="button"
-                      [disabled]="gpsPending()"
-                      (click)="selectLocationTarget(i)"
+                      [disabled]="gpsPending() || !online() || mapSelection() !== null"
+                      [attr.aria-label]="'Ajustar localização da imagem ' + (i + 1)"
+                      (click)="openMap(i)"
                     >
-                      Ajustar localização
+                      Ajustar no mapa
                     </button>
                     <button
                       mat-icon-button
                       type="button"
                       class="preview-remove"
                       [disabled]="gpsPending()"
+                      [attr.aria-label]="'Remover imagem ' + (i + 1)"
                       (click)="removeFile(i)"
                     >
                       <mat-icon>close</mat-icon>
@@ -235,41 +274,90 @@
       </div>
 
       <!-- Right column: image locations -->
-      <div class="upload-create__location">
+      <div class="upload-create__location" #locationSection>
         <mat-card class="section-card">
           <div class="section-card__header">
             <mat-icon>location_on</mat-icon>
             <span>Localização das imagens</span>
           </div>
           <div class="section-card__body">
-            <p>
-              Selecione um ponto para todas as imagens importadas ou ajuste uma imagem de cada vez.
-            </p>
-            <button
-              mat-button
-              type="button"
-              [disabled]="gpsPending()"
-              (click)="selectLocationTarget(null)"
-            >
-              Ajustar imagens sem localização
-            </button>
-            @if (locationTarget() !== null) {
-              <p>Ajustando imagem {{ locationTarget()! + 1 }}</p>
-            }
-            <button mat-button type="button" [disabled]="gpsPending()" (click)="clearLocation()">
+            <mat-slide-toggle [checked]="useGps()" (change)="setUseGps($event.checked)">
+              Usar localização automática (GPS)
+            </mat-slide-toggle>
+            <p class="upload-create__location-intro">
               {{
-                locationTarget() === null
-                  ? 'Limpar localização de todas as imagens'
-                  : 'Limpar localização desta imagem'
+                useGps()
+                  ? 'O GPS localiza cada nova seleção de imagens.'
+                  : 'Escolha um ponto no mapa para as imagens sem localização.'
               }}
-            </button>
-            <app-location-picker
-              height="420px"
-              [latitude]="latitude()"
-              [longitude]="longitude()"
-              (locatingChange)="gpsPending.set($event)"
-              (locationSelected)="onLocationSelected($event)"
-            />
+            </p>
+            @if (useGps()) {
+              <button
+                mat-stroked-button
+                type="button"
+                class="upload-create__location-action"
+                [disabled]="gpsPending() || mapSelection() !== null"
+                (click)="applyCurrentLocation()"
+              >
+                <mat-icon aria-hidden="true">{{
+                  gpsPending() ? 'hourglass_empty' : 'my_location'
+                }}</mat-icon>
+                {{ gpsPending() ? 'Localizando...' : 'Aplicar localização atual' }}
+              </button>
+            } @else {
+              <button
+                mat-stroked-button
+                type="button"
+                class="upload-create__location-action"
+                [disabled]="!online()"
+                [attr.aria-expanded]="mapSelection() !== null"
+                (click)="mapSelection() ? cancelMap() : openMap()"
+              >
+                <mat-icon aria-hidden="true">map</mat-icon>
+                {{ mapSelection() ? 'Ocultar mapa' : 'Selecionar no mapa' }}
+              </button>
+            }
+            @if (gpsError()) {
+              <p class="upload-create__location-error" role="alert">{{ gpsError() }}</p>
+            }
+            @if (mapSelection(); as selection) {
+              <div class="upload-create__map-panel">
+                <p class="upload-create__map-instruction">
+                  {{
+                    selection.file
+                      ? 'Ajustando imagem ' +
+                        (files().indexOf(selection.file) + 1) +
+                        '. Toque no mapa para escolher o ponto.'
+                      : 'Toque no mapa para localizar as imagens sem ponto.'
+                  }}
+                </p>
+                <app-location-picker
+                  height="min(46vh, 360px)"
+                  [latitude]="selection.latitude"
+                  [longitude]="selection.longitude"
+                  [gpsButtonEnabled]="false"
+                  [mapToggleEnabled]="false"
+                  [manualCoordinatesEnabled]="false"
+                  (locationSelected)="onMapDraftSelected($event)"
+                />
+                <div class="upload-create__map-actions">
+                  <button mat-button type="button" (click)="cancelMap()">Cancelar</button>
+                  <button
+                    mat-flat-button
+                    type="button"
+                    [disabled]="!selection.point"
+                    (click)="confirmMap()"
+                  >
+                    Usar ponto selecionado
+                  </button>
+                </div>
+              </div>
+            }
+            @if (!online()) {
+              <p class="upload-create__location-hint">
+                Mapa indisponível offline. O GPS continua disponível.
+              </p>
+            }
           </div>
         </mat-card>
       </div>
@@ -292,6 +380,7 @@
         type="button"
         [disabled]="
           submitting() ||
+          gpsPending() ||
           files().length === 0 ||
           !selectedPropertyId ||
           !selectedTalhaoId ||

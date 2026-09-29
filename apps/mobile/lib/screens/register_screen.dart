@@ -56,9 +56,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         phone: _mask.getUnmaskedText(),
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Cadastro realizado com sucesso!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cadastro realizado com sucesso!')),
+        );
       }
     } catch (error) {
       if (mounted) {

@@ -4,7 +4,7 @@
  * Exercises the /uploads/new page end-to-end:
  *   - Catalog dropdowns (property → talhão, crop type → estádio)
  *   - Activity date via calendar picker
- *   - GPS coordinates via manual input
+ *   - Confirmed map point in manual location mode
  *   - File selection via Playwright setInputFiles
  *   - Local queue save followed by immediate online sync
  *   - Full upload pipeline: init → presigned PUT → complete → poll
@@ -118,28 +118,12 @@ test.describe('Upload creation via UI', () => {
     // Confirm the input received the value
     await expect(dateInput).not.toBeEmpty({ timeout: 3_000 });
 
-    // ── GPS coordinates via map click ────────────────────────────────
-    // The Leaflet map is initialized in ngAfterViewInit with a delay.
-    // Wait for the .leaflet-container class that Leaflet adds when ready.
-    await page.waitForSelector('.leaflet-container', { timeout: 10_000 });
-    await page.waitForTimeout(500); // let the map finish rendering tiles
-
-    // Click the center of the map to drop a marker and emit locationSelected.
-    const mapEl = page.locator('.location-picker__map');
-    const mapBox = await mapEl.boundingBox();
-    if (!mapBox) {
-      throw new Error('Location picker map not found');
-    }
-    await page.mouse.click(mapBox.x + mapBox.width / 2, mapBox.y + mapBox.height / 2);
-
-    // Wait for the coordinates badge that the LocationPicker shows
-    // once a location has been selected.
-    await expect(page.locator('.coordinates')).toBeVisible({
-      timeout: 5_000,
-    });
+    // ── Manual map selection ──────────────────────────────────────────
+    await page.getByRole('switch', { name: 'Usar localização automática (GPS)' }).uncheck();
+    await expect(page.locator('.upload-create__map-panel')).toBeVisible();
 
     // ── File upload via hidden file input ────────────────────────────
-    const fileInput = page.locator('input[type="file"][accept*="image"]');
+    const fileInput = page.locator('input[type="file"].gallery-input');
     await fileInput.setInputFiles({
       name: 'e2e-test.png',
       mimeType: 'image/png',
@@ -147,12 +131,21 @@ test.describe('Upload creation via UI', () => {
     });
 
     // Verify the file count label updated
-    await expect(page.getByText('1 imagem(ns) selecionada(s)')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('1 imagem selecionada')).toBeVisible({ timeout: 5_000 });
 
     // Preview thumbnail should appear
     await expect(page.locator('.preview-item').first()).toBeVisible({
       timeout: 5_000,
     });
+    const locationCard = page.locator('.upload-create__location');
+    await expect(locationCard.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
+    const mapBox = await locationCard.locator('.location-picker__map').boundingBox();
+    if (!mapBox) throw new Error('Location picker map not found');
+    await page.mouse.click(mapBox.x + mapBox.width / 2, mapBox.y + mapBox.height / 2);
+    await expect(locationCard.locator('.coordinates')).toBeVisible();
+    await locationCard.getByRole('button', { name: 'Usar ponto selecionado' }).click();
+    await expect(locationCard.locator('app-location-picker')).toHaveCount(0);
+    await expect(page.locator('.image-location')).not.toContainText('Sem localização');
 
     // ── Submit ───────────────────────────────────────────────────────
     const submitBtn = page.getByRole('button', { name: /Criar Upload/ });

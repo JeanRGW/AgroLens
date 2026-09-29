@@ -231,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: IconButton(
               icon: const Icon(Icons.logout, color: Colors.white),
               onPressed: _confirmLogout,
-               tooltip: 'Sair',
+              tooltip: 'Sair',
             ),
           ),
         ],

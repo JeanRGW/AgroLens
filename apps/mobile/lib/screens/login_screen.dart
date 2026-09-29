@@ -194,7 +194,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     CustomButton(
-                       label: 'Criar conta',
+                      label: 'Criar conta',
                       onPressed: widget.onRegisterTap,
                       isOutlined: true,
                       icon: Icons.person_add_outlined,

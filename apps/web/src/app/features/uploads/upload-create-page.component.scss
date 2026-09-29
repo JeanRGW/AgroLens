@@ -25,6 +25,7 @@
   gap: 1.25rem;
   position: sticky;
   top: 1rem;
+  scroll-margin-top: 1rem;
 }
 
 /* ── Section cards ── */
@@ -64,6 +65,67 @@
   gap: 0.1rem;
 }
 
+.upload-create__location-intro {
+  margin: 0 0 0.25rem;
+  color: var(--agri-text-secondary);
+  font-size: 0.875rem;
+}
+
+.upload-create__location .section-card__body {
+  gap: 0.5rem;
+}
+
+.upload-create__location-action {
+  align-self: flex-start;
+  height: 36px;
+  padding-inline: 12px;
+  font-size: 0.8125rem;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    margin-right: 4px;
+  }
+}
+
+.upload-create__location-error,
+.upload-create__location-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.upload-create__location-error {
+  color: #a33b29;
+}
+
+.upload-create__location-hint {
+  color: var(--agri-text-muted);
+}
+
+.upload-create__map-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-top: 0.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--agri-border);
+}
+
+.upload-create__map-instruction {
+  margin: 0;
+  color: var(--agri-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.upload-create__map-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .full-width {
   width: 100%;
 }
@@ -72,6 +134,7 @@
 .file-input-area {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 0.75rem;
 }

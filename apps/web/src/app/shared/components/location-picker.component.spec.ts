@@ -96,6 +96,19 @@ describe('LocationPickerComponent offline GPS', () => {
     expect(fixture.componentInstance.submissions).toBe(0);
   });
 
+  it('labels the compact map toggle without the optional qualifier', () => {
+    const fixture = TestBed.createComponent(LocationPickerComponent);
+    fixture.detectChanges();
+    const mapButton: HTMLButtonElement = fixture.nativeElement.querySelector('.map-toggle');
+    expect(mapButton.textContent).toContain('Mostrar mapa');
+    expect(mapButton.textContent).not.toContain('(opcional)');
+    expect(mapButton.classList.contains('mat-mdc-outlined-button')).toBeTrue();
+
+    fixture.componentInstance.mapVisible.set(true);
+    fixture.detectChanges();
+    expect(mapButton.textContent).toContain('Ocultar mapa');
+  });
+
   it('does not clear an existing point while manual coordinates are incomplete', () => {
     const picker = TestBed.createComponent(LocationPickerComponent).componentInstance;
     picker.latitude = -25.4;
