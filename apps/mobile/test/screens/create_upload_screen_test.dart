@@ -17,7 +17,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../helpers/test_doubles.dart';
 
@@ -78,8 +77,6 @@ class _CatalogRepository extends CatalogRepository {
 }
 
 void main() {
-  sqfliteFfiInit();
-
   late Directory imagesDir;
   late _ImagePicker picker;
   late _LocationService location;

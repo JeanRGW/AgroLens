@@ -33,7 +33,6 @@
                 "input": "public"
               }
             ],
-            "serviceWorker": "ngsw-config.json",
             "styles": ["node_modules/leaflet/dist/leaflet.css", "src/styles.scss"],
             "scripts": []
           },

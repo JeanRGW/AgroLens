@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:agrolens/config/env_config.dart';
 import 'package:agrolens/models/catalog.dart';
 import 'package:agrolens/services/api_client.dart';
@@ -68,9 +67,6 @@ class FakeCatalogApiClient extends ApiClient {
 }
 
 void main() {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   late FakeCatalogApiClient apiClient;
   late FakeAuthService authService;
   late AppDatabase appDb;
@@ -110,8 +106,8 @@ void main() {
     'isolated owner catalog cache maintains independent entries per user',
     () async {
       final serverData = jsonEncode(initialProperty);
-      final db = await repository.database;
-      await db.insert('catalog_properties', {
+      final db = repository.database;
+      await db.saveRow('catalog_properties', {
         'id': 'prop-server',
         'owner_id': 'user-1',
         'data': serverData,
@@ -119,7 +115,7 @@ void main() {
         'is_pending_sync': 0,
         'sync_error': null,
       });
-      await db.insert('catalog_properties', {
+      await db.saveRow('catalog_properties', {
         'id': 'prop-server',
         'owner_id': 'user-2',
         'data': serverData,
@@ -128,10 +124,9 @@ void main() {
         'sync_error': null,
       });
 
-      final rows = await db.query(
-        'catalog_properties',
-        where: 'owner_id = ?',
-        whereArgs: ['user-1'],
+      final rows = await db.readRows(
+        'SELECT * FROM catalog_properties WHERE owner_id = ?',
+        ['user-1'],
       );
       expect(rows, hasLength(1));
       expect(rows.first['owner_id'], 'user-1');
@@ -142,8 +137,8 @@ void main() {
     'resolveCatalogId accepts uncached manual UUIDs and preserves known ids',
     () async {
       await repository.getProperties();
-      final db = await repository.database;
-      await db.insert('catalog_id_mappings', {
+      final db = repository.database;
+      await db.saveRow('catalog_id_mappings', {
         'owner_id': 'user-1',
         'temp_id': 'temp-1',
         'server_id': 'prop-1',
@@ -166,8 +161,8 @@ void main() {
       expect(properties, hasLength(1));
       expect(apiClient.getPropertiesCalls, 1);
 
-      final db = await repository.database;
-      await db.insert('catalog_crop_types', {
+      final db = repository.database;
+      await db.saveRow('catalog_crop_types', {
         'id': 'crop-1',
         'owner_id': 'user-1',
         'data': jsonEncode({
@@ -194,8 +189,12 @@ void main() {
       expect(apiClient.lastCreatePropertyBody?['accessToken'], 'token-123');
       expect(apiClient.lastCreatePropertyBody?['name'], 'Fazenda Nova');
 
-      final propertyRows = await db.query('catalog_properties');
-      final cropTypeRows = await db.query('catalog_crop_types');
+      final propertyRows = await db.readRows(
+        'SELECT * FROM catalog_properties',
+      );
+      final cropTypeRows = await db.readRows(
+        'SELECT * FROM catalog_crop_types',
+      );
       expect(propertyRows, hasLength(2));
       expect(cropTypeRows, hasLength(1));
 

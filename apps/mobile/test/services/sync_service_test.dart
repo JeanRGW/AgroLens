@@ -4,13 +4,12 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:agrolens/config/env_config.dart';
 import 'package:agrolens/models/catalog.dart';
 import 'package:agrolens/models/pending_upload.dart';
 import 'package:agrolens/models/upload_response.dart';
 import 'package:agrolens/services/api_client.dart';
-import 'package:agrolens/services/app_database.dart';
+import 'package:agrolens/services/app_database.dart' show AppDatabase;
 import 'package:agrolens/services/auth_service.dart';
 import 'package:agrolens/services/catalog_repository.dart';
 import 'package:agrolens/services/database_helper.dart';
@@ -27,10 +26,6 @@ Future<File> createTempFile(String path, String content) async {
 }
 
 void main() {
-  // Initialize sqflite FFI for test environment
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   late MockHttpClient mockHttp;
   late ApiClient apiClient;
   late TokenStorage tokenStorage;
@@ -51,26 +46,16 @@ void main() {
       final descriptors =
           (jsonDecode(request.body) as Map<String, dynamic>)['files']
               as List<dynamic>;
-      final files = (body['files'] ?? body['presignedUrls']) as List<dynamic>?;
-      if (files == null) return body;
+      final files = body['files'] as List<dynamic>? ?? [];
       return {
         ...body,
-        if (body.containsKey('files'))
-          'files': [
-            for (var i = 0; i < files.length; i++)
-              {
-                ...(files[i] as Map<String, dynamic>),
-                'imageId': (descriptors[i] as Map<String, dynamic>)['imageId'],
-              },
-          ]
-        else
-          'presignedUrls': [
-            for (var i = 0; i < files.length; i++)
-              {
-                ...(files[i] as Map<String, dynamic>),
-                'imageId': (descriptors[i] as Map<String, dynamic>)['imageId'],
-              },
-          ],
+        'files': [
+          for (var i = 0; i < files.length; i++)
+            {
+              ...(files[i] as Map<String, dynamic>),
+              'imageId': (descriptors[i] as Map<String, dynamic>)['imageId'],
+            },
+        ],
       };
     };
     apiClient = ApiClient(
@@ -95,12 +80,12 @@ void main() {
 
     // Pre-authenticate: save tokens and restore session
     await tokenStorage.saveTokens(
-      accessToken: 'access-123',
+      accessToken: testAccessToken('user-1'),
       refreshToken: 'refresh-456',
     );
     final now = DateTime.now().toIso8601String();
     mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
-      'accessToken': 'access-123',
+      'accessToken': testAccessToken('user-1'),
       'refreshToken': 'refresh-new',
     });
     mockHttp.queueResponse('GET', '/api/auth/me', 200, {
@@ -120,7 +105,7 @@ void main() {
     // These uploads represent records already created on the server. Keep
     // them in the catalog cache so resolveCatalogId can distinguish server IDs
     // from the local IDs covered by the blocking test below.
-    final catalogDb = await catalogRepository.database;
+    final catalogDb = catalogRepository.database;
     final serverCatalogFixtures = <String, List<String>>{
       'catalog_properties': ['prop-uuid', 'p', 'p1', 'p2'],
       'catalog_talhoes': ['talhao-uuid', 't', 't1', 't2'],
@@ -128,7 +113,7 @@ void main() {
     };
     for (final entry in serverCatalogFixtures.entries) {
       for (final id in entry.value) {
-        await catalogDb.insert(entry.key, {
+        await catalogDb.saveRow(entry.key, {
           'id': id,
           'owner_id': 'user-1',
           'data': '{}',
@@ -178,7 +163,9 @@ void main() {
         'POST',
         '/api/uploads/backend-late/complete',
         200,
-        {'uploadId': 'backend-late', 'status': 'finalizing'},
+        {
+          'upload': {'id': 'backend-late', 'status': 'finalizing'},
+        },
       );
       mockHttp.queueResponse('GET', '/api/uploads/backend-late', 200, {
         'id': 'backend-late',
@@ -200,7 +187,7 @@ void main() {
             'imageId': upload.images.single.imageId,
             'fileId': 'file',
             'objectKey': 'original',
-            'url': 'https://storage.example.com/original',
+            'uploadUrl': 'https://storage.example.com/original',
             'expiresAt': '2026-01-01T00:00:00Z',
           }),
         ]),
@@ -272,7 +259,7 @@ void main() {
       mockHttp.queueResponse('POST', '/api/uploads/init', 200, {
         'uploadId': 'server-upload',
         'status': 'ready',
-        'presignedUrls': [],
+        'files': [],
       });
       final result = await syncService.syncPendingCatalogsAndUploads();
       expect(result!.successful, 1);
@@ -294,7 +281,7 @@ void main() {
       addTearDown(() => file.delete());
       final upload = PendingUpload(
         id: 'init-size-test-uuid',
-        imagePaths: jsonEncode([file.path]),
+        paths: [file.path],
         latitude: -22.9,
         longitude: -43.1,
         createdAt: DateTime.now(),
@@ -307,7 +294,7 @@ void main() {
       mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
         'uploadId': 'backend-init-size-uuid',
         'status': 'draft',
-        'presignedUrls': [],
+        'files': [],
       });
 
       await syncService.stepInit(upload);
@@ -327,7 +314,7 @@ void main() {
     test('maps a missing local file to LOCAL_FILE_UNAVAILABLE', () async {
       final upload = PendingUpload(
         id: 'missing-file-upload',
-        imagePaths: jsonEncode(['/tmp/agrolens-missing-file.jpg']),
+        paths: ['/tmp/agrolens-missing-file.jpg'],
         latitude: -22.9,
         longitude: -43.1,
         createdAt: DateTime.now(),
@@ -354,7 +341,7 @@ void main() {
       addTearDown(() => image.delete());
       final upload = PendingUpload(
         id: 'init-test-uuid',
-        imagePaths: jsonEncode([image.path]),
+        paths: [image.path],
         latitude: -22.9,
         longitude: -43.1,
         createdAt: DateTime.now(),
@@ -368,11 +355,11 @@ void main() {
       mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
         'uploadId': 'backend-init-uuid',
         'status': 'draft',
-        'presignedUrls': [
+        'files': [
           {
             'fileId': 'f1',
             'objectKey': 'uploads/u/0/original.jpeg',
-            'url': 'https://storage.example.com/put-init',
+            'uploadUrl': 'https://storage.example.com/put-init',
             'expiresAt': '2026-07-01T00:00:00Z',
           },
         ],
@@ -399,9 +386,9 @@ void main() {
     test(
       'blocks uploads that still reference unmapped local catalog ids',
       () async {
-        final catalogDb = await catalogRepository.database;
+        final catalogDb = catalogRepository.database;
         final serverNow = DateTime.utc(2026, 7, 1).millisecondsSinceEpoch;
-        await catalogDb.insert('catalog_properties', {
+        await catalogDb.saveRow('catalog_properties', {
           'id': 'tmp-prop',
           'owner_id': 'user-1',
           'data': jsonEncode(
@@ -423,7 +410,7 @@ void main() {
           'is_pending_sync': 1,
           'sync_error': 'Pendente de sincronização',
         });
-        await catalogDb.insert('catalog_talhoes', {
+        await catalogDb.saveRow('catalog_talhoes', {
           'id': 'tmp-talhao',
           'owner_id': 'user-1',
           'data': jsonEncode(
@@ -442,7 +429,7 @@ void main() {
           'is_pending_sync': 1,
           'sync_error': 'Pendente de sincronização',
         });
-        await catalogDb.insert('catalog_crop_types', {
+        await catalogDb.saveRow('catalog_crop_types', {
           'id': 'tmp-crop',
           'owner_id': 'user-1',
           'data': jsonEncode(
@@ -468,7 +455,7 @@ void main() {
         addTearDown(() => image.delete());
         final upload = PendingUpload(
           id: 'blocked-upload',
-          imagePaths: jsonEncode([image.path]),
+          paths: [image.path],
           latitude: -22.9,
           longitude: -43.1,
           createdAt: DateTime.now(),
@@ -494,7 +481,7 @@ void main() {
         expect(blocked.errorMessage, contains('aguardando sincronização'));
 
         final now = DateTime.utc(2026, 7, 1).millisecondsSinceEpoch;
-        await catalogDb.insert('catalog_properties', {
+        await catalogDb.saveRow('catalog_properties', {
           'id': 'srv-prop-1',
           'owner_id': 'user-1',
           'data': jsonEncode(
@@ -514,7 +501,7 @@ void main() {
           'is_pending_sync': 0,
           'sync_error': null,
         });
-        await catalogDb.insert('catalog_talhoes', {
+        await catalogDb.saveRow('catalog_talhoes', {
           'id': 'srv-talhao-1',
           'owner_id': 'user-1',
           'data': jsonEncode(
@@ -531,7 +518,7 @@ void main() {
           'is_pending_sync': 0,
           'sync_error': null,
         });
-        await catalogDb.insert('catalog_crop_types', {
+        await catalogDb.saveRow('catalog_crop_types', {
           'id': 'srv-crop-1',
           'owner_id': 'user-1',
           'data': jsonEncode(
@@ -547,21 +534,21 @@ void main() {
           'is_pending_sync': 0,
           'sync_error': null,
         });
-        await catalogDb.insert('catalog_id_mappings', {
+        await catalogDb.saveRow('catalog_id_mappings', {
           'temp_id': 'tmp-prop',
           'owner_id': 'user-1',
           'server_id': 'srv-prop-1',
           'entity_type': 'property',
           'created_at': serverNow,
         });
-        await catalogDb.insert('catalog_id_mappings', {
+        await catalogDb.saveRow('catalog_id_mappings', {
           'temp_id': 'tmp-talhao',
           'owner_id': 'user-1',
           'server_id': 'srv-talhao-1',
           'entity_type': 'talhao',
           'created_at': serverNow,
         });
-        await catalogDb.insert('catalog_id_mappings', {
+        await catalogDb.saveRow('catalog_id_mappings', {
           'temp_id': 'tmp-crop',
           'owner_id': 'user-1',
           'server_id': 'srv-crop-1',
@@ -572,7 +559,7 @@ void main() {
         mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
           'uploadId': 'backend-blocked',
           'status': 'draft',
-          'presignedUrls': [],
+          'files': [],
         });
 
         final resolved = await syncService.stepInit(upload);
@@ -594,7 +581,7 @@ void main() {
       addTearDown(() => image.delete());
       final upload = PendingUpload(
         id: 'rate-limited-upload',
-        imagePaths: jsonEncode([image.path]),
+        paths: [image.path],
         latitude: -22.9,
         longitude: -43.1,
         createdAt: DateTime.now(),
@@ -632,11 +619,11 @@ void main() {
       mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
         'uploadId': 'backend-rate-limited',
         'status': 'draft',
-        'presignedUrls': [
+        'files': [
           {
             'fileId': 'f1',
             'objectKey': 'uploads/u/0/original.jpeg',
-            'url': 'https://storage.example.com/put-rate-limited',
+            'uploadUrl': 'https://storage.example.com/put-rate-limited',
             'expiresAt': '2026-07-01T00:00:00Z',
           },
         ],
@@ -681,7 +668,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'upload-test',
-        imagePaths: jsonEncode([imgPath]),
+        paths: [imgPath],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -723,7 +710,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'skip-test',
-        imagePaths: jsonEncode([firstPath, secondPath]),
+        paths: [firstPath, secondPath],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -809,7 +796,7 @@ void main() {
     test('throws on file count mismatch', () async {
       final upload = PendingUpload(
         id: 'mismatch',
-        imagePaths: jsonEncode(['/tmp/a.jpg', '/tmp/b.jpg']),
+        paths: ['/tmp/a.jpg', '/tmp/b.jpg'],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -830,7 +817,7 @@ void main() {
     test('calls complete endpoint', () async {
       final upload = PendingUpload(
         id: 'complete-test',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -845,7 +832,9 @@ void main() {
         'POST',
         '/api/uploads/backend-complete/complete',
         200,
-        {'uploadId': 'backend-complete', 'status': 'finalizing'},
+        {
+          'upload': {'id': 'backend-complete', 'status': 'finalizing'},
+        },
       );
 
       final result = await syncService.stepComplete(upload);
@@ -855,7 +844,7 @@ void main() {
     test('throws when no backendUploadId', () async {
       final upload = PendingUpload(
         id: 'no-backend',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -891,7 +880,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'poll-ready',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -930,7 +919,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'poll-failed',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -969,7 +958,7 @@ void main() {
         'message': 'Token expired',
       });
       mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
-        'accessToken': 'new-access',
+        'accessToken': testAccessToken('user-1', session: 'new'),
         'refreshToken': 'new-refresh',
       });
       mockHttp.queueResponse('GET', '/api/uploads/backend-poll-refresh', 200, {
@@ -1008,7 +997,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'poll-refresh',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -1097,6 +1086,7 @@ void main() {
         final connectivity =
             StreamController<List<ConnectivityResult>>.broadcast(sync: true);
         final initGate = Completer<void>();
+        final initStarted = Completer<void>();
         var pausedInit = false;
         var catalogSyncs = 0;
         final service = SyncService(
@@ -1114,7 +1104,7 @@ void main() {
         final image = await createTempFile('/tmp/logout-sync.jpg', 'data');
         final upload = PendingUpload(
           id: 'logout-sync',
-          imagePaths: jsonEncode([image.path]),
+          paths: [image.path],
           latitude: 0,
           longitude: 0,
           createdAt: DateTime.utc(2026, 1, 1),
@@ -1128,17 +1118,18 @@ void main() {
               request.url.path == '/api/uploads/init' &&
               !pausedInit) {
             pausedInit = true;
+            initStarted.complete();
             await initGate.future;
           }
         };
         mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
           'uploadId': 'backend-logout',
           'status': 'draft',
-          'presignedUrls': [
+          'files': [
             {
               'fileId': 'f1',
               'objectKey': 'uploads/logout/original.jpg',
-              'url': 'https://storage.example.com/logout-put',
+              'uploadUrl': 'https://storage.example.com/logout-put',
               'expiresAt': '2026-07-01T00:00:00Z',
             },
           ],
@@ -1147,9 +1138,7 @@ void main() {
         service.initialize();
         service.initialize();
         final firstPass = service.syncPendingCatalogsAndUploads();
-        for (var i = 0; i < 100 && !pausedInit; i++) {
-          await Future<void>.delayed(Duration.zero);
-        }
+        await initStarted.future;
         expect(pausedInit, isTrue);
         final initRequests = mockHttp.requests.length;
 
@@ -1170,11 +1159,11 @@ void main() {
         mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
           'uploadId': 'backend-logout',
           'status': 'draft',
-          'presignedUrls': [
+          'files': [
             {
               'fileId': 'f1',
               'objectKey': 'uploads/logout/original.jpg',
-              'url': 'https://storage.example.com/logout-put',
+              'uploadUrl': 'https://storage.example.com/logout-put',
               'expiresAt': '2026-07-01T00:00:00Z',
             },
           ],
@@ -1184,7 +1173,9 @@ void main() {
           'POST',
           '/api/uploads/backend-logout/complete',
           200,
-          {'uploadId': 'backend-logout', 'status': 'finalizing'},
+          {
+            'upload': {'id': 'backend-logout', 'status': 'finalizing'},
+          },
         );
         mockHttp.queueResponse('GET', '/api/uploads/backend-logout', 200, {
           'id': 'backend-logout',
@@ -1238,7 +1229,7 @@ void main() {
         );
         final upload = PendingUpload(
           id: 'poll-timeout',
-          imagePaths: '[]',
+          paths: [],
           latitude: 0,
           longitude: 0,
           createdAt: now,
@@ -1284,7 +1275,7 @@ void main() {
         final fixedTime = DateTime.utc(2026, 1, 1);
         final upload = PendingUpload(
           id: 'failure-id',
-          imagePaths: '[]',
+          paths: [],
           latitude: 0,
           longitude: 0,
           createdAt: fixedTime,
@@ -1311,7 +1302,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'e2e-uuid',
-        imagePaths: jsonEncode([imgPath]),
+        paths: [imgPath],
         latitude: -10.0,
         longitude: -20.0,
         createdAt: DateTime.now(),
@@ -1326,11 +1317,11 @@ void main() {
       mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
         'uploadId': 'backend-e2e',
         'status': 'draft',
-        'presignedUrls': [
+        'files': [
           {
             'fileId': 'f1',
             'objectKey': 'uploads/u/0/original.jpeg',
-            'url': 'https://storage.example.com/put-e2e',
+            'uploadUrl': 'https://storage.example.com/put-e2e',
             'expiresAt': '2026-07-01T00:00:00Z',
           },
         ],
@@ -1339,8 +1330,7 @@ void main() {
       mockHttp.queueResponse('PUT', '/put-e2e', 200, {});
       // Mock complete
       mockHttp.queueResponse('POST', '/api/uploads/backend-e2e/complete', 200, {
-        'uploadId': 'backend-e2e',
-        'status': 'finalizing',
+        'upload': {'id': 'backend-e2e', 'status': 'finalizing'},
       });
       // Mock poll → ready
       mockHttp.queueResponse('GET', '/api/uploads/backend-e2e', 200, {
@@ -1382,7 +1372,7 @@ void main() {
       );
       final upload = PendingUpload(
         id: 'syncall-poll-timeout',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: now,
@@ -1450,7 +1440,7 @@ void main() {
     test('counts backend-declared poll failures as sync failures', () async {
       final upload = PendingUpload(
         id: 'syncall-poll-failed',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -1526,7 +1516,7 @@ void main() {
     test('reconciles finalizing without repeating complete', () async {
       final upload = PendingUpload(
         id: 'resume-finalizing',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -1576,7 +1566,7 @@ void main() {
       () async {
         final upload = PendingUpload(
           id: 'resume-ready',
-          imagePaths: jsonEncode([]),
+          paths: [],
           latitude: 0.0,
           longitude: 0.0,
           createdAt: DateTime.now(),
@@ -1613,7 +1603,7 @@ void main() {
     test('reconciles pendingMetadataSync through idempotent init', () async {
       final upload = PendingUpload(
         id: 'resume-metasync',
-        imagePaths: jsonEncode([]),
+        paths: [],
         latitude: 0.0,
         longitude: 0.0,
         createdAt: DateTime.now(),
@@ -1671,7 +1661,7 @@ void main() {
 
         final upload = PendingUpload(
           id: 'no-dup-uuid',
-          imagePaths: jsonEncode([imgPath]),
+          paths: [imgPath],
           latitude: 0.0,
           longitude: 0.0,
           createdAt: DateTime.now(),
@@ -1686,11 +1676,11 @@ void main() {
         mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
           'uploadId': 'backend-no-dup',
           'status': 'draft',
-          'presignedUrls': [
+          'files': [
             {
               'fileId': 'f1',
               'objectKey': 'uploads/u/0/original.jpeg',
-              'url': 'https://storage.example.com/put-no-dup',
+              'uploadUrl': 'https://storage.example.com/put-no-dup',
               'expiresAt': '2026-07-01T00:00:00Z',
             },
           ],
@@ -1700,7 +1690,9 @@ void main() {
           'POST',
           '/api/uploads/backend-no-dup/complete',
           200,
-          {'uploadId': 'backend-no-dup', 'status': 'finalizing'},
+          {
+            'upload': {'id': 'backend-no-dup', 'status': 'finalizing'},
+          },
         );
         mockHttp.queueResponse('GET', '/api/uploads/backend-no-dup', 200, {
           'id': 'backend-no-dup',
@@ -1739,7 +1731,7 @@ void main() {
       final image = await createTempFile('/tmp/concurrent-retry.jpg', 'data');
       final upload = PendingUpload(
         id: 'concurrent-retry',
-        imagePaths: jsonEncode([image.path]),
+        paths: [image.path],
         latitude: 0,
         longitude: 0,
         createdAt: DateTime.utc(2026, 1, 1),
@@ -1761,7 +1753,7 @@ void main() {
       mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
         'uploadId': 'backend-concurrent-retry',
         'status': 'ready',
-        'presignedUrls': <Object>[],
+        'files': <Object>[],
       });
 
       final first = syncService.syncOne(upload);
@@ -1810,7 +1802,7 @@ void main() {
         });
         final upload = PendingUpload(
           id: 'retry-missing-file',
-          imagePaths: jsonEncode([file.path]),
+          paths: [file.path],
           latitude: 0.0,
           longitude: 0.0,
           createdAt: DateTime.utc(2026, 1, 1),
@@ -1831,11 +1823,11 @@ void main() {
         mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
           'uploadId': 'retry-missing-file-backend',
           'status': 'draft',
-          'presignedUrls': [
+          'files': [
             {
               'fileId': 'missing-file',
               'objectKey': 'uploads/retry-missing-file/original.jpg',
-              'url': 'https://storage.example.com/retry-missing-file',
+              'uploadUrl': 'https://storage.example.com/retry-missing-file',
               'expiresAt': '2026-07-01T00:00:00Z',
             },
           ],
@@ -1869,7 +1861,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'retry-uuid',
-        imagePaths: jsonEncode([firstPath, secondPath]),
+        paths: [firstPath, secondPath],
         latitude: -10.0,
         longitude: -20.0,
         createdAt: DateTime.now(),
@@ -1890,15 +1882,15 @@ void main() {
         'status': 'draft',
         'files': [
           {
-            'id': 'existing-file',
-            'key': 'uploads/u/0/original.jpeg',
+            'fileId': 'existing-file',
+            'objectKey': 'uploads/u/0/original.jpeg',
             'uploadUrl': null,
             'method': 'GET',
             'expiresAt': null,
           },
           {
-            'id': 'missing-file',
-            'key': 'uploads/u/1/original.jpeg',
+            'fileId': 'missing-file',
+            'objectKey': 'uploads/u/1/original.jpeg',
             'uploadUrl': 'https://storage.example.com/put-retry',
             'expiresAt': '2026-07-01T00:00:00Z',
           },
@@ -1909,7 +1901,9 @@ void main() {
         'POST',
         '/api/uploads/stale-backend/complete',
         200,
-        {'uploadId': 'stale-backend', 'status': 'finalizing'},
+        {
+          'upload': {'id': 'stale-backend', 'status': 'finalizing'},
+        },
       );
       mockHttp.queueResponse('GET', '/api/uploads/stale-backend', 200, {
         'id': 'stale-backend',
@@ -1953,7 +1947,7 @@ void main() {
       () async {
         final exhausted = PendingUpload(
           id: 'exhausted-retry-uuid',
-          imagePaths: jsonEncode(['/tmp/exhausted.jpg']),
+          paths: ['/tmp/exhausted.jpg'],
           latitude: -10.0,
           longitude: -20.0,
           createdAt: DateTime.now(),
@@ -2016,7 +2010,7 @@ void main() {
 
       final upload = PendingUpload(
         id: 'syncall-retry-uuid',
-        imagePaths: jsonEncode([firstPath, secondPath]),
+        paths: [firstPath, secondPath],
         latitude: -10.0,
         longitude: -20.0,
         createdAt: DateTime.now(),
@@ -2035,15 +2029,15 @@ void main() {
         'status': 'draft',
         'files': [
           {
-            'id': 'existing-file',
-            'key': 'uploads/u/0/original.jpeg',
+            'fileId': 'existing-file',
+            'objectKey': 'uploads/u/0/original.jpeg',
             'uploadUrl': null,
             'method': 'GET',
             'expiresAt': null,
           },
           {
-            'id': 'missing-file',
-            'key': 'uploads/u/1/original.jpeg',
+            'fileId': 'missing-file',
+            'objectKey': 'uploads/u/1/original.jpeg',
             'uploadUrl': 'https://storage.example.com/put-syncall',
             'expiresAt': '2026-07-01T00:00:00Z',
           },
@@ -2054,7 +2048,9 @@ void main() {
         'POST',
         '/api/uploads/syncall-stale-backend/complete',
         200,
-        {'uploadId': 'syncall-stale-backend', 'status': 'finalizing'},
+        {
+          'upload': {'id': 'syncall-stale-backend', 'status': 'finalizing'},
+        },
       );
       mockHttp.queueResponse('GET', '/api/uploads/syncall-stale-backend', 200, {
         'id': 'syncall-stale-backend',

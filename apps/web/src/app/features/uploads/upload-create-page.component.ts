@@ -8,7 +8,7 @@ import {
   signal,
   ViewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
 import { MatButtonModule } from '@angular/material/button';
@@ -23,25 +23,15 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 import { AuthService } from '../../core/services/auth.service';
-import {
-  OfflineCatalogCacheService,
-  OfflineCatalogs,
-} from '../../core/services/offline-catalog-cache.service';
-import { OfflineUploadStoreService } from '../../core/services/offline-upload-store.service';
-import { OfflineUploadSyncService } from '../../core/services/offline-upload-sync.service';
+import { CatalogsService } from '../../core/services/catalogs.service';
+import { UploadCreateService } from '../../core/services/upload-create.service';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { InitUploadRequest, UploadSource } from '../../shared/models/upload-record';
 import { PropertyRecord, TalhaoRecord, CropTypeRecord, EstadioRecord } from '@agrolens/contracts';
 import { PageHeaderComponent } from '../../shared/components/page-header.component';
 import { LoadingStateComponent } from '../../shared/components/loading-state.component';
 import { LocationPickerComponent } from '../../shared/components/location-picker.component';
-import { OfflineUpload } from '../../shared/models/offline-upload';
-import {
-  canCorrectOfflineUpload,
-  offlineErrorMessage,
-  validateUploadImages,
-} from '../../shared/utils/offline-errors';
-import { withBrowserLock } from '../../shared/utils/browser-lock';
+import { uploadErrorMessage, validateUploadImages } from '../../shared/utils/upload-validation';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
@@ -97,18 +87,13 @@ export function isMobileCameraDevice(
 })
 export class UploadCreatePageComponent implements OnInit {
   @ViewChild('locationSection') locationSection?: ElementRef<HTMLElement>;
-  private readonly catalogCache = inject(OfflineCatalogCacheService);
-  private readonly offlineUploadStore = inject(OfflineUploadStoreService);
-  private readonly offlineUploadSync = inject(OfflineUploadSyncService);
+  private readonly catalogsService = inject(CatalogsService);
+  private readonly uploadCreateService = inject(UploadCreateService);
   private readonly authService = inject(AuthService);
   private readonly snackBar = inject(MatSnackBar);
   private readonly dialog = inject(MatDialog);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly formUserId = this.authService.user()?.id;
-  private editingUpload: OfflineUpload | null = null;
-  readonly editing = signal(false);
 
   // Catalog state
   readonly properties = signal<PropertyRecord[]>([]);
@@ -169,23 +154,22 @@ export class UploadCreatePageComponent implements OnInit {
     pollAttempts: number;
   } | null>(null);
   readonly completedUploadId = signal<string | null>(null);
-  private batchSaved = false;
+  private pendingRequest: InitUploadRequest | null = null;
+  private pendingFiles: File[] | null = null;
 
   // All talhoes and estadios for client-side filtering
   private allTalhoes: TalhaoRecord[] = [];
   private allEstadios: EstadioRecord[] = [];
 
   async canDeactivate(): Promise<boolean> {
-    if (this.submitting() && !this.batchSaved) return false;
+    if (this.submitting()) return false;
     if (!this.files().length) return true;
     return !!(await firstValueFrom(
       this.dialog
         .open(ConfirmDialogComponent, {
           data: {
             title: 'Descartar upload?',
-            message: this.editing()
-              ? 'As alterações neste lote ainda não foram salvas. Deseja sair sem salvar?'
-              : 'As imagens selecionadas ainda não foram salvas. Deseja sair sem salvar?',
+            message: 'As imagens selecionadas ainda não foram enviadas. Deseja sair sem enviar?',
             confirmText: 'Descartar e sair',
             cancelText: 'Continuar edição',
           },
@@ -195,7 +179,7 @@ export class UploadCreatePageComponent implements OnInit {
   }
 
   onBeforeUnload(event: BeforeUnloadEvent): void {
-    if (this.files().length || (this.submitting() && !this.batchSaved)) event.preventDefault();
+    if (this.files().length || this.submitting()) event.preventDefault();
   }
 
   async ngOnInit(): Promise<void> {
@@ -212,8 +196,6 @@ export class UploadCreatePageComponent implements OnInit {
       this.revokePreviews();
     });
     await this.loadCatalogs();
-    const localId = this.route.snapshot.queryParamMap.get('localId');
-    if (localId) await this.restoreForCorrection(localId);
   }
 
   onFilesSelected(event: Event): void {
@@ -247,7 +229,7 @@ export class UploadCreatePageComponent implements OnInit {
       this.previewUrls.update((current) => [...current, ...urls]);
       if (this.useGps()) this.requestGps(newFiles);
     } catch (error) {
-      this.snackBar.open(offlineErrorMessage(error), 'Fechar', { duration: 8000 });
+      this.snackBar.open(uploadErrorMessage(error), 'Fechar', { duration: 8000 });
     }
   }
 
@@ -427,6 +409,7 @@ export class UploadCreatePageComponent implements OnInit {
   async onSubmit(): Promise<void> {
     if (
       this.submitting() ||
+      !this.online() ||
       this.gpsPending() ||
       this.files().length === 0 ||
       !this.selectedPropertyId ||
@@ -443,8 +426,8 @@ export class UploadCreatePageComponent implements OnInit {
           .open(ConfirmDialogComponent, {
             data: {
               title: 'Imagens sem localização',
-              message: `${missing} ${missing === 1 ? 'imagem está' : 'imagens estão'} sem coordenadas. Use o GPS ou selecione um ponto no mapa quando estiver online, se possível. Deseja salvar sem localização mesmo assim?`,
-              confirmText: 'Salvar sem localização',
+              message: `${missing} ${missing === 1 ? 'imagem está' : 'imagens estão'} sem coordenadas. Use o GPS ou selecione um ponto no mapa, se possível. Deseja enviar sem localização mesmo assim?`,
+              confirmText: 'Enviar sem localização',
               cancelText: 'Voltar e localizar',
             },
           })
@@ -459,7 +442,6 @@ export class UploadCreatePageComponent implements OnInit {
     }
 
     this.submitting.set(true);
-    this.batchSaved = false;
     this.error.set('');
     this.progress.set(null);
     this.completedUploadId.set(null);
@@ -503,79 +485,43 @@ export class UploadCreatePageComponent implements OnInit {
         })),
       };
 
-      const userId = this.authService.user()?.id;
-      if (!userId) throw new Error('Sessão indisponível. Entre novamente para salvar o lote.');
-      const timestamp = new Date().toISOString();
-      const offlineUpload: OfflineUpload = {
-        id: this.editingUpload?.id ?? crypto.randomUUID(),
-        userId,
-        request,
-        files: this.files().map((file, index) => ({
-          blob: file,
-          fileName: file.name,
-          contentType: contentTypes[index],
-        })),
-        status: 'pending',
-        createdAt: this.editingUpload?.createdAt ?? timestamp,
-        updatedAt: timestamp,
-      };
-      const save = async () => {
-        if (this.editingUpload) {
-          const current = await this.offlineUploadStore.get(this.editingUpload.id);
-          if (
-            !current ||
-            !canCorrectOfflineUpload(current) ||
-            current.userId !== userId ||
-            current.updatedAt !== this.editingUpload.updatedAt
-          ) {
-            throw new Error('O lote mudou durante a edição. Reabra-o pela fila.');
-          }
-        }
-        if (this.authService.user()?.id !== userId)
-          throw new Error('A conta mudou durante o salvamento.');
-        await this.offlineUploadStore.save(offlineUpload);
-      };
-      await withBrowserLock(`agrolens-upload:${offlineUpload.id}`, save);
-      this.batchSaved = true;
+      // Keep retry identity in memory only, and replace it when the form changes.
+      const sameFiles =
+        this.pendingFiles?.length === this.files().length &&
+        this.pendingFiles.every((file, index) => file === this.files()[index]);
+      const metadata = (value: InitUploadRequest) =>
+        JSON.stringify({
+          ...value,
+          clientUploadId: undefined,
+          files: value.files.map((file) => ({ ...file, imageId: undefined })),
+        });
+      if (
+        !this.pendingRequest ||
+        !sameFiles ||
+        metadata(this.pendingRequest) !== metadata(request)
+      ) {
+        this.pendingRequest = request;
+        this.pendingFiles = [...this.files()];
+      }
+      const userId = this.formUserId;
+      const result = await this.uploadCreateService.createUpload(
+        this.pendingRequest,
+        this.files().map((file, index) =>
+          file.type ? file : new File([file], file.name, { type: contentTypes[index] }),
+        ),
+        (progress) => this.progress.set(progress),
+        { userId, assertIdentity: () => this.authService.assertIdentity(userId) },
+      );
+      this.completedUploadId.set(result.id);
+      this.progress.set(null);
       this.revokePreviews();
       this.files.set([]);
       this.imageLocations.set([]);
-
-      if (navigator.onLine && !this.authService.reauthenticationRequired()) {
-        const result = await this.offlineUploadSync.sync(offlineUpload, (p) => {
-          this.progress.set({
-            phase: p.phase,
-            message: p.message,
-            filesUploaded: p.filesUploaded,
-            totalFiles: p.totalFiles,
-            pollAttempts: p.pollAttempts,
-          });
-        });
-        if (result.status === 'completed' && result.backendUploadId) {
-          this.completedUploadId.set(result.backendUploadId);
-          this.progress.set(null);
-          this.snackBar.open('Upload criado com sucesso!', 'Fechar', { duration: 4000 });
-          return;
-        }
-        this.snackBar.open(
-          result.errorMessage || 'Lote salvo neste dispositivo. Sincronize-o na fila.',
-          'Fechar',
-          { duration: 6000 },
-        );
-        await this.router.navigate(['/uploads/queue']);
-        return;
-      }
-
-      this.snackBar.open(
-        'Lote salvo neste dispositivo. Sincronize-o quando estiver online.',
-        'Fechar',
-        {
-          duration: 6000,
-        },
-      );
-      await this.router.navigate(['/uploads/queue']);
+      this.pendingRequest = null;
+      this.pendingFiles = null;
+      this.snackBar.open('Upload criado com sucesso!', 'Fechar', { duration: 4000 });
     } catch (err: unknown) {
-      const msg = offlineErrorMessage(err);
+      const msg = uploadErrorMessage(err);
       this.error.set(msg);
       this.snackBar.open(msg, 'Fechar', { duration: 6000 });
       this.progress.set(null);
@@ -585,72 +531,26 @@ export class UploadCreatePageComponent implements OnInit {
   }
 
   async loadCatalogs(): Promise<void> {
-    const cached = this.catalogCache.load();
-    if (cached) this.applyCatalogs(cached);
-    this.loadingCatalogs.set(!cached);
+    this.loadingCatalogs.set(true);
     this.catalogsError.set('');
     try {
-      if (!navigator.onLine || this.authService.offlineSession()) {
-        if (!cached)
-          throw new Error(
-            'Catálogos ainda não preparados. Conecte-se e use Preparar / atualizar offline antes de coletar.',
-          );
-        return;
-      }
-      const catalogs = await this.catalogCache.refresh();
-      if (!this.destroyRef.destroyed && this.authService.user()?.id === this.formUserId)
-        this.applyCatalogs(catalogs);
+      const [properties, talhoes, cropTypes, estadios] = await Promise.all([
+        this.catalogsService.listProperties(),
+        this.catalogsService.listTalhoes(),
+        this.catalogsService.listCropTypes(),
+        this.catalogsService.listEstadios(),
+      ]);
+      if (this.destroyRef.destroyed || this.authService.user()?.id !== this.formUserId) return;
+      this.properties.set(properties);
+      this.allTalhoes = talhoes;
+      this.cropTypes.set(cropTypes);
+      this.allEstadios = estadios;
+      this.filteredTalhoes.set(talhoes.filter((t) => t.propertyId === this.selectedPropertyId));
+      this.filteredEstadios.set(estadios.filter((e) => e.cropTypeId === this.selectedCropTypeId));
     } catch (err: unknown) {
-      if (!cached) this.catalogsError.set(offlineErrorMessage(err));
+      this.catalogsError.set(uploadErrorMessage(err));
     } finally {
       this.loadingCatalogs.set(false);
-    }
-  }
-
-  private applyCatalogs(catalogs: OfflineCatalogs): void {
-    this.properties.set(catalogs.properties);
-    this.allTalhoes = catalogs.talhoes;
-    this.cropTypes.set(catalogs.cropTypes);
-    this.allEstadios = catalogs.estadios;
-    this.filteredTalhoes.set(
-      this.allTalhoes.filter((t) => t.propertyId === this.selectedPropertyId),
-    );
-    this.filteredEstadios.set(
-      this.allEstadios.filter((e) => e.cropTypeId === this.selectedCropTypeId),
-    );
-  }
-
-  private async restoreForCorrection(id: string): Promise<void> {
-    try {
-      const upload = await this.offlineUploadStore.get(id);
-      if (!upload || upload.userId !== this.formUserId || !canCorrectOfflineUpload(upload)) {
-        throw new Error('Este lote não está disponível para correção local.');
-      }
-      this.editingUpload = upload;
-      this.editing.set(true);
-      this.selectedPropertyId = upload.request.propertyId;
-      this.onPropertyChange();
-      this.selectedTalhaoId = upload.request.talhaoId;
-      this.selectedCropTypeId = upload.request.cropTypeId;
-      this.onCropTypeChange();
-      this.selectedEstadioId = upload.request.estadioId ?? '';
-      this.source = upload.request.source;
-      this.activityDate = new Date(upload.request.activityDate);
-      this.activityTime = this.activityDate.toTimeString().slice(0, 5);
-      this.imageLocations.set(
-        upload.request.files.map(({ latitude, longitude }) => ({
-          latitude: latitude != null && longitude != null ? latitude : null,
-          longitude: latitude != null && longitude != null ? longitude : null,
-        })),
-      );
-      const files = upload.files.map(
-        (file) => new File([file.blob], file.fileName, { type: file.contentType }),
-      );
-      this.files.set(files);
-      this.previewUrls.set(files.map((file) => URL.createObjectURL(file)));
-    } catch (error) {
-      this.snackBar.open(offlineErrorMessage(error), 'Fechar', { duration: 8000 });
-      await this.router.navigate(['/uploads/queue']);
     }
   }
 

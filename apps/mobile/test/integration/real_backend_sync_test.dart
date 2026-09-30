@@ -37,9 +37,9 @@
 //   GET  /api/uploads       → { uploads: [...], total, ... }
 //
 // Mobile model mismatches fixed in this phase:
-//   - UploadInitResponse accepts presignedUrls[{url}] and files[{uploadUrl}]
+//   - UploadInitResponse parses files[{uploadUrl}]
 //   - UploadCompleteResponse accepts top-level {uploadId} and {upload:{id}}
-//   - DownloadUrlResponse accepts both url and downloadUrl
+//   - DownloadUrlResponse parses downloadUrl
 //
 // █████████████████████████████████████████████████████████████████████████
 
@@ -54,7 +54,6 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:agrolens/config/env_config.dart';
 import 'package:agrolens/models/pending_upload.dart';
@@ -272,13 +271,6 @@ void main() {
       clientUploadId = _uniqueClientId();
     });
 
-    setUp(() async {
-      sqfliteFfiInit();
-      // Note: databaseFactoryFfi is set at test top-level in other files,
-      // but here we set it per-group to avoid cross-test contamination.
-      databaseFactory = databaseFactoryFfi;
-    });
-
     test('full sync flow against real backend', () async {
       // ── Wire up mobile services ─────────────────────────────────
       final envConfig = EnvConfig(apiBaseUrl: backendBaseUrl);
@@ -330,7 +322,7 @@ void main() {
       // ── Step 5: Insert PendingUpload in SQLite ──────────────────
       final testUpload = PendingUpload(
         id: clientUploadId,
-        imagePaths: jsonEncode([tempImage.path]),
+        paths: [tempImage.path],
         latitude: -22.9,
         longitude: -43.1,
         createdAt: DateTime.now(),

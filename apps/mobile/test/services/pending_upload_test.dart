@@ -36,25 +36,12 @@ void main() {
         PendingUploadStatus.failed,
       );
     });
-
-    test('fromSqliteRow defaults to pending for unknown value', () {
-      final row = {
-        'id': 'test',
-        'image_paths': '[]',
-        'latitude': 0.0,
-        'longitude': 0.0,
-        'created_at': 0,
-        'status': 'unknown',
-      };
-      final upload = PendingUpload.fromSqliteRow(row);
-      expect(upload.status, PendingUploadStatus.pending);
-    });
   });
 
   group('PendingUpload', () {
     final base = PendingUpload(
       id: 'test-id-123',
-      imagePaths: '["/tmp/img1.jpg","/tmp/img2.jpg"]',
+      paths: ['/tmp/img1.jpg', '/tmp/img2.jpg'],
       latitude: -22.9,
       longitude: -43.1,
       createdAt: DateTime.now(),
@@ -68,7 +55,7 @@ void main() {
     test('copyWith preserves unchanged fields', () {
       final copy = base.copyWith(status: PendingUploadStatus.uploading);
       expect(copy.id, base.id);
-      expect(copy.imagePaths, base.imagePaths);
+      expect(copy.paths, base.paths);
       expect(copy.status, PendingUploadStatus.uploading);
     });
 
@@ -147,18 +134,9 @@ void main() {
       expect(withBackend.backendStatus, 'draft');
     });
 
-    test(
-      'paths parses JSON array safely and returns fallback on corrupt data',
-      () {
-        expect(base.paths, ['/tmp/img1.jpg', '/tmp/img2.jpg']);
-
-        final corrupt = base.copyWith(imagePaths: 'invalid-json');
-        expect(corrupt.paths, isEmpty);
-
-        final nonList = base.copyWith(imagePaths: '{"key": "value"}');
-        expect(nonList.paths, isEmpty);
-      },
-    );
+    test('paths projects the current image list', () {
+      expect(base.paths, ['/tmp/img1.jpg', '/tmp/img2.jpg']);
+    });
 
     test('toSqliteRow and fromSqliteRow roundtrip', () {
       final upload = base.copyWith(
@@ -173,7 +151,7 @@ void main() {
       final restored = PendingUpload.fromSqliteRow(row);
 
       expect(restored.id, upload.id);
-      expect(restored.imagePaths, upload.imagePaths);
+      expect(restored.paths, upload.paths);
       expect(restored.images.first.latitude, upload.images.first.latitude);
       expect(restored.images.first.longitude, upload.images.first.longitude);
       expect(restored.status, upload.status);

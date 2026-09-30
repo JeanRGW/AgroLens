@@ -17,6 +17,9 @@ class _StreamedMockClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     requests.add(request);
+    // Consume the request body like a real client does, so that source
+    // stream errors surface as upload failures.
+    await request.finalize().toBytes();
     return handler(request);
   }
 }
@@ -115,7 +118,7 @@ void main() {
       await expectLater(
         apiClient.uploadFileToPresignedUrl(
           presignedUrl: 'https://storage.example.com/put-4',
-          file: missingFile,
+          stream: missingFile.openRead(),
           contentType: 'image/jpeg',
         ),
         throwsA(anyOf(isA<FileSystemException>(), isA<StateError>())),

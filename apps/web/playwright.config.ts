@@ -18,7 +18,6 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: 'offline-pwa.spec.ts',
   globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   forbidOnly: !!process.env['CI'],

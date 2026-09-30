@@ -22,6 +22,7 @@ import { AuditModule } from './audit/audit.module';
 import { AnnotationsModule } from './annotations/annotations.module';
 import { InferenceModule } from './inference/inference.module';
 import { AppThrottlerGuard } from './rate-limit/rate-limit.guard';
+import { staticClientOptions } from './static-clients';
 
 // Web client static distribution path:
 // Resolves from WEB_DIST_PATH environment variable if provided,
@@ -32,6 +33,17 @@ const webDistPath =
   (existsSync(join(__dirname, '..', 'web'))
     ? join(__dirname, '..', 'web')
     : join(__dirname, '..', '..', '..', 'web', 'dist', 'agrolens-web', 'browser'));
+
+// Mobile PWA (Flutter web) static distribution path, served under /m:
+// WEB_MOBILE_DIST_PATH env → production Docker bundle at join(__dirname, '..', 'web-mobile')
+// → monorepo build output at ../../../mobile/build/web.
+// Mounted only when the directory exists (the Flutter build is optional in dev).
+const mobileWebDistPath =
+  process.env.WEB_MOBILE_DIST_PATH ||
+  (existsSync(join(__dirname, '..', 'web-mobile'))
+    ? join(__dirname, '..', 'web-mobile')
+    : join(__dirname, '..', '..', '..', 'mobile', 'build', 'web'));
+const mountMobilePwa = existsSync(mobileWebDistPath);
 
 @Module({
   imports: [
@@ -45,20 +57,9 @@ const webDistPath =
         },
       ],
     }),
-    ServeStaticModule.forRoot({
-      rootPath: webDistPath,
-      exclude: ['/api/{*path}', '/docs', '/docs/{*path}'],
-      serveStaticOptions: {
-        fallthrough: true,
-        setHeaders: (response, filePath) => {
-          if (filePath.endsWith('/index.html') || filePath.endsWith('/ngsw.json')) {
-            response.setHeader('Cache-Control', 'no-cache');
-            return;
-          }
-          response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        },
-      },
-    }),
+    ServeStaticModule.forRoot(
+      ...staticClientOptions(webDistPath, mountMobilePwa ? mobileWebDistPath : undefined),
+    ),
     AppConfigModule,
     MailModule,
     DatabaseModule,

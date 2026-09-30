@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/pending_upload.dart';
@@ -6,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/database_helper.dart';
 import '../services/sync_service.dart';
 import '../services/catalog_repository.dart';
+import '../services/local_image_store.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_scaffold.dart';
 import 'about_screen.dart';
@@ -21,6 +23,7 @@ class HomeScreen extends StatefulWidget {
   final DatabaseHelper databaseHelper;
   final CatalogRepository catalogRepository;
   final SyncService syncService;
+  final LocalImageStore? imageStore;
 
   const HomeScreen({
     super.key,
@@ -28,6 +31,7 @@ class HomeScreen extends StatefulWidget {
     required this.databaseHelper,
     required this.catalogRepository,
     required this.syncService,
+    this.imageStore,
   });
 
   @override
@@ -35,6 +39,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  late final LocalImageStore _imageStore =
+      widget.imageStore ?? createLocalImageStore();
   bool _loading = true;
   int _pendingCount = 0;
 
@@ -46,7 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _recoverPickerResult() async {
-    if (!Platform.isAndroid) return;
+    // retrieveLostData is Android-only; a no-op elsewhere.
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
       final result = await ImagePicker().retrieveLostData();
       if (!mounted || result.isEmpty) return;
@@ -78,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
           databaseHelper: widget.databaseHelper,
           catalogRepository: widget.catalogRepository,
           initialImages: initialImages,
+          imageStore: _imageStore,
         ),
       ),
     );
@@ -323,6 +331,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     authService: widget.authService,
                     syncService: widget.syncService,
                     catalogRepository: widget.catalogRepository,
+                    imageStore: _imageStore,
                   ),
                 ),
               ),

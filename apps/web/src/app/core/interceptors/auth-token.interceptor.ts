@@ -76,9 +76,7 @@ export const authTokenInterceptor: HttpInterceptorFn = (req, next) => {
           if (!newToken) {
             // Refresh failed and the session is gone. A suspended account was
             // already force-logged-out; repeat the login navigation with the
-            // reason so the message survives. Otherwise only navigate when no
-            // local identity remains, preserving offline mode for expired
-            // sessions with cached data.
+            // reason so the message survives.
             if (authService.accountDisabled() || isAccountDisabledError(error)) {
               void router.navigate(['/login'], {
                 queryParams: { [LOGIN_REASON_PARAM]: LOGIN_REASON_DISABLED },

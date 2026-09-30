@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 import '../models/pending_upload.dart';
 import '../models/upload_response.dart';
 import 'api_client.dart';
 import 'auth_service.dart';
 import 'database_helper.dart';
 import 'catalog_repository.dart';
+import 'local_image_store.dart';
 
 /// Encapsulates the 4 individual steps of the upload sync pipeline:
 /// 1. init (POST /uploads/init)
@@ -17,6 +17,7 @@ class UploadPipeline {
   final AuthService authService;
   final DatabaseHelper databaseHelper;
   final CatalogRepository catalogRepository;
+  final LocalImageStore _imageStore;
   final Duration Function(int attempt) _pollDelay;
   final Future<void> Function(Duration) _delay;
   final DateTime Function() _now;
@@ -26,10 +27,12 @@ class UploadPipeline {
     required this.authService,
     required this.databaseHelper,
     required this.catalogRepository,
+    LocalImageStore? imageStore,
     Duration Function(int attempt)? pollDelay,
     Future<void> Function(Duration)? delay,
     DateTime Function()? now,
-  }) : _pollDelay = pollDelay ?? _defaultPollDelay,
+  }) : _imageStore = imageStore ?? createLocalImageStore(),
+       _pollDelay = pollDelay ?? _defaultPollDelay,
        _delay = delay ?? Future<void>.delayed,
        _now = now ?? DateTime.now;
 
@@ -129,8 +132,7 @@ class UploadPipeline {
       if (path == null) {
         throw ApiException(400, 'Unknown image ID: ${presigned.imageId}');
       }
-      final file = File(path);
-      if (!await file.exists()) {
+      if (!await _imageStore.exists(path)) {
         throw ApiException(404, 'Local file not found: $path');
       }
       final ext = path.split('.').last.toLowerCase();
@@ -138,7 +140,8 @@ class UploadPipeline {
       ensureSession();
       final statusCode = await apiClient.uploadFileToPresignedUrl(
         presignedUrl: presignedUrl,
-        file: file,
+        stream: _imageStore.openRead(path),
+        contentLength: await _imageStore.length(path),
         contentType: contentType,
         headers: presigned.headers,
       );
@@ -355,7 +358,7 @@ class UploadPipeline {
       final path = image.path;
       final ext = path.split('.').last.toLowerCase();
       final contentType = contentTypeForExtension(ext);
-      final sizeBytes = await File(path).length();
+      final sizeBytes = await _imageStore.length(path);
       results.add({
         'imageId': image.imageId,
         'contentType': contentType,

@@ -1,16 +1,14 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/pending_upload.dart';
 import '../models/catalog.dart';
 import '../services/auth_service.dart';
 import '../services/database_helper.dart';
 import '../services/catalog_repository.dart';
+import '../services/local_image_store.dart';
 import '../services/location_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/upload_validation.dart';
@@ -18,6 +16,7 @@ import 'location_picker_screen.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_scaffold.dart';
+import '../widgets/local_image_view.dart';
 
 class _SelectedImage {
   final XFile file;
@@ -40,6 +39,7 @@ class CreateUploadScreen extends StatefulWidget {
   final List<XFile> initialImages;
   final ImagePicker? imagePicker;
   final LocationService locationService;
+  final LocalImageStore? imageStore;
 
   const CreateUploadScreen({
     super.key,
@@ -49,6 +49,7 @@ class CreateUploadScreen extends StatefulWidget {
     this.initialImages = const [],
     this.imagePicker,
     this.locationService = const LocationService(),
+    this.imageStore,
   });
 
   @override
@@ -59,6 +60,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   final _formKey = GlobalKey<FormState>();
   final _uuid = const Uuid();
   late final ImagePicker _picker;
+  late final LocalImageStore _imageStore =
+      widget.imageStore ?? createLocalImageStore();
 
   // Image selection
   final List<_SelectedImage> _selectedImages = [];
@@ -472,7 +475,6 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       _error = null;
     });
 
-    final savedPaths = <String>[];
     final images = List<_SelectedImage>.of(_selectedImages);
     final propertyId = _resolvePropertyId();
     final talhaoId = _resolveTalhaoId();
@@ -481,11 +483,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     final source = _source;
     final ownerId = widget.authService.currentUser?.id;
     final generation = widget.authService.sessionGeneration;
-    var persistenceSucceeded = false;
 
     try {
       final validationError = await validateUploadFiles(
-        images.map((image) => image.file.path).toList(),
+        images.map((image) => image.file).toList(),
       );
       if (!mounted) return;
       if (validationError != null) {
@@ -516,66 +517,44 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         if (confirmed != true || !mounted) return;
       }
 
-      // Copy originals to app-controlled directory
-      final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory('${appDir.path}/pending_images');
-      if (!await imagesDir.exists()) {
-        await imagesDir.create(recursive: true);
-      }
+      await widget.databaseHelper.saveUploadImages(
+        files: images.map((image) => image.file).toList(),
+        imageStore: _imageStore,
+        createUpload: (savedPaths) {
+          if (widget.authService.currentUser?.id != ownerId ||
+              widget.authService.sessionGeneration != generation) {
+            throw StateError('Session changed');
+          }
 
-      for (final image in images) {
-        final ext = p.extension(image.file.path).toLowerCase();
-        final fileName = '${_uuid.v4()}$ext';
-        final destPath = '${imagesDir.path}/$fileName';
-        final srcFile = File(image.file.path);
-        await srcFile.copy(destPath);
-        savedPaths.add(destPath);
-      }
-
-      if (widget.authService.currentUser?.id != ownerId ||
-          widget.authService.sessionGeneration != generation) {
-        throw StateError('Session changed');
-      }
-
-      // Create pending upload record
-      final upload = PendingUpload(
-        id: _uuid.v4(),
-        ownerId: ownerId,
-        images: [
-          for (var i = 0; i < images.length; i++)
-            PendingImage(
-              path: savedPaths[i],
-              latitude: images[i].location?.latitude,
-              longitude: images[i].location?.longitude,
-              origin: images[i].origin,
-            ),
-        ],
-        createdAt: DateTime.now(),
-        activityDate: DateTime.now(),
-        status: PendingUploadStatus.pending,
-        propertyId: propertyId,
-        talhaoId: talhaoId,
-        cropTypeId: cropTypeId,
-        estadioId: estadioId,
-        source: source,
+          // Create pending upload record
+          return PendingUpload(
+            id: _uuid.v4(),
+            ownerId: ownerId,
+            images: [
+              for (var i = 0; i < images.length; i++)
+                PendingImage(
+                  path: savedPaths[i],
+                  latitude: images[i].location?.latitude,
+                  longitude: images[i].location?.longitude,
+                  origin: images[i].origin,
+                ),
+            ],
+            createdAt: DateTime.now(),
+            activityDate: DateTime.now(),
+            status: PendingUploadStatus.pending,
+            propertyId: propertyId,
+            talhaoId: talhaoId,
+            cropTypeId: cropTypeId,
+            estadioId: estadioId,
+            source: source,
+          );
+        },
       );
-
-      await widget.databaseHelper.insertPendingUpload(upload);
-      persistenceSucceeded = true;
 
       if (mounted) {
         Navigator.of(context).pop(true); // return success
       }
     } catch (e) {
-      if (!persistenceSucceeded) {
-        for (final path in savedPaths) {
-          try {
-            await File(path).delete();
-          } catch (_) {
-            // Cleanup is best effort; preserve the original save error.
-          }
-        }
-      }
       if (mounted) {
         setState(() => _error = 'Não foi possível salvar o lote: $e');
       }
@@ -917,8 +896,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: Image.file(
-                                File(_selectedImages[index].file.path),
+                              child: pickedImageView(
+                                _selectedImages[index].file,
                                 width: 120,
                                 height: 120,
                                 fit: BoxFit.cover,

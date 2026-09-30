@@ -161,12 +161,12 @@ void main() {
       mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
         'uploadId': 'upload-1',
         'status': 'draft',
-        'presignedUrls': [
+        'files': [
           {
             'imageId': 'image-1',
             'fileId': 'file-1',
             'objectKey': 'uploads/u1/a/original.jpeg',
-            'url': 'https://storage.example.com/presigned-put-1',
+            'uploadUrl': 'https://storage.example.com/presigned-put-1',
             'expiresAt': '2026-07-01T00:00:00Z',
           },
         ],
@@ -206,8 +206,7 @@ void main() {
 
     test('uploadComplete sends POST with upload ID', () async {
       mockHttp.queueResponse('POST', '/api/uploads/upload-1/complete', 200, {
-        'uploadId': 'upload-1',
-        'status': 'finalizing',
+        'upload': {'id': 'upload-1', 'status': 'finalizing'},
       });
 
       final response = await apiClient.uploadComplete(
@@ -261,7 +260,7 @@ void main() {
         '/api/uploads/upload-1/files/file-1/preview-url',
         200,
         {
-          'url': 'https://storage.example.com/signed/preview-1',
+          'downloadUrl': 'https://storage.example.com/signed/preview-1',
           'expiresAt': '2026-07-02T12:00:00Z',
           'fileId': 'file-1',
           'uploadId': 'upload-1',

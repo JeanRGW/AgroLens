@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:agrolens/config/env_config.dart';
 import 'package:agrolens/models/catalog.dart';
 import 'package:agrolens/services/api_client.dart';
@@ -186,9 +185,6 @@ class ThrowingCatalogApiClient extends SyncingCatalogApiClient {
 }
 
 void main() {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   late SyncingCatalogApiClient apiClient;
   late FakeAuthService authService;
   late AppDatabase appDb;
@@ -215,8 +211,8 @@ void main() {
   test(
     'offline create rolls back cache when queue persistence fails',
     () async {
-      final db = await appDb.database;
-      await db.execute('''
+      final db = appDb;
+      await db.customStatement('''
       CREATE TRIGGER reject_pending_create BEFORE INSERT ON pending_catalog_creates
       BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END
     ''');
@@ -228,10 +224,13 @@ void main() {
           latitude: 1,
           longitude: 2,
         ),
-        throwsA(isA<DatabaseException>()),
+        throwsA(isA<Exception>()),
       );
-      expect(await db.query('catalog_properties'), isEmpty);
-      expect(await db.query('pending_catalog_creates'), isEmpty);
+      expect(await db.readRows('SELECT * FROM catalog_properties'), isEmpty);
+      expect(
+        await db.readRows('SELECT * FROM pending_catalog_creates'),
+        isEmpty,
+      );
     },
   );
 
@@ -254,12 +253,10 @@ void main() {
       expect(cached.single.isPendingSync, isTrue);
       expect(cached.single.syncError, 'offline');
 
-      final db = await repository.database;
-      final row = await db.query(
-        'catalog_properties',
-        where: 'id = ?',
-        whereArgs: [property.id],
-        limit: 1,
+      final db = repository.database;
+      final row = await db.readRows(
+        'SELECT * FROM catalog_properties WHERE id = ? LIMIT 1',
+        [property.id],
       );
       expect(row.single['is_pending_sync'], 1);
       expect(row.single['sync_error'], 'offline');
@@ -316,18 +313,19 @@ void main() {
         startsWith('srv-crop-'),
       );
 
-      final db = await repository.database;
-      expect(await db.query('pending_catalog_creates'), isEmpty);
-
-      final talhaoRow = await db.query(
-        'catalog_talhoes',
-        where: 'id LIKE ?',
-        whereArgs: ['srv-talhao-%'],
+      final db = repository.database;
+      expect(
+        await db.readRows('SELECT * FROM pending_catalog_creates'),
+        isEmpty,
       );
-      final estadioRow = await db.query(
-        'catalog_estadios',
-        where: 'id LIKE ?',
-        whereArgs: ['srv-estadio-%'],
+
+      final talhaoRow = await db.readRows(
+        'SELECT * FROM catalog_talhoes WHERE id LIKE ?',
+        ['srv-talhao-%'],
+      );
+      final estadioRow = await db.readRows(
+        'SELECT * FROM catalog_estadios WHERE id LIKE ?',
+        ['srv-estadio-%'],
       );
       expect(talhaoRow, hasLength(1));
       expect(estadioRow, hasLength(1));

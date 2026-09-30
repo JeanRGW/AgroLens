@@ -66,6 +66,7 @@ pnpm-debug.log*
 *.iml
 .idea/
 .vscode/
+.commandcode/
 .DS_Store
 Thumbs.db
 

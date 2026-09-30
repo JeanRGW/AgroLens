@@ -11,11 +11,9 @@ import 'package:agrolens/screens/profile_screen.dart';
 import 'package:agrolens/services/api_client.dart';
 import 'package:agrolens/services/token_storage.dart';
 import 'package:flutter/services.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'helpers/test_doubles.dart';
 
 void main() {
-  sqfliteFfiInit();
   testWidgets(
     'profile updates preserve active uploads; expiry removes nested routes',
     (tester) async {
@@ -45,7 +43,7 @@ void main() {
       });
       final db = createTestAppDatabase();
       await tester.runAsync(() async {
-        await db.database;
+        await db.customSelect('SELECT 1').get();
       });
       final client = MockHttpClient();
       final api = ApiClient(
@@ -61,7 +59,10 @@ void main() {
         createdAt: DateTime.utc(2026),
         updatedAt: DateTime.utc(2026),
       );
-      await storage.saveTokens(accessToken: 'a', refreshToken: 'r');
+      await storage.saveTokens(
+        accessToken: testAccessToken('a'),
+        refreshToken: 'r',
+      );
       await storage.saveUser(user);
       client.queueResponse('GET', '/api/auth/me', 200, {'user': user.toJson()});
       await tester.pumpWidget(

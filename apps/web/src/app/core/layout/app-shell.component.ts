@@ -11,7 +11,6 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { AuthService } from '../services/auth.service';
 import { map } from 'rxjs';
 import { RuntimeConfigService } from '../services/runtime-config.service';
-import { OfflineStatusComponent } from '../../shared/components/offline-status.component';
 
 interface MenuItem {
   label: string;
@@ -28,7 +27,6 @@ const mainMenu: MenuItem[] = [
 
 const collectionMenu: MenuItem[] = [
   { label: 'Novo upload', icon: 'add_photo_alternate', route: '/uploads/new' },
-  { label: 'Fila offline', icon: 'sync', route: '/uploads/queue' },
 ];
 
 const managementMenu: MenuItem[] = [
@@ -57,7 +55,6 @@ const adminMenu: MenuItem[] = [
     MatButtonModule,
     MatIconModule,
     MatListModule,
-    OfflineStatusComponent,
   ],
   template: `
     <mat-sidenav-container class="shell-container">
@@ -162,7 +159,7 @@ const adminMenu: MenuItem[] = [
           </div>
 
           <div class="toolbar-right">
-            <app-offline-status />
+            <a mat-button href="/m/">Aplicativo de campo</a>
             <div
               class="user-chip"
               (click)="navigateToProfile()"

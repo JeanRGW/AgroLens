@@ -9,21 +9,6 @@ import '../helpers/test_doubles.dart';
 
 void main() {
   group('DownloadUrlResponse', () {
-    test('fromJson parses old shape (url)', () {
-      final json = {
-        'url': 'https://storage.example.com/signed/abc123',
-        'expiresAt': '2026-07-02T12:00:00Z',
-        'fileId': 'file-uuid-1',
-        'uploadId': 'upload-uuid-1',
-      };
-
-      final response = DownloadUrlResponse.fromJson(json);
-      expect(response.url, 'https://storage.example.com/signed/abc123');
-      expect(response.expiresAt, DateTime.parse('2026-07-02T12:00:00Z'));
-      expect(response.fileId, 'file-uuid-1');
-      expect(response.uploadId, 'upload-uuid-1');
-    });
-
     test('fromJson parses real backend shape (downloadUrl)', () {
       final json = {
         'downloadUrl': 'https://storage.example.com/signed/backend-xyz',
@@ -40,32 +25,6 @@ void main() {
   });
 
   group('UploadInitResponse', () {
-    test('fromJson parses old shape (presignedUrls)', () {
-      final json = {
-        'uploadId': 'upload-1',
-        'status': 'draft',
-        'presignedUrls': [
-          {
-            'imageId': 'image-1',
-            'fileId': 'f1',
-            'objectKey': 'uploads/u/0/original.jpeg',
-            'url': 'https://storage.example.com/put-1',
-            'expiresAt': '2026-07-01T00:00:00Z',
-          },
-        ],
-      };
-
-      final response = UploadInitResponse.fromJson(json);
-      expect(response.uploadId, 'upload-1');
-      expect(response.status, 'draft');
-      expect(response.presignedUrls.length, 1);
-      expect(
-        response.presignedUrls.first.url,
-        'https://storage.example.com/put-1',
-      );
-      expect(response.presignedUrls.first.fileId, 'f1');
-    });
-
     test('fromJson parses real backend shape (files with uploadUrl)', () {
       final json = {
         'uploadId': 'upload-2',
@@ -73,8 +32,8 @@ void main() {
         'files': [
           {
             'imageId': 'image-2',
-            'id': 'backend-file-id',
-            'key': 'uploads/u/0/original.jpeg',
+            'fileId': 'backend-file-id',
+            'objectKey': 'uploads/u/0/original.jpeg',
             'uploadUrl': 'https://garage:3900/bucket/presigned-put',
             'expiresAt': '2026-07-01T00:00:00Z',
             'headers': {'x-amz-meta-user': 'mobile'},
@@ -105,8 +64,8 @@ void main() {
         'files': [
           {
             'imageId': 'image-3',
-            'id': 'existing-file-id',
-            'key': 'uploads/u/0/original.jpeg',
+            'fileId': 'existing-file-id',
+            'objectKey': 'uploads/u/0/original.jpeg',
             'uploadUrl': null,
             'method': 'GET',
             'expiresAt': null,
@@ -122,14 +81,6 @@ void main() {
   });
 
   group('UploadCompleteResponse', () {
-    test('fromJson parses old shape (top-level uploadId)', () {
-      final json = {'uploadId': 'upload-1', 'status': 'finalizing'};
-
-      final response = UploadCompleteResponse.fromJson(json);
-      expect(response.uploadId, 'upload-1');
-      expect(response.status, 'finalizing');
-    });
-
     test('fromJson parses real backend shape (wrapped upload)', () {
       final json = {
         'upload': {
@@ -166,7 +117,7 @@ void main() {
           '/api/uploads/upload-1/files/file-1/download-url',
           200,
           {
-            'url': 'https://storage.example.com/signed/xyz',
+            'downloadUrl': 'https://storage.example.com/signed/xyz',
             'expiresAt': '2026-07-02T12:00:00Z',
             'fileId': 'file-1',
             'uploadId': 'upload-1',
@@ -338,85 +289,6 @@ void main() {
       final pathsJson = '["/tmp/img1.jpg","/tmp/img2.jpg"]';
       final paths = List<String>.from(jsonDecode(pathsJson));
       expect(paths.length, 2);
-    });
-  });
-
-  group('ApiClient.extractItems envelope compatibility', () {
-    test('extracts items from standard envelope {items: [...]}', () {
-      final json = {
-        'items': [
-          {'id': 'item-1'},
-          {'id': 'item-2'},
-        ],
-        'total': 2,
-      };
-      final result = ApiClient.extractItems(json);
-      expect(result, isA<List>());
-      expect((result as List).length, 2);
-    });
-
-    test('extracts items from legacy envelope {grants: [...]}', () {
-      final json = {
-        'grants': [
-          {'id': 'grant-1'},
-        ],
-        'total': 1,
-      };
-      final result = ApiClient.extractItems(json);
-      expect((result as List).length, 1);
-    });
-
-    test('extracts items from legacy envelope {users: [...]}', () {
-      final json = {
-        'users': [
-          {'id': 'user-1'},
-        ],
-        'total': 1,
-      };
-      final result = ApiClient.extractItems(json);
-      expect((result as List).length, 1);
-    });
-
-    test('extracts items from legacy envelope {events: [...]}', () {
-      final json = {
-        'events': [
-          {'id': 'evt-1'},
-        ],
-        'total': 1,
-      };
-      final result = ApiClient.extractItems(json);
-      expect((result as List).length, 1);
-    });
-
-    test('extracts items from fallback key {properties: [...]}', () {
-      final json = {
-        'properties': [
-          {'id': 'prop-1'},
-        ],
-      };
-      final result = ApiClient.extractItems(json, 'properties');
-      expect((result as List).length, 1);
-    });
-
-    test('prefers items over legacy key when both are present', () {
-      final json = {
-        'items': [
-          {'id': 'from-items'},
-        ],
-        'grants': [
-          {'id': 'from-grants'},
-        ],
-      };
-      final result = ApiClient.extractItems(json);
-      expect((result as List).first['id'], 'from-items');
-    });
-
-    test('returns direct array as-is', () {
-      final list = [
-        {'id': 'direct'},
-      ];
-      final result = ApiClient.extractItems(list);
-      expect(result, list);
     });
   });
 }

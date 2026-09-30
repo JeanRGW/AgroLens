@@ -218,24 +218,20 @@ describe('UploadCreateService', () => {
       );
     });
 
-    it('preserves a rejected file PUT status after persisting the server upload ID', async () => {
+    it('preserves a rejected file PUT status during online uploads', async () => {
       uploadsService.initUpload.and.resolveTo(FAKE_INIT_RESPONSE);
       (window.fetch as jasmine.Spy).and.resolveTo(
         new Response(null, { status: 413, statusText: 'Payload Too Large' }),
       );
-      const initialized = jasmine.createSpy('initialized').and.resolveTo();
 
       await expectAsync(
         service.createUpload(request, fakeFiles, undefined, {
           userId: 'u1',
           assertIdentity: () => undefined,
-          onInitialized: initialized,
         }),
       ).toBeRejectedWith(
         jasmine.objectContaining({ name: UploadFileTransferError.name, status: 413 }),
       );
-      expect(initialized).toHaveBeenCalledWith('upload-1');
-      expect(initialized).toHaveBeenCalledBefore(window.fetch as jasmine.Spy);
       expect(uploadsService.completeUpload).not.toHaveBeenCalled();
     });
 
@@ -261,7 +257,7 @@ describe('UploadCreateService', () => {
       );
     });
 
-    it('bounds slow successful finalization polls by elapsed time, retaining the batch for retry', fakeAsync(() => {
+    it('bounds slow successful finalization polls and advises retrying without closing the page', fakeAsync(() => {
       uploadsService.initUpload.and.resolveTo(FAKE_INIT_RESPONSE);
       uploadsService.completeUpload.and.resolveTo(FAKE_RECORD_READY);
       uploadsService.getUpload.and.callFake(
@@ -274,7 +270,7 @@ describe('UploadCreateService', () => {
       expect(failed).not.toHaveBeenCalled();
       tick(1);
       expect(failed).toHaveBeenCalledOnceWith(
-        jasmine.objectContaining({ message: jasmine.stringMatching(/continua salvo/) }),
+        jasmine.objectContaining({ message: jasmine.stringMatching(/sem fechar esta página/) }),
       );
       expect(uploadsService.getUpload).toHaveBeenCalledTimes(5);
       tick(60000);
@@ -433,7 +429,6 @@ describe('UploadCreateService polling request deadlines', () => {
     it(`cancels a stalled status request after ${completedPolls ? 'the remaining polling budget' : '5 seconds'}`, fakeAsync(() => {
       const file = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
       const failed = jasmine.createSpy('failed');
-      const initialized = jasmine.createSpy('initialized').and.resolveTo();
       void service
         .createUpload(
           {
@@ -455,7 +450,7 @@ describe('UploadCreateService polling request deadlines', () => {
           },
           [file],
           undefined,
-          { userId: 'u1', assertIdentity: () => undefined, onInitialized: initialized },
+          { userId: 'u1', assertIdentity: () => undefined },
         )
         .catch(failed);
       http.expectOne('/api/uploads/init').flush({
@@ -474,7 +469,6 @@ describe('UploadCreateService polling request deadlines', () => {
 
       const stalled = http.expectOne('/api/uploads/upload-1');
       expect(stalled.request.context.get(EXPECTED_USER_ID)).toBe('u1');
-      expect(initialized).toHaveBeenCalledOnceWith('upload-1');
       const remaining = completedPolls ? 4000 : 5000;
       tick(remaining - 1);
       expect(stalled.cancelled).toBeFalse();

@@ -29,7 +29,6 @@
     "test:watch": "CHROME_BIN=${CHROME_BIN:-$(command -v chromium-browser chromium google-chrome-stable google-chrome 2>/dev/null | head -n1)} ng test --browsers=ChromeHeadlessNoSandbox",
     "test:coverage": "CHROME_BIN=${CHROME_BIN:-$(command -v chromium-browser chromium google-chrome-stable google-chrome 2>/dev/null | head -n1)} ng test --watch=false --browsers=ChromeHeadlessNoSandbox --code-coverage",
     "e2e": "npx playwright test",
-    "e2e:pwa": "npm run build && playwright test --config=playwright.pwa.config.ts",
     "e2e:install": "npx playwright install chromium"
   },
   "dependencies": {
@@ -44,7 +43,6 @@
     "@angular/platform-browser": "^20.3.30",
     "@angular/platform-browser-dynamic": "^20.3.30",
     "@angular/router": "^20.3.30",
-    "@angular/service-worker": "^20.3.31",
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "rxjs": "~7.8.0",

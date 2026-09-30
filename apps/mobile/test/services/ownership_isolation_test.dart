@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:agrolens/config/env_config.dart';
 import 'package:agrolens/models/pending_upload.dart';
 import 'package:agrolens/services/api_client.dart';
@@ -22,9 +21,6 @@ class _CatalogApi extends ApiClient {
 }
 
 void main() {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   for (final operation in ['fetch', 'create', 'update', 'sync']) {
     test('late catalog $operation cannot write into another account', () async {
       final appDb = createTestAppDatabase();
@@ -50,7 +46,7 @@ void main() {
       final now = DateTime.utc(2026).toIso8601String();
       Future<void> login(String id) async {
         httpClient.queueResponse('POST', '/api/auth/login', 200, {
-          'accessToken': id,
+          'accessToken': testAccessToken(id),
           'refreshToken': 'refresh-$id',
           'user': {
             'id': id,
@@ -131,14 +127,14 @@ void main() {
       await login('b');
       release.complete();
       await assertion;
-      final db = await appDb.database;
+      final db = appDb;
       for (final table in [
         'catalog_properties',
         'pending_catalog_creates',
         'catalog_id_mappings',
       ]) {
         expect(
-          await db.query(table, where: 'owner_id = ?', whereArgs: ['b']),
+          await db.readRows('SELECT * FROM $table WHERE owner_id = ?', ['b']),
           isEmpty,
         );
       }
@@ -146,17 +142,20 @@ void main() {
         httpClient.requests.where(
           (r) =>
               r.url.path.startsWith('/api/properties') &&
-              r.headers['Authorization'] == 'Bearer b',
+              r.headers['Authorization'] == 'Bearer ${testAccessToken('b')}',
         ),
         isEmpty,
       );
       if (operation == 'sync') {
-        expect(await db.query('pending_catalog_creates'), hasLength(2));
+        expect(
+          await db.readRows('SELECT * FROM pending_catalog_creates'),
+          hasLength(2),
+        );
       }
     });
   }
 
-  test('upload rows are isolated and legacy rows remain hidden', () async {
+  test('upload rows are isolated by owner', () async {
     final api = _CatalogApi();
     final a = FakeAuthService(
       apiClient: api,
@@ -173,18 +172,18 @@ void main() {
     final helperB = DatabaseHelper(appDatabase: appDb, authService: b);
     final upload = PendingUpload(
       id: 'a-upload',
-      imagePaths: '[]',
+      paths: [],
       latitude: 0,
       longitude: 0,
       createdAt: DateTime.now(),
     );
     await helperA.insertPendingUpload(upload);
-    final db = await helperA.database;
-    await db.update(
+    final db = helperA.database;
+    await db.updateRow(
       'pending_uploads',
       {'status': PendingUploadStatus.failed.name},
-      where: 'id = ? AND owner_id = ?',
-      whereArgs: ['a-upload', 'user-a'],
+      'id = ? AND owner_id = ?',
+      ['a-upload', 'user-a'],
     );
     expect(await helperA.getPendingAndFailedUploads(), hasLength(1));
 
@@ -194,11 +193,9 @@ void main() {
     expect(await helperB.deleteCompletedUploads(), 0);
     expect(await helperB.deleteUpload('a-upload'), 0);
     expect(
-      (await db.query(
-        'pending_uploads',
-        where: 'id = ?',
-        whereArgs: ['a-upload'],
-      )).single['owner_id'],
+      (await db.readRows('SELECT * FROM pending_uploads WHERE id = ?', [
+        'a-upload',
+      ])).single['owner_id'],
       'user-a',
     );
     await appDb.close();
@@ -222,7 +219,7 @@ void main() {
       apiClient: api,
       authService: a,
     );
-    final db = await repoA.database;
+    final db = repoA.database;
     final data = jsonEncode({
       'id': 'p-a',
       'name': 'A',
@@ -234,7 +231,7 @@ void main() {
       'createdAt': DateTime.now().toIso8601String(),
       'updatedAt': DateTime.now().toIso8601String(),
     });
-    await db.insert('catalog_properties', {
+    await db.saveRow('catalog_properties', {
       'id': 'p-a',
       'owner_id': 'user-a',
       'data': data,
@@ -242,7 +239,7 @@ void main() {
       'is_pending_sync': 0,
       'sync_error': null,
     });
-    await db.insert('catalog_properties', {
+    await db.saveRow('catalog_properties', {
       'id': 'shared-id',
       'owner_id': 'user-a',
       'data': data,
@@ -250,7 +247,7 @@ void main() {
       'is_pending_sync': 0,
       'sync_error': null,
     });
-    await db.insert('catalog_properties', {
+    await db.saveRow('catalog_properties', {
       'id': 'shared-id',
       'owner_id': 'user-b',
       'data': data.replaceAll('user-a', 'user-b'),
@@ -263,20 +260,17 @@ void main() {
       apiClient: api,
       authService: b,
     );
-    final repoBDb = await repoB.database;
+    final repoBDb = repoB.database;
     expect(
-      (await repoBDb.query(
-        'catalog_properties',
-        where: 'id = ?',
-        whereArgs: ['shared-id'],
-      )),
+      (await repoBDb.readRows('SELECT * FROM catalog_properties WHERE id = ?', [
+        'shared-id',
+      ])),
       hasLength(2),
     );
     expect(
-      (await repoBDb.query(
-        'catalog_properties',
-        where: 'owner_id = ?',
-        whereArgs: ['user-b'],
+      (await repoBDb.readRows(
+        'SELECT * FROM catalog_properties WHERE owner_id = ?',
+        ['user-b'],
       )),
       hasLength(1),
     );

@@ -18,6 +18,31 @@ COPY apps/web/ ./apps/web/
 RUN pnpm --filter @agrolens/contracts build
 RUN pnpm --filter @agrolens/web build
 
+# ── Mobile PWA (Flutter web) build stage ──────────────────────────────────
+FROM debian:bookworm-slim AS mobile-web-builder
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+# Flutter SDK pinned to the version apps/mobile is developed against.
+ARG FLUTTER_VERSION=3.47.5
+RUN curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
+    | tar -xJ -C /opt \
+  && git config --global --add safe.directory /opt/flutter \
+  && /opt/flutter/bin/flutter --version
+
+ENV PATH="/opt/flutter/bin:${PATH}"
+
+WORKDIR /app/apps/mobile
+COPY apps/mobile/ ./
+
+# Drift's schema source and web runtime are built against the locked packages.
+RUN flutter pub get
+RUN dart run build_runner build
+RUN bash tool/setup_web_sqlite.sh
+RUN flutter build web --release --base-href /m/ --no-web-resources-cdn
+
 # ── API build stage ────────────────────────────────────────────────────────
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS api-builder
 
@@ -56,6 +81,7 @@ COPY --chown=node:node --from=api-builder /app/apps/api/drizzle ./apps/api/drizz
 COPY --chown=node:node --from=api-builder /app/packages/contracts/dist ./packages/contracts/dist
 COPY --chown=node:node --from=api-builder /app/packages/contracts/package.json ./packages/contracts/package.json
 COPY --chown=node:node --from=web-builder /app/apps/web/dist/agrolens-web/browser ./apps/api/web
+COPY --chown=node:node --from=mobile-web-builder /app/apps/mobile/build/web ./apps/api/web-mobile
 
 WORKDIR /app/apps/api
 

@@ -1,3 +1,5 @@
+import 'api_base_url.dart';
+
 /// Environment and API configuration for the mobile app.
 ///
 /// The backend base URL is resolved at compile time from the
@@ -22,14 +24,17 @@ class EnvConfig {
   /// Resolves the API base URL from compile-time dart-defines.
   ///
   /// Prefers `API_BASE_URL` (from `--dart-define`); otherwise falls back to
-  /// [defaultApiBaseUrl], which is the production public URL.
-  static const EnvConfig _instance = EnvConfig._default();
+  /// the platform default: [defaultApiBaseUrl] (production) on io, and the
+  /// same-origin `/api` on web.
+  static final EnvConfig _instance = EnvConfig._resolve();
   factory EnvConfig.defaultInstance() => _instance;
-  const EnvConfig._default()
-    : apiBaseUrl = const String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: defaultApiBaseUrl,
-      );
+
+  static EnvConfig _resolve() {
+    const defined = String.fromEnvironment('API_BASE_URL');
+    if (defined.isNotEmpty) return EnvConfig(apiBaseUrl: defined);
+    final platformBase = platformDefaultApiBaseUrl();
+    return EnvConfig(apiBaseUrl: platformBase ?? defaultApiBaseUrl);
+  }
 
   /// Convenience getter for forming endpoint paths.
   Uri uri(String path) {

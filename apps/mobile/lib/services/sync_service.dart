@@ -1,15 +1,16 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/download_url_response.dart';
 import '../models/pending_upload.dart';
 import '../models/upload_response.dart';
 import '../utils/app_logger.dart';
+import '../utils/platform_errors.dart';
 import 'api_client.dart';
 import 'auth_service.dart';
 import 'database_helper.dart';
 import 'catalog_repository.dart';
 import 'connectivity_monitor.dart';
+import 'local_image_store.dart';
 import 'upload_pipeline.dart';
 
 export 'upload_pipeline.dart' show StepInitResult;
@@ -20,6 +21,7 @@ class SyncService {
   final ApiClient _apiClient;
   final AuthService _authService;
   final DatabaseHelper _databaseHelper;
+  final LocalImageStore _imageStore;
   final ConnectivityMonitor _connectivityMonitor;
   final UploadPipeline _pipeline;
   final Future<void> Function() _syncPendingCatalogCreates;
@@ -49,6 +51,7 @@ class SyncService {
     required AuthService authService,
     required DatabaseHelper databaseHelper,
     required CatalogRepository catalogRepository,
+    LocalImageStore? imageStore,
     Connectivity? connectivity,
     Stream<List<ConnectivityResult>>? connectivityChanges,
     Duration connectivityDebounce = const Duration(milliseconds: 250),
@@ -60,6 +63,7 @@ class SyncService {
   }) : _apiClient = apiClient,
        _authService = authService,
        _databaseHelper = databaseHelper,
+       _imageStore = imageStore ?? createLocalImageStore(),
        _now = now ?? DateTime.now,
        _syncPendingCatalogCreates =
            syncPendingCatalogCreates ??
@@ -75,6 +79,7 @@ class SyncService {
          authService: authService,
          databaseHelper: databaseHelper,
          catalogRepository: catalogRepository,
+         imageStore: imageStore,
          pollDelay: pollDelay,
          delay: delay,
          now: now,
@@ -418,9 +423,9 @@ class SyncService {
       await _databaseHelper.deleteUpload(current.id);
       for (final path in current.paths) {
         try {
-          await File(path).delete();
-        } on FileSystemException {
-          // Startup orphan cleanup retries files that could not be removed.
+          await _imageStore.deleteImage(path);
+        } catch (_) {
+          // Startup orphan cleanup retries images that could not be removed.
         }
       }
     } finally {
@@ -561,7 +566,7 @@ class SyncService {
   }
 
   ({String code, String message}) _safeSyncFailure(Object error) {
-    if (error is SocketException || error is TimeoutException) {
+    if (isConnectionError(error) || error is TimeoutException) {
       return (
         code: 'SYNC_NETWORK_UNREACHABLE',
         message:
@@ -585,7 +590,7 @@ class SyncService {
             : 'Servidor recusou a sincronização. Tente novamente.',
       );
     }
-    if (error is FileSystemException) {
+    if (isLocalFileError(error)) {
       return (
         code: 'LOCAL_FILE_UNAVAILABLE',
         message:

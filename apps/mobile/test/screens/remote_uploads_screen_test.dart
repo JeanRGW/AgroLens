@@ -8,13 +8,9 @@ import 'package:agrolens/services/database_helper.dart';
 import 'package:agrolens/services/sync_service.dart';
 import 'package:agrolens/services/token_storage.dart';
 import 'package:agrolens/screens/remote_uploads_screen.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../helpers/test_doubles.dart';
 
 void main() {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   late MockHttpClient mockHttp;
   late ApiClient apiClient;
   late AuthService authService;
@@ -30,7 +26,7 @@ void main() {
     final tokenStorage = TokenStorage(storage: FakeFlutterSecureStorage());
     authService = AuthService(apiClient: apiClient, tokenStorage: tokenStorage);
     await tokenStorage.saveTokens(
-      accessToken: 'access-123',
+      accessToken: testAccessToken('user-1'),
       refreshToken: 'refresh-456',
     );
     final now = DateTime.now().toIso8601String();

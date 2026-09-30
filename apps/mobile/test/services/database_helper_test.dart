@@ -1,17 +1,15 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:agrolens/models/pending_upload.dart';
 import 'package:agrolens/services/api_client.dart';
 import 'package:agrolens/services/database_helper.dart';
-import 'package:agrolens/services/app_database.dart';
+import 'package:agrolens/services/local_image_store.dart';
 import 'package:agrolens/services/token_storage.dart';
 import '../helpers/test_doubles.dart';
 
 void main() {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   late DatabaseHelper databaseHelper;
   late FakeAuthService authService;
   late Directory tempDir;
@@ -79,7 +77,7 @@ void main() {
     await databaseHelper.insertPendingUpload(upload);
 
     final deleted = await databaseHelper.cleanupOrphanedImages(
-      imagesDirectory: tempDir,
+      imageStore: IoLocalImageStore(directory: () async => tempDir),
     );
 
     expect(deleted, 1);
@@ -87,55 +85,76 @@ void main() {
     expect(await orphanFile.exists(), isFalse);
   });
 
-  test(
-    'upgrades queued images without losing legacy coordinates or paths',
-    () async {
-      final path = '${tempDir.path}/legacy.db';
-      final legacy = await databaseFactoryFfi.openDatabase(
-        path,
-        options: OpenDatabaseOptions(
-          version: 1,
-          onCreate: (db, _) async {
-            await db.execute('''CREATE TABLE pending_uploads (
-        id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, image_paths TEXT NOT NULL,
-        latitude REAL NOT NULL, longitude REAL NOT NULL, created_at INTEGER NOT NULL,
-        activity_date INTEGER NOT NULL, status TEXT NOT NULL
-      )''');
-          },
-        ),
-      );
-      await legacy.insert('pending_uploads', {
-        'id': 'old-upload',
-        'owner_id': 'user-1',
-        'image_paths': '["/photos/first.jpg","/photos/second.jpg"]',
-        'latitude': -22.9,
-        'longitude': -43.1,
-        'created_at': 1,
-        'activity_date': 2,
-        'status': 'pending',
-      });
-      await legacy.close();
+  test('Drift queue persists image identities across reopening', () async {
+    final path = '${tempDir.path}/queue.sqlite';
+    final first = createTestAppDatabase(path: path);
+    final helper = DatabaseHelper(appDatabase: first, authService: authService);
+    final upload = PendingUpload(
+      id: 'stable',
+      paths: ['/photos/one.jpg'],
+      createdAt: DateTime.now(),
+    );
+    await helper.insertPendingUpload(upload);
+    await helper.close();
+    final second = createTestAppDatabase(path: path);
+    final reopened = DatabaseHelper(
+      appDatabase: second,
+      authService: authService,
+    );
+    try {
+      final saved = await reopened.getUploadById('stable');
+      expect(saved!.images.single.imageId, upload.images.single.imageId);
+      expect(saved.paths, upload.paths);
+    } finally {
+      await reopened.close();
+    }
+  });
 
-      final upgraded = AppDatabase(factory: databaseFactoryFfi, path: path);
-      try {
-        final rows = await (await upgraded.database).query('pending_uploads');
-        expect(rows.single.containsKey('latitude'), isFalse);
-        expect(rows.single.containsKey('image_paths'), isFalse);
-        final upload = PendingUpload.fromSqliteRow(rows.single);
-        expect(upload.paths, ['/photos/first.jpg', '/photos/second.jpg']);
-        expect(upload.images.map((image) => image.latitude), [-22.9, -22.9]);
-        expect(upload.images.map((image) => image.longitude), [-43.1, -43.1]);
-        expect(upload.images.map((image) => image.imageId).toSet().length, 2);
-        final reloaded = PendingUpload.fromSqliteRow(
-          (await (await upgraded.database).query('pending_uploads')).single,
-        );
-        expect(
-          reloaded.images.map((image) => image.imageId),
-          upload.images.map((image) => image.imageId),
-        );
-      } finally {
-        await upgraded.close();
-      }
+  test(
+    'failed queue persistence rolls back originals before releasing the save',
+    () async {
+      final store = IoLocalImageStore(directory: () async => tempDir);
+      await expectLater(
+        databaseHelper.saveUploadImages(
+          files: [
+            XFile.fromData(
+              Uint8List.fromList([0xff, 0xd8, 0xff]),
+              name: 'photo.jpg',
+            ),
+          ],
+          imageStore: store,
+          createUpload: (_) => throw StateError('Session changed'),
+        ),
+        throwsStateError,
+      );
+      expect(await store.listPaths(), isEmpty);
+      expect(await databaseHelper.getAllUploads(), isEmpty);
+    },
+  );
+
+  test(
+    'HEIC originals are rejected without saving a file or queue row',
+    () async {
+      final store = IoLocalImageStore(directory: () async => tempDir);
+      await expectLater(
+        databaseHelper.saveUploadImages(
+          files: [
+            XFile.fromData(
+              Uint8List.fromList([0, 0, 0, 24, ...'ftypheic'.codeUnits]),
+              name: 'photo.jpg',
+            ),
+          ],
+          imageStore: store,
+          createUpload: (paths) => PendingUpload(
+            id: 'unsupported',
+            paths: paths,
+            createdAt: DateTime.now(),
+          ),
+        ),
+        throwsFormatException,
+      );
+      expect(await store.listPaths(), isEmpty);
+      expect(await databaseHelper.getAllUploads(), isEmpty);
     },
   );
 }

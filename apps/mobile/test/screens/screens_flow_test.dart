@@ -10,13 +10,9 @@ import 'package:agrolens/services/token_storage.dart';
 import 'package:agrolens/screens/about_screen.dart';
 import 'package:agrolens/screens/home_screen.dart';
 import 'package:agrolens/screens/login_screen.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../helpers/test_doubles.dart';
 
 void main() {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   late MockHttpClient mockHttp;
   late ApiClient apiClient;
   late TokenStorage tokenStorage;

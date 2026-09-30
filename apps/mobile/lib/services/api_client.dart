@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../config/env_config.dart';
 import '../models/catalog.dart';
@@ -181,17 +180,7 @@ class ApiClient {
   }) async {
     String path = '/uploads';
     if (queryParams != null && queryParams.isNotEmpty) {
-      final params = Map<String, String>.from(queryParams);
-      if (params.containsKey('pageSize') && !params.containsKey('limit')) {
-        params['limit'] = params['pageSize']!;
-      }
-      if (params.containsKey('page') && !params.containsKey('offset')) {
-        final page = int.tryParse(params['page']!) ?? 1;
-        final limit =
-            int.tryParse(params['limit'] ?? params['pageSize'] ?? '20') ?? 20;
-        params['offset'] = ((page - 1) * limit).toString();
-      }
-      final parts = params.entries
+      final parts = queryParams.entries
           .map(
             (e) =>
                 '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}',
@@ -200,10 +189,7 @@ class ApiClient {
       path = '$path?$parts';
     }
     return _get(path, accessToken, (json) {
-      final extracted = extractItems(json, 'uploads');
-      final list = extracted is List<dynamic>
-          ? extracted
-          : (json['uploads'] as List<dynamic>);
+      final list = json['uploads'] as List<dynamic>;
       return list
           .map((e) => UploadDetail.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -455,11 +441,12 @@ class ApiClient {
 
   // ── Presigned upload PUT ──────────────────────────────────────────
 
-  /// Upload file bytes or stream a [File] directly to a presigned URL (PUT).
+  /// Upload file bytes or stream them directly to a presigned URL (PUT).
   Future<int> uploadFileToPresignedUrl({
     required String presignedUrl,
     List<int>? bytes,
-    File? file,
+    Stream<List<int>>? stream,
+    int? contentLength,
     required String contentType,
     Map<String, String>? headers,
   }) async {
@@ -472,15 +459,14 @@ class ApiClient {
     }
     final uri = Uri.parse(presignedUrl);
     final http.BaseRequest req;
-    if (file != null) {
-      final length = await file.length();
+    if (stream != null) {
       final streamReq = http.StreamedRequest('PUT', uri)
         ..headers.addAll(requestHeaders)
-        ..contentLength = length;
-      // Pipe errors (file deleted/locked mid-upload) must surface as the
+        ..contentLength = contentLength;
+      // Pipe errors (image deleted/locked mid-upload) must surface as the
       // upload failure, not as an uncaught async error.
       unawaited(
-        file.openRead().pipe(streamReq.sink).catchError((Object error) {
+        stream.pipe(streamReq.sink).catchError((Object error) {
           streamReq.sink.addError(error);
           streamReq.sink.close();
         }),
@@ -615,32 +601,12 @@ class ApiClient {
     return _sendWithAuthRetry(
       (headers) => _httpClient.get(uri, headers: headers),
       (response) => _handleResponse(response, (json) {
-        final extracted = extractItems(json, key);
-        final list = extracted is List<dynamic>
-            ? extracted
-            : ((json[key] as List<dynamic>?) ?? const []);
+        final list = json[key] as List<dynamic>;
         return list.map((e) => e as Map<String, dynamic>).toList();
       }),
       accessToken: accessToken,
       retry: retry,
     );
-  }
-
-  /// Extracts collection items supporting both normalized envelopes ({'items': [...]})
-  /// and legacy entity envelopes ({'grants': [...]}, {'users': [...]}, {'events': [...]},
-  /// {'uploads': [...]}, or entity-specific keys).
-  static dynamic extractItems(dynamic json, [String? fallbackKey]) {
-    if (json is List) return json;
-    if (json is Map<String, dynamic>) {
-      return json['items'] ??
-          (fallbackKey != null ? json[fallbackKey] : null) ??
-          json['grants'] ??
-          json['users'] ??
-          json['events'] ??
-          json['uploads'] ??
-          json;
-    }
-    return json;
   }
 
   Future<void> _delete(
@@ -672,11 +638,7 @@ class ApiClient {
     String key,
     T Function(Map<String, dynamic>) parse,
   ) {
-    final raw = json[key];
-    if (raw is Map<String, dynamic>) {
-      return parse(raw);
-    }
-    return parse(json);
+    return parse(json[key] as Map<String, dynamic>);
   }
 
   T _handleResponse<T>(

@@ -14,7 +14,7 @@ class DownloadUrlResponse {
 
   factory DownloadUrlResponse.fromJson(Map<String, dynamic> json) {
     return DownloadUrlResponse(
-      url: (json['downloadUrl'] ?? json['url']) as String,
+      url: json['downloadUrl'] as String,
       expiresAt: DateTime.parse(json['expiresAt'] as String),
       fileId: json['fileId'] as String,
       uploadId: json['uploadId'] as String,

@@ -20,10 +20,14 @@ dependencies:
   # Platform secure storage for tokens (never SQLite/plain prefs)
   flutter_secure_storage: ^9.2.4
 
-  # SQLite pending upload queue
-  sqflite: ^2.4.3
+  # Shared SQLite storage on native platforms and web.
+  drift: ^2.32.0
+  drift_flutter: ^0.3.1
   path: ^1.9.1
   path_provider: ^2.1.6
+
+  # Browser APIs for the web build (IndexedDB, storage persistence)
+  web: ^1.1.1
 
   # Connectivity monitoring
   connectivity_plus: ^6.1.5
@@ -52,8 +56,12 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  flutter_secure_storage_web: ^1.2.1
   flutter_lints: ^6.0.0
-  sqflite_common_ffi: ^2.3.4
+  drift_dev: ^2.32.0
+  build_runner: ^2.4.14
   geolocator_platform_interface: ^4.3.0
 
 flutter:

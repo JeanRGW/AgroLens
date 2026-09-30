@@ -1,14 +1,13 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../models/catalog.dart';
 import '../models/pending_catalog_create.dart';
 import '../utils/app_logger.dart';
+import '../utils/platform_errors.dart';
 import 'api_client.dart';
-import 'app_database.dart';
+import 'app_database.dart' show AppDatabase;
 import 'auth_service.dart';
 
 /// Typed entity descriptor used by the shared cache mechanics.
@@ -201,7 +200,7 @@ class CatalogRepository {
     }
   }
 
-  Future<Database> get database => appDatabase.database;
+  AppDatabase get database => appDatabase;
 
   Future<void> close() async {
     await appDatabase.close();
@@ -404,15 +403,20 @@ class CatalogRepository {
         }
       }
       await _markPendingCreateError(strategy, item.tempId, e.message);
-    } on SocketException catch (e) {
-      _ensureSession(session);
-      await _markPendingCreateError(strategy, item.tempId, e.message);
     } on TimeoutException catch (e) {
       _ensureSession(session);
       await _markPendingCreateError(strategy, item.tempId, e.message);
     } on http.ClientException catch (e) {
       _ensureSession(session);
       await _markPendingCreateError(strategy, item.tempId, e.message);
+    } catch (error) {
+      if (!isConnectionError(error)) rethrow;
+      _ensureSession(session);
+      await _markPendingCreateError(
+        strategy,
+        item.tempId,
+        platformErrorMessage(error),
+      );
     }
   }
 
@@ -452,35 +456,34 @@ class CatalogRepository {
     String table,
   ) async {
     final ownerId = _ownerId();
-    final db = await database;
+    final db = database;
     final now = DateTime.now().millisecondsSinceEpoch;
-    final batch = db.batch();
-    batch.delete(
-      table,
-      where: 'id = ? AND owner_id = ?',
-      whereArgs: [item.tempId, ownerId],
-    );
-    batch.delete(
-      _tablePendingCatalogCreates,
-      where: 'temp_id = ? AND owner_id = ?',
-      whereArgs: [item.tempId, ownerId],
-    );
-    batch.insert(table, {
-      'id': serverItem.id,
-      'owner_id': ownerId,
-      'data': jsonEncode(serverItem.toJson()),
-      'cached_at': now,
-      'is_pending_sync': 0,
-      'sync_error': null,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-    batch.insert(_tableCatalogIdMappings, {
-      'temp_id': item.tempId,
-      'owner_id': ownerId,
-      'server_id': serverItem.id,
-      'entity_type': item.entityType.name,
-      'created_at': now,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-    await batch.commit(noResult: true);
+    await db.transaction(() async {
+      await db.deleteRows(table, 'id = ? AND owner_id = ?', [
+        item.tempId,
+        ownerId,
+      ]);
+      await db.deleteRows(
+        _tablePendingCatalogCreates,
+        'temp_id = ? AND owner_id = ?',
+        [item.tempId, ownerId],
+      );
+      await db.saveRow(table, {
+        'id': serverItem.id,
+        'owner_id': ownerId,
+        'data': jsonEncode(serverItem.toJson()),
+        'cached_at': now,
+        'is_pending_sync': 0,
+        'sync_error': null,
+      });
+      await db.saveRow(_tableCatalogIdMappings, {
+        'temp_id': item.tempId,
+        'owner_id': ownerId,
+        'server_id': serverItem.id,
+        'entity_type': item.entityType.name,
+        'created_at': now,
+      });
+    });
   }
 
   Future<void> _markPendingCreateError(
@@ -489,29 +492,27 @@ class CatalogRepository {
     String? message,
   ) async {
     final ownerId = _ownerId();
-    final db = await database;
+    final db = database;
     final safeMessage = message ?? '';
-    await db.update(
+    await db.updateRow(
       _tablePendingCatalogCreates,
       {'error_message': safeMessage},
-      where: 'temp_id = ? AND owner_id = ?',
-      whereArgs: [tempId, ownerId],
+      'temp_id = ? AND owner_id = ?',
+      [tempId, ownerId],
     );
-    final rows = await db.query(
-      strategy.table,
-      where: 'id = ? AND owner_id = ? AND is_pending_sync = 1',
-      whereArgs: [tempId, ownerId],
-      limit: 1,
+    final rows = await db.readRows(
+      'SELECT * FROM ${strategy.table} WHERE id = ? AND owner_id = ? AND is_pending_sync = 1 LIMIT 1',
+      [tempId, ownerId],
     );
     if (rows.isEmpty) return;
     final data =
         jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
     data['syncError'] = safeMessage;
-    await db.update(
+    await db.updateRow(
       strategy.table,
       {'data': jsonEncode(data), 'sync_error': safeMessage},
-      where: 'id = ? AND owner_id = ?',
-      whereArgs: [tempId, ownerId],
+      'id = ? AND owner_id = ?',
+      [tempId, ownerId],
     );
   }
 
@@ -520,12 +521,10 @@ class CatalogRepository {
     String parentId,
   ) async {
     final ownerId = _ownerId();
-    final db = await database;
-    final rows = await db.query(
-      _tablePendingCatalogCreates,
-      where: 'temp_id = ? AND owner_id = ?',
-      whereArgs: [tempId, ownerId],
-      limit: 1,
+    final db = database;
+    final rows = await db.readRows(
+      'SELECT * FROM $_tablePendingCatalogCreates WHERE temp_id = ? AND owner_id = ? LIMIT 1',
+      [tempId, ownerId],
     );
     if (rows.isEmpty) return;
     final item = PendingCatalogCreate.fromSqliteRow(rows.first);
@@ -535,11 +534,11 @@ class CatalogRepository {
     } else if (item.entityType == PendingCatalogEntityType.estadio) {
       payload['cropTypeId'] = parentId;
     }
-    await db.update(
+    await db.updateRow(
       _tablePendingCatalogCreates,
       {'parent_id': parentId, 'payload_json': jsonEncode(payload)},
-      where: 'temp_id = ? AND owner_id = ?',
-      whereArgs: [tempId, ownerId],
+      'temp_id = ? AND owner_id = ?',
+      [tempId, ownerId],
     );
     final table = item.entityType == PendingCatalogEntityType.talhao
         ? 'catalog_talhoes'
@@ -547,22 +546,20 @@ class CatalogRepository {
     final field = item.entityType == PendingCatalogEntityType.talhao
         ? 'propertyId'
         : 'cropTypeId';
-    final rowsToUpdate = await db.query(
-      table,
-      where: 'id = ? AND owner_id = ? AND is_pending_sync = 1',
-      whereArgs: [tempId, ownerId],
-      limit: 1,
+    final rowsToUpdate = await db.readRows(
+      'SELECT * FROM $table WHERE id = ? AND owner_id = ? AND is_pending_sync = 1 LIMIT 1',
+      [tempId, ownerId],
     );
     if (rowsToUpdate.isNotEmpty) {
       final data =
           jsonDecode(rowsToUpdate.first['data'] as String)
               as Map<String, dynamic>;
       data[field] = parentId;
-      await db.update(
+      await db.updateRow(
         table,
         {'data': jsonEncode(data)},
-        where: 'id = ? AND owner_id = ?',
-        whereArgs: [tempId, ownerId],
+        'id = ? AND owner_id = ?',
+        [tempId, ownerId],
       );
     }
   }
@@ -573,17 +570,16 @@ class CatalogRepository {
     required String newParentId,
   }) async {
     final ownerId = _ownerId();
-    final db = await database;
+    final db = database;
     final childTable = parentType == PendingCatalogEntityType.property
         ? 'catalog_talhoes'
         : 'catalog_estadios';
     final childField = parentType == PendingCatalogEntityType.property
         ? 'propertyId'
         : 'cropTypeId';
-    final queueRows = await db.query(
-      _tablePendingCatalogCreates,
-      where: 'parent_id = ? AND owner_id = ?',
-      whereArgs: [oldParentId, ownerId],
+    final queueRows = await db.readRows(
+      'SELECT * FROM $_tablePendingCatalogCreates WHERE parent_id = ? AND owner_id = ?',
+      [oldParentId, ownerId],
     );
     for (final row in queueRows) {
       final item = PendingCatalogCreate.fromSqliteRow(row);
@@ -595,27 +591,26 @@ class CatalogRepository {
       }
       final payload = item.payload;
       payload[childField] = newParentId;
-      await db.update(
+      await db.updateRow(
         _tablePendingCatalogCreates,
         {'parent_id': newParentId, 'payload_json': jsonEncode(payload)},
-        where: 'temp_id = ? AND owner_id = ?',
-        whereArgs: [item.tempId, ownerId],
+        'temp_id = ? AND owner_id = ?',
+        [item.tempId, ownerId],
       );
     }
-    final cacheRows = await db.query(
-      childTable,
-      where: 'owner_id = ? AND is_pending_sync = 1',
-      whereArgs: [ownerId],
+    final cacheRows = await db.readRows(
+      'SELECT * FROM $childTable WHERE owner_id = ? AND is_pending_sync = 1',
+      [ownerId],
     );
     for (final row in cacheRows) {
       final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
       if (data[childField] == oldParentId) {
         data[childField] = newParentId;
-        await db.update(
+        await db.updateRow(
           childTable,
           {'data': jsonEncode(data)},
-          where: 'id = ? AND owner_id = ?',
-          whereArgs: [row['id'], ownerId],
+          'id = ? AND owner_id = ?',
+          [row['id'], ownerId],
         );
       }
     }
@@ -679,13 +674,7 @@ class CatalogRepository {
       _ensureSession(session);
       await _saveCatalogItem(strategy.table, item);
       return item;
-    } on SocketException {
-      _ensureSession(session);
-      return strategy.createLocal(payload);
     } on TimeoutException {
-      _ensureSession(session);
-      return strategy.createLocal(payload);
-    } on HttpException {
       _ensureSession(session);
       return strategy.createLocal(payload);
     } on http.ClientException {
@@ -702,6 +691,10 @@ class CatalogRepository {
         return strategy.createLocal(payload);
       }
       rethrow;
+    } catch (error) {
+      if (!isConnectionError(error)) rethrow;
+      _ensureSession(session);
+      return strategy.createLocal(payload);
     }
   }
 
@@ -753,15 +746,15 @@ class CatalogRepository {
 
   Future<void> _saveCatalogItem(String table, CatalogItem item) async {
     final ownerId = _ownerId();
-    final db = await database;
-    await db.insert(table, {
+    final db = database;
+    await db.saveRow(table, {
       'id': item.id,
       'owner_id': ownerId,
       'data': jsonEncode(item.toJson()),
       'cached_at': DateTime.now().millisecondsSinceEpoch,
       'is_pending_sync': item.isPendingSync ? 1 : 0,
       'sync_error': item.syncError,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
   }
 
   Future<void> _replaceServerCache(
@@ -769,34 +762,32 @@ class CatalogRepository {
     List<Map<String, dynamic>> items,
   ) async {
     final ownerId = _ownerId();
-    final db = await database;
+    final db = database;
     final now = DateTime.now().millisecondsSinceEpoch;
-    final batch = db.batch();
-    batch.delete(
-      table,
-      where: 'owner_id = ? AND is_pending_sync = 0',
-      whereArgs: [ownerId],
-    );
-    for (final item in items) {
-      batch.insert(table, {
-        'id': item['id'],
-        'owner_id': ownerId,
-        'data': jsonEncode(item),
-        'cached_at': now,
-        'is_pending_sync': 0,
-        'sync_error': null,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await db.transaction(() async {
+      await db.deleteRows(table, 'owner_id = ? AND is_pending_sync = 0', [
+        ownerId,
+      ]);
+      for (final item in items) {
+        await db.saveRow(table, {
+          'id': item['id'],
+          'owner_id': ownerId,
+          'data': jsonEncode(item),
+          'cached_at': now,
+          'is_pending_sync': 0,
+          'sync_error': null,
+        });
+      }
+    });
   }
 
   Future<void> _deleteServerCatalogItem(String table, String id) async {
     final ownerId = _ownerId();
-    final db = await database;
-    await db.delete(
+    final db = database;
+    await db.deleteRows(
       table,
-      where: 'id = ? AND owner_id = ? AND is_pending_sync = 0',
-      whereArgs: [id, ownerId],
+      'id = ? AND owner_id = ? AND is_pending_sync = 0',
+      [id, ownerId],
     );
   }
 
@@ -804,12 +795,10 @@ class CatalogRepository {
     _CatalogStrategy<T> strategy,
   ) async {
     final ownerId = _ownerId();
-    final db = await database;
-    final rows = await db.query(
-      strategy.table,
-      where: 'owner_id = ?',
-      whereArgs: [ownerId],
-      orderBy: 'is_pending_sync DESC, cached_at DESC',
+    final db = database;
+    final rows = await db.readRows(
+      'SELECT * FROM ${strategy.table} WHERE owner_id = ? ORDER BY is_pending_sync DESC, cached_at DESC',
+      [ownerId],
     );
     return rows.map((row) {
       final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
@@ -819,24 +808,20 @@ class CatalogRepository {
 
   Future<List<PendingCatalogCreate>> _getPendingCatalogCreates() async {
     final ownerId = _ownerId();
-    final db = await database;
-    final rows = await db.query(
-      _tablePendingCatalogCreates,
-      where: 'owner_id = ?',
-      whereArgs: [ownerId],
-      orderBy: 'created_at ASC',
+    final db = database;
+    final rows = await db.readRows(
+      'SELECT * FROM $_tablePendingCatalogCreates WHERE owner_id = ? ORDER BY created_at ASC',
+      [ownerId],
     );
     return rows.map(PendingCatalogCreate.fromSqliteRow).toList();
   }
 
   Future<String?> resolveCatalogId(String id) async {
     final ownerId = _ownerId();
-    final db = await database;
-    final mapping = await db.query(
-      _tableCatalogIdMappings,
-      where: 'temp_id = ? AND owner_id = ?',
-      whereArgs: [id, ownerId],
-      limit: 1,
+    final db = database;
+    final mapping = await db.readRows(
+      'SELECT * FROM $_tableCatalogIdMappings WHERE temp_id = ? AND owner_id = ? LIMIT 1',
+      [id, ownerId],
     );
     if (mapping.isNotEmpty) {
       return mapping.first['server_id'] as String;
@@ -847,11 +832,9 @@ class CatalogRepository {
       'catalog_crop_types',
       'catalog_estadios',
     ]) {
-      final rows = await db.query(
-        table,
-        where: 'id = ? AND owner_id = ?',
-        whereArgs: [id, ownerId],
-        limit: 1,
+      final rows = await db.readRows(
+        'SELECT * FROM $table WHERE id = ? AND owner_id = ? LIMIT 1',
+        [id, ownerId],
       );
       if (rows.isNotEmpty) {
         final pending = (rows.first['is_pending_sync'] as int? ?? 0) == 1;
@@ -871,12 +854,10 @@ class CatalogRepository {
 
   Future<void> _ensureNotPending(String table, String id, String label) async {
     final ownerId = _ownerId();
-    final db = await database;
-    final rows = await db.query(
-      table,
-      where: 'id = ? AND owner_id = ? AND is_pending_sync = 1',
-      whereArgs: [id, ownerId],
-      limit: 1,
+    final db = database;
+    final rows = await db.readRows(
+      'SELECT * FROM $table WHERE id = ? AND owner_id = ? AND is_pending_sync = 1 LIMIT 1',
+      [id, ownerId],
     );
     if (rows.isNotEmpty) {
       throw ApiException(
@@ -907,9 +888,9 @@ class CatalogRepository {
       parentId: parentId,
       createdAt: now,
     );
-    final db = await database;
-    await db.transaction((txn) async {
-      await txn.insert(strategy.table, {
+    final db = database;
+    await db.transaction(() async {
+      await db.saveRow(strategy.table, {
         'id': item.id,
         'owner_id': userId,
         'data': jsonEncode(item.toJson()),
@@ -917,7 +898,7 @@ class CatalogRepository {
         'is_pending_sync': 1,
         'sync_error': item.syncError,
       });
-      await txn.insert(
+      await db.saveRow(
         _tablePendingCatalogCreates,
         pending.toSqliteRow()..['owner_id'] = userId,
       );

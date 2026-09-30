@@ -83,12 +83,10 @@ pnpm db:seed:first-admin
 
 Clients use the shared contract:
 
-- Pagination: `?limit=&offset=` on every paginated list (`{ items, total }` envelope).
-  Mobile still accepts legacy `page/pageSize` and collection-key aliases.
+- Pagination: `?limit=&offset=` on paginated lists, using each endpoint's current envelope.
 - Admin routes live under `/api/admin/...`.
 - Web imports request/response types from `@agrolens/contracts`; do not hand-write
-  DTO mirrors. Mobile (Dart) keeps hand-written models with an envelope-tolerant
-  `extractItems` helper.
+  DTO mirrors. Mobile (Dart) models parse the current API envelopes only.
 
 ## Validation
 
