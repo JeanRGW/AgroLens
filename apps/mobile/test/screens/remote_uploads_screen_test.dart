@@ -337,7 +337,7 @@ void main() {
   });
 
   testWidgets(
-    'carousel actions follow the selected image and reset on refresh',
+    'carousel actions follow the selected image without a refresh button',
     (tester) async {
       const channel = MethodChannel('plugins.flutter.io/url_launcher');
       final launchedUrls = <Uri>[];
@@ -374,29 +374,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(launchedUrls.last.path, '/original-2.jpg');
 
-      final refreshed = uploadJson(1, withPreview: false);
-      refreshed['files'] = [fileJson(1)];
-      refreshed['fileCount'] = 1;
-      mockHttp.queueResponse(
-        'GET',
-        '/api/uploads/${refreshed['id']}',
-        200,
-        refreshed,
-      );
-      queueImageUrl('original', 1);
-      await tester.tap(find.byTooltip('Atualizar'));
-      await tester.pumpAndSettle();
+      expect(find.byTooltip('Atualizar'), findsNothing);
       expect(
         tester.widget<PageView>(find.byType(PageView)).controller!.page,
-        0,
+        1,
       );
-      expect(find.byTooltip('Próxima imagem'), findsNothing);
-      await tester.tap(find.text('Ver no mapa'));
-      await tester.pumpAndSettle();
+      expect(find.byTooltip('Excluir upload na nuvem'), findsOneWidget);
       expect(
-        launchedUrls.last.queryParameters['q'] ??
-            launchedUrls.last.queryParameters['query'],
-        '-22.123456,-47.654321',
+        mockHttp.requests.where(
+          (r) => r.url.path == '/api/uploads/upload-1-abcdef1234567890',
+        ),
+        hasLength(1),
       );
       expect(tester.takeException(), isNull);
     },

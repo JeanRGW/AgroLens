@@ -751,22 +751,6 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                 tooltip: 'Excluir upload na nuvem',
               ),
             ),
-          if (_refreshing)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          CustomAppBarAction(
-            child: IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: _refreshing ? null : _refresh,
-              tooltip: 'Atualizar',
-            ),
-          ),
         ],
       ),
       body: _refreshing && _error == null

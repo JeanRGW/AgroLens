@@ -602,7 +602,6 @@ class CropTypeFormScreen extends StatefulWidget {
 
 class _CropTypeFormScreenState extends State<CropTypeFormScreen>
     with CatalogFormSaveMixin<CropTypeFormScreen> {
-  String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
 
@@ -629,12 +628,6 @@ class _CropTypeFormScreenState extends State<CropTypeFormScreen>
           )
         : widget.catalogRepository.updateCropType(
             cropTypeId: widget.initialCropType!.id,
-            userId:
-                _newOwnerId == null ||
-                    _newOwnerId!.isEmpty ||
-                    _newOwnerId == widget.initialCropType!.userId
-                ? null
-                : _newOwnerId,
             name: _nameController.text.trim(),
           ),
   );
@@ -658,15 +651,6 @@ class _CropTypeFormScreenState extends State<CropTypeFormScreen>
               validator: (value) =>
                   validateRequiredText(value, 'Nome da cultura'),
             ),
-            if (isEditing && widget.catalogRepository.currentUserIsAdmin)
-              CustomTextField(
-                hint: widget.initialCropType!.userId,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? null
-                    : validateCatalogUuid(value),
-                label: 'ID do novo proprietário',
-                onChanged: (value) => _newOwnerId = value.trim(),
-              ),
             if (saveError != null) ...[
               const SizedBox(height: 0),
               Text(
@@ -708,7 +692,6 @@ class _EstadioFormScreenState extends State<EstadioFormScreen>
     with CatalogFormSaveMixin<EstadioFormScreen> {
   late Future<List<CropType>> _parents;
   late String _parentId;
-  String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _cropTypeController;
@@ -743,12 +726,6 @@ class _EstadioFormScreenState extends State<EstadioFormScreen>
           )
         : widget.catalogRepository.updateEstadio(
             estadioId: widget.initialEstadio!.id,
-            userId:
-                _newOwnerId == null ||
-                    _newOwnerId!.isEmpty ||
-                    _newOwnerId == widget.initialEstadio!.userId
-                ? null
-                : _newOwnerId,
             name: _nameController.text.trim(),
             cropTypeId: _parentId == widget.initialEstadio!.cropTypeId
                 ? null
@@ -827,15 +804,6 @@ class _EstadioFormScreenState extends State<EstadioFormScreen>
                 label: 'Cultura',
                 controller: _cropTypeController,
                 readOnly: !isEditing,
-              ),
-            if (isEditing && widget.catalogRepository.currentUserIsAdmin)
-              CustomTextField(
-                hint: widget.initialEstadio!.userId,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? null
-                    : validateCatalogUuid(value),
-                label: 'ID do novo proprietário',
-                onChanged: (value) => _newOwnerId = value.trim(),
               ),
             if (saveError != null) ...[
               const SizedBox(height: 0),

@@ -55,6 +55,47 @@ void main() {
   });
 
   group('ApiClient - auth', () {
+    test(
+      'password changes send authenticated passwords without trimming',
+      () async {
+        mockHttp.queueResponse('POST', '/api/auth/change-password', 200, {
+          'message': 'Password changed',
+        });
+        await apiClient.changePassword(
+          accessToken: 'access-123',
+          currentPassword: ' current password ',
+          newPassword: ' new password ',
+        );
+        final request = mockHttp.requests.single;
+        expect(request.headers['Authorization'], 'Bearer access-123');
+        expect(await extractJsonBody(request), {
+          'currentPassword': ' current password ',
+          'newPassword': ' new password ',
+        });
+      },
+    );
+
+    test('an incorrect current password does not refresh or retry', () async {
+      var refreshed = false;
+      apiClient.setRefreshHandler(() async {
+        refreshed = true;
+        return 'replacement';
+      });
+      mockHttp.queueResponse('POST', '/api/auth/change-password', 401, {
+        'message': 'Invalid current password',
+      });
+      await expectLater(
+        apiClient.changePassword(
+          accessToken: 'access-123',
+          currentPassword: 'wrong-password',
+          newPassword: 'new-password',
+        ),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401)),
+      );
+      expect(refreshed, isFalse);
+      expect(mockHttp.requests, hasLength(1));
+    });
+
     test('times out stalled requests', () async {
       mockHttp.beforeResponse = (_) => Completer<void>().future;
       apiClient = ApiClient(

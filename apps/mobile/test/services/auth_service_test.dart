@@ -94,6 +94,82 @@ void main() {
     await authService.login(email: '$id@test', password: 'password');
   }
 
+  group('password changes', () {
+    test('successful changes clear tokens and require a new login', () async {
+      await loginAs('user-1');
+      mockHttp.queueResponse('POST', '/api/auth/change-password', 200, {
+        'message': 'Password changed',
+      });
+      mockHttp.queueRawResponse('POST', '/api/auth/logout', 204, '');
+      await authService.changePassword(
+        currentPassword: 'old-password',
+        newPassword: 'new-password',
+      );
+      expect(authService.currentUser, isNull);
+      expect(await tokenStorage.getAccessToken(), isNull);
+      expect(await tokenStorage.getRefreshToken(), isNull);
+      expect(mockHttp.requests.last.url.path, '/api/auth/logout');
+    });
+
+    test('failed changes keep the current session', () async {
+      await loginAs('user-1');
+      mockHttp.queueResponse('POST', '/api/auth/change-password', 401, {
+        'message': 'Invalid current password',
+      });
+      await expectLater(
+        authService.changePassword(
+          currentPassword: 'wrong-password',
+          newPassword: 'new-password',
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(authService.currentUser?.id, 'user-1');
+      expect(await tokenStorage.getRefreshToken(), 'refresh-user-1');
+      expect(mockHttp.requests, hasLength(2));
+    });
+
+    test('unauthenticated users cannot change passwords', () async {
+      await expectLater(
+        authService.changePassword(
+          currentPassword: 'old-password',
+          newPassword: 'new-password',
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(mockHttp.requests, isEmpty);
+    });
+
+    test('a delayed change cannot sign out a replacement session', () async {
+      await loginAs('user-1');
+      final started = Completer<void>();
+      final release = Completer<void>();
+      mockHttp.beforeResponse = (request) async {
+        if (request.url.path == '/api/auth/change-password') {
+          started.complete();
+          await release.future;
+        }
+      };
+      mockHttp.queueResponse('POST', '/api/auth/change-password', 200, {
+        'message': 'Password changed',
+      });
+      final change = authService.changePassword(
+        currentPassword: 'old-password',
+        newPassword: 'new-password',
+      );
+      final rejected = expectLater(change, throwsA(isA<ApiException>()));
+      await started.future;
+      await loginAs('user-2');
+      release.complete();
+      await rejected;
+      expect(authService.currentUser?.id, 'user-2');
+      expect(await tokenStorage.getRefreshToken(), 'refresh-user-2');
+      expect(
+        mockHttp.requests.where((r) => r.url.path == '/api/auth/logout'),
+        isEmpty,
+      );
+    });
+  });
+
   group('cross-tab queue ownership', () {
     Future<void> loginA() async {
       mockHttp.queueResponse('POST', '/api/auth/login', 200, {

@@ -200,10 +200,10 @@ class CompactCatalogButton extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        minimumSize: Size.zero,
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
+        minimumSize: const Size(0, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        tapTargetSize: MaterialTapTargetSize.padded,
+        visualDensity: VisualDensity.standard,
       ),
       icon: Icon(icon, size: 16),
       label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -230,18 +230,16 @@ class CatalogActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        for (var i = 0; i < actions.length; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
-          Expanded(
-            child: CompactCatalogButton(
-              onPressed: actions[i].onPressed,
-              icon: actions[i].icon,
-              label: actions[i].label,
-            ),
+        for (final action in actions)
+          CompactCatalogButton(
+            onPressed: action.onPressed,
+            icon: action.icon,
+            label: action.label,
           ),
-        ],
       ],
     );
   }

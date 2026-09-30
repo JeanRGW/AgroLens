@@ -102,6 +102,19 @@ class ApiClient {
     }
   }
 
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) => _post<void>(
+    '/auth/change-password',
+    {'currentPassword': currentPassword, 'newPassword': newPassword},
+    (_) {},
+    accessToken: accessToken,
+    // A 401 can mean an incorrect current password, not an expired token.
+    retry: false,
+  );
+
   Future<void> requestPasswordReset({required String email}) async {
     final uri = _env.uri('/auth/forgot-password');
     final response = await _httpClient

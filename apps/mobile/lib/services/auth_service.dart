@@ -248,6 +248,24 @@ class AuthService {
     return me.user;
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final generation = _sessionGeneration;
+    final token = await getValidAccessToken();
+    if (token == null) throw const ApiException(401, 'Not authenticated');
+    _ensureSession(generation);
+    await _apiClient.changePassword(
+      accessToken: token,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    _ensureSession(generation);
+    // Password changes revoke refresh sessions, so require a fresh login.
+    await logout();
+  }
+
   /// Request a password reset email for [email].
   /// Unauthenticated — always shows generic success to avoid enumeration.
   Future<void> requestPasswordReset({required String email}) async {

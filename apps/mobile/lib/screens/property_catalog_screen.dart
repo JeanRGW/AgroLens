@@ -255,35 +255,27 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: CompactCatalogButton(
-                    onPressed: () => _openDetails(property),
-                    icon: Icons.grid_view,
-                    label: 'Talhões',
-                  ),
+            child: CatalogActionRow(
+              actions: [
+                CatalogAction(
+                  onPressed: () => _openDetails(property),
+                  icon: Icons.grid_view,
+                  label: 'Talhões',
                 ),
                 if (widget.catalogRepository.canMutate(property)) ...[
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: CompactCatalogButton(
-                      onPressed: property.isPendingSync
-                          ? _showPendingSyncBlockedMessage
-                          : () => _openEditForm(property),
-                      icon: Icons.edit_outlined,
-                      label: 'Editar',
-                    ),
+                  CatalogAction(
+                    onPressed: property.isPendingSync
+                        ? _showPendingSyncBlockedMessage
+                        : () => _openEditForm(property),
+                    icon: Icons.edit_outlined,
+                    label: 'Editar',
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: CompactCatalogButton(
-                      onPressed: property.isPendingSync
-                          ? _showPendingSyncBlockedMessage
-                          : () => _deleteProperty(property),
-                      icon: Icons.delete_outline,
-                      label: 'Excluir',
-                    ),
+                  CatalogAction(
+                    onPressed: property.isPendingSync
+                        ? _showPendingSyncBlockedMessage
+                        : () => _deleteProperty(property),
+                    icon: Icons.delete_outline,
+                    label: 'Excluir',
                   ),
                 ],
               ],
@@ -609,26 +601,21 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   ),
                 if (widget.catalogRepository.canMutate(talhao)) ...[
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CompactCatalogButton(
-                          onPressed: talhao.isPendingSync
-                              ? _showPendingSyncBlockedMessage
-                              : () => _editTalhao(talhao),
-                          icon: Icons.edit_outlined,
-                          label: 'Editar',
-                        ),
+                  CatalogActionRow(
+                    actions: [
+                      CatalogAction(
+                        onPressed: talhao.isPendingSync
+                            ? _showPendingSyncBlockedMessage
+                            : () => _editTalhao(talhao),
+                        icon: Icons.edit_outlined,
+                        label: 'Editar',
                       ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: CompactCatalogButton(
-                          onPressed: talhao.isPendingSync
-                              ? _showPendingSyncBlockedMessage
-                              : () => _deleteTalhao(talhao),
-                          icon: Icons.delete_outline,
-                          label: 'Excluir',
-                        ),
+                      CatalogAction(
+                        onPressed: talhao.isPendingSync
+                            ? _showPendingSyncBlockedMessage
+                            : () => _deleteTalhao(talhao),
+                        icon: Icons.delete_outline,
+                        label: 'Excluir',
                       ),
                     ],
                   ),
@@ -658,7 +645,6 @@ class PropertyFormScreen extends StatefulWidget {
 
 class _PropertyFormScreenState extends State<PropertyFormScreen>
     with CatalogFormSaveMixin<PropertyFormScreen> {
-  String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _ownerController;
@@ -711,12 +697,6 @@ class _PropertyFormScreenState extends State<PropertyFormScreen>
           )
         : widget.catalogRepository.updateProperty(
             propertyId: widget.initialProperty!.id,
-            userId:
-                _newOwnerId == null ||
-                    _newOwnerId!.isEmpty ||
-                    _newOwnerId == widget.initialProperty!.userId
-                ? null
-                : _newOwnerId,
             name: _nameController.text.trim(),
             owner: _ownerController.text.trim(),
             address: _addressController.text.trim(),
@@ -772,15 +752,6 @@ class _PropertyFormScreenState extends State<PropertyFormScreen>
               validator: (value) =>
                   validateRequiredText(value, 'Nome da propriedade'),
             ),
-            if (isEditing && widget.catalogRepository.currentUserIsAdmin)
-              CustomTextField(
-                hint: widget.initialProperty!.userId,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? null
-                    : validateCatalogUuid(value),
-                label: 'ID do novo proprietário do registro',
-                onChanged: (value) => _newOwnerId = value.trim(),
-              ),
             CustomTextField(
               controller: _ownerController,
               label: 'Proprietário',
@@ -835,7 +806,7 @@ class _PropertyFormScreenState extends State<PropertyFormScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
@@ -843,11 +814,6 @@ class _PropertyFormScreenState extends State<PropertyFormScreen>
                 icon: const Icon(Icons.map_outlined),
                 label: const Text('Selecionar no mapa'),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Toque no mapa para ajustar as coordenadas.',
-              style: Theme.of(context).textTheme.bodySmall,
             ),
             if (saveError != null) ...[
               const SizedBox(height: 16),
@@ -880,7 +846,6 @@ class _TalhaoFormScreenState extends State<TalhaoFormScreen>
     with CatalogFormSaveMixin<TalhaoFormScreen> {
   late Future<List<Property>> _parents;
   late String _parentId;
-  String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _propertyController;
@@ -915,12 +880,6 @@ class _TalhaoFormScreenState extends State<TalhaoFormScreen>
           )
         : widget.catalogRepository.updateTalhao(
             talhaoId: widget.initialTalhao!.id,
-            userId:
-                _newOwnerId == null ||
-                    _newOwnerId!.isEmpty ||
-                    _newOwnerId == widget.initialTalhao!.userId
-                ? null
-                : _newOwnerId,
             name: _nameController.text.trim(),
             propertyId: _parentId == widget.initialTalhao!.propertyId
                 ? null
@@ -1012,15 +971,6 @@ class _TalhaoFormScreenState extends State<TalhaoFormScreen>
                 prefixIcon: const Icon(Icons.home_work_outlined),
                 readOnly: !isEditing,
                 controller: _propertyController,
-              ),
-            if (isEditing && widget.catalogRepository.currentUserIsAdmin)
-              CustomTextField(
-                hint: widget.initialTalhao!.userId,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? null
-                    : validateCatalogUuid(value),
-                label: 'ID do novo proprietário',
-                onChanged: (value) => _newOwnerId = value.trim(),
               ),
             if (saveError != null) ...[
               const SizedBox(height: 16),
