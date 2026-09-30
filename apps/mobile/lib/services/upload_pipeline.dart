@@ -345,7 +345,6 @@ class UploadPipeline {
     final waiting = upload.copyWith(
       status: PendingUploadStatus.failed,
       errorMessage: message,
-      clearErrorMessage: false,
     );
     await databaseHelper.updateUpload(waiting);
   }

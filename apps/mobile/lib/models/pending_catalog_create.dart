@@ -57,23 +57,6 @@ class PendingCatalogCreate {
     );
   }
 
-  PendingCatalogCreate copyWith({
-    String? parentId,
-    String? errorMessage,
-    String? payloadJson,
-  }) {
-    return PendingCatalogCreate(
-      tempId: tempId,
-      ownerId: ownerId,
-      entityType: entityType,
-      payloadJson: payloadJson ?? this.payloadJson,
-      normalizedName: normalizedName,
-      parentId: parentId ?? this.parentId,
-      createdAt: createdAt,
-      errorMessage: errorMessage ?? this.errorMessage,
-    );
-  }
-
   Map<String, dynamic> get payload =>
       jsonDecode(payloadJson) as Map<String, dynamic>;
 }

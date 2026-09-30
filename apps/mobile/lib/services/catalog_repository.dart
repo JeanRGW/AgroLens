@@ -190,6 +190,11 @@ class CatalogRepository {
   String? get currentUserId => authService.currentUser?.id;
   bool get currentUserIsAdmin => authService.currentUser?.role == 'admin';
 
+  /// Whether the signed-in user may edit/delete [item]: admins may mutate any
+  /// catalog entry, other users only their own.
+  bool canMutate(CatalogItem item) =>
+      currentUserIsAdmin || item.userId == currentUserId;
+
   ({String ownerId, int generation}) _session() =>
       (ownerId: _ownerId(), generation: authService.sessionGeneration);
 

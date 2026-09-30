@@ -60,10 +60,6 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
     }
   }
 
-  bool _canMutate(CatalogItem item) =>
-      widget.catalogRepository.currentUserIsAdmin ||
-      item.userId == widget.catalogRepository.currentUserId;
-
   List<Property> get _filteredProperties {
     final query = _searchController.text;
     return _properties.where((property) {
@@ -115,26 +111,13 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
 
   Future<void> _deleteProperty(Property property) async {
     final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Excluir propriedade?'),
-        content: Text(
+    final confirmed = await confirmDestructiveAction(
+      context,
+      title: 'Excluir propriedade?',
+      message:
           'Excluir "${property.name}" também remove os vínculos de talhões e uploads associados.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       await widget.catalogRepository.deleteProperty(propertyId: property.id);
@@ -199,162 +182,117 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
-            TextField(
+            CatalogSearchField(
               controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar por nome, proprietário ou endereço',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      ),
-              ),
-              onChanged: (_) => setState(() {}),
+              hintText: 'Buscar por nome, proprietário ou endereço',
+              onChanged: () => setState(() {}),
             ),
             const SizedBox(height: 16),
             if (!_loading && _error == null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.home_work_outlined, color: Colors.white),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _searchController.text.isNotEmpty
-                            ? '${filtered.length} ${filtered.length == 1 ? 'resultado' : 'resultados'} de ${_properties.length} ${_properties.length == 1 ? 'propriedade' : 'propriedades'}.'
-                            : '${filtered.length} ${filtered.length == 1 ? 'propriedade cadastrada' : 'propriedades cadastradas'}.',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
+              CatalogCountBanner(
+                icon: Icons.home_work_outlined,
+                singleLine: true,
+                text: _searchController.text.isNotEmpty
+                    ? '${filtered.length} ${filtered.length == 1 ? 'resultado' : 'resultados'} de ${_properties.length} ${_properties.length == 1 ? 'propriedade' : 'propriedades'}.'
+                    : '${filtered.length} ${filtered.length == 1 ? 'propriedade cadastrada' : 'propriedades cadastradas'}.',
               ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(top: 80),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null)
-              CatalogStateMessage(
-                icon: Icons.error_outline,
-                title: 'Erro ao carregar propriedades',
-                message: _error!,
-                actionLabel: 'Tentar novamente',
-                onAction: () => _loadProperties(forceRefresh: true),
-              )
-            else if (filtered.isEmpty)
-              CatalogStateMessage(
-                icon: Icons.inventory_2_outlined,
-                title: _properties.isEmpty
-                    ? 'Nenhuma propriedade cadastrada'
-                    : 'Nenhum resultado para a busca',
-                message: _properties.isEmpty
-                    ? 'Cadastre a primeira propriedade para começar.'
-                    : 'Ajuste o filtro de pesquisa.',
-                actionLabel: _properties.isEmpty ? 'Nova propriedade' : null,
-                onAction: _properties.isEmpty ? _openCreateForm : null,
-              )
-            else
-              ...filtered.map(
-                (property) => Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const CatalogIconBox(
-                              icon: Icons.home_work_outlined,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                property.name,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        CatalogSummaryRow(
-                          icon: Icons.person_outline,
-                          value: property.owner,
-                        ),
-                        CatalogSummaryRow(
-                          icon: Icons.location_on_outlined,
-                          value: property.address,
-                        ),
-                        CatalogSummaryRow(
-                          icon: Icons.gps_fixed,
-                          value:
-                              '${property.latitude.toStringAsFixed(6)}, ${property.longitude.toStringAsFixed(6)}',
-                        ),
-                        if (property.isPendingSync)
-                          const Text('Pendente de sincronização'),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: CompactCatalogButton(
-                                  onPressed: () => _openDetails(property),
-                                  icon: Icons.grid_view,
-                                  label: 'Talhões',
-                                ),
-                              ),
-                              if (_canMutate(property)) ...[
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: CompactCatalogButton(
-                                    onPressed: property.isPendingSync
-                                        ? _showPendingSyncBlockedMessage
-                                        : () => _openEditForm(property),
-                                    icon: Icons.edit_outlined,
-                                    label: 'Editar',
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: CompactCatalogButton(
-                                    onPressed: property.isPendingSync
-                                        ? _showPendingSyncBlockedMessage
-                                        : () => _deleteProperty(property),
-                                    icon: Icons.delete_outline,
-                                    label: 'Excluir',
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+            ...catalogListChildren(
+              loading: _loading,
+              error: _error,
+              errorTitle: 'Erro ao carregar propriedades',
+              onRetry: () => _loadProperties(forceRefresh: true),
+              listIsEmpty: filtered.isEmpty,
+              emptyIcon: Icons.inventory_2_outlined,
+              emptyTitle: _properties.isEmpty
+                  ? 'Nenhuma propriedade cadastrada'
+                  : 'Nenhum resultado para a busca',
+              emptyMessage: _properties.isEmpty
+                  ? 'Cadastre a primeira propriedade para começar.'
+                  : 'Ajuste o filtro de pesquisa.',
+              emptyActionLabel: _properties.isEmpty ? 'Nova propriedade' : null,
+              emptyAction: _properties.isEmpty ? _openCreateForm : null,
+              items: () =>
+                  filtered.map((property) => _propertyCard(property)).toList(),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _propertyCard(Property property) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const CatalogIconBox(icon: Icons.home_work_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  property.name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          CatalogSummaryRow(icon: Icons.person_outline, value: property.owner),
+          CatalogSummaryRow(
+            icon: Icons.location_on_outlined,
+            value: property.address,
+          ),
+          CatalogSummaryRow(
+            icon: Icons.gps_fixed,
+            value:
+                '${property.latitude.toStringAsFixed(6)}, ${property.longitude.toStringAsFixed(6)}',
+          ),
+          if (property.isPendingSync) const Text('Pendente de sincronização'),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: CompactCatalogButton(
+                    onPressed: () => _openDetails(property),
+                    icon: Icons.grid_view,
+                    label: 'Talhões',
+                  ),
+                ),
+                if (widget.catalogRepository.canMutate(property)) ...[
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: CompactCatalogButton(
+                      onPressed: property.isPendingSync
+                          ? _showPendingSyncBlockedMessage
+                          : () => _openEditForm(property),
+                      icon: Icons.edit_outlined,
+                      label: 'Editar',
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: CompactCatalogButton(
+                      onPressed: property.isPendingSync
+                          ? _showPendingSyncBlockedMessage
+                          : () => _deleteProperty(property),
+                      icon: Icons.delete_outline,
+                      label: 'Excluir',
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class PropertyDetailScreen extends StatefulWidget {
@@ -418,10 +356,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  bool _canMutate(CatalogItem item) =>
-      widget.catalogRepository.currentUserIsAdmin ||
-      item.userId == widget.catalogRepository.currentUserId;
 
   List<Talhao> get _filteredTalhoes {
     final query = _searchController.text;
@@ -497,26 +431,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   Future<void> _deleteTalhao(Talhao talhao) async {
     final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Excluir talhão?'),
-        content: Text(
+    final confirmed = await confirmDestructiveAction(
+      context,
+      title: 'Excluir talhão?',
+      message:
           'Excluir "${talhao.name}" também remove os vínculos de uploads associados.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       await widget.catalogRepository.deleteTalhao(talhaoId: talhao.id);
@@ -542,7 +463,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         title: _property.name,
         subtitle: 'Talhões da propriedade',
         actions: [
-          if (_canMutate(_property))
+          if (widget.catalogRepository.canMutate(_property))
             CustomAppBarAction(
               child: IconButton(
                 onPressed: _property.isPendingSync ? null : _editProperty,
@@ -552,7 +473,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
             ),
         ],
       ),
-      floatingActionButton: _canMutate(_property)
+      floatingActionButton: widget.catalogRepository.canMutate(_property)
           ? FloatingActionButton(
               onPressed: _createTalhao,
               tooltip: 'Novo talhão',
@@ -598,170 +519,127 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
+            CatalogSearchField(
               controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar talhões',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      ),
-              ),
-              onChanged: (_) => setState(() {}),
+              hintText: 'Buscar talhões',
+              onChanged: () => setState(() {}),
             ),
             const SizedBox(height: 16),
             if (!_loading && _error == null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.grid_view, color: Colors.white),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _searchController.text.isNotEmpty
-                            ? '${talhoes.length} ${talhoes.length == 1 ? 'resultado' : 'resultados'} de ${_talhoes.length} ${talhoes.length == 1 ? 'talhão' : 'talhões'}'
-                            : '${talhoes.length} ${talhoes.length == 1 ? 'talhão cadastrado' : 'talhões cadastrados'}',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
+              CatalogCountBanner(
+                icon: Icons.grid_view,
+                iconSpacing: 8,
+                text: _searchController.text.isNotEmpty
+                    ? '${talhoes.length} ${talhoes.length == 1 ? 'resultado' : 'resultados'} de ${_talhoes.length} ${talhoes.length == 1 ? 'talhão' : 'talhões'}'
+                    : '${talhoes.length} ${talhoes.length == 1 ? 'talhão cadastrado' : 'talhões cadastrados'}',
               ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(top: 80),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null)
-              CatalogStateMessage(
-                icon: Icons.error_outline,
-                title: 'Erro ao carregar talhões',
-                message: _error!,
-                actionLabel: 'Tentar novamente',
-                onAction: () => _loadTalhoes(forceRefresh: true),
-              )
-            else if (talhoes.isEmpty)
-              CatalogStateMessage(
-                icon: Icons.view_column_outlined,
-                title: _talhoes.isEmpty
-                    ? 'Nenhum talhão cadastrado'
-                    : 'Nenhum resultado para a busca',
-                message: _talhoes.isEmpty
-                    ? 'Adicione o primeiro talhão desta propriedade.'
-                    : 'Ajuste o filtro de pesquisa.',
-                actionLabel: _talhoes.isEmpty ? 'Novo talhão' : null,
-                onAction: _talhoes.isEmpty ? _createTalhao : null,
-              )
-            else
-              ...talhoes.map(
-                (talhao) => Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const CatalogIconBox(icon: Icons.crop_square_outlined),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                talhao.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.home_work_outlined,
-                                    size: 18,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      _property.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (talhao.isPendingSync)
-                                Text(
-                                  'Pendente de sincronização',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                  ),
-                                ),
-                              if (_canMutate(talhao)) ...[
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: CompactCatalogButton(
-                                        onPressed: talhao.isPendingSync
-                                            ? _showPendingSyncBlockedMessage
-                                            : () => _editTalhao(talhao),
-                                        icon: Icons.edit_outlined,
-                                        label: 'Editar',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: CompactCatalogButton(
-                                        onPressed: talhao.isPendingSync
-                                            ? _showPendingSyncBlockedMessage
-                                            : () => _deleteTalhao(talhao),
-                                        icon: Icons.delete_outline,
-                                        label: 'Excluir',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+            ...catalogListChildren(
+              loading: _loading,
+              error: _error,
+              errorTitle: 'Erro ao carregar talhões',
+              onRetry: () => _loadTalhoes(forceRefresh: true),
+              listIsEmpty: talhoes.isEmpty,
+              emptyIcon: Icons.view_column_outlined,
+              emptyTitle: _talhoes.isEmpty
+                  ? 'Nenhum talhão cadastrado'
+                  : 'Nenhum resultado para a busca',
+              emptyMessage: _talhoes.isEmpty
+                  ? 'Adicione o primeiro talhão desta propriedade.'
+                  : 'Ajuste o filtro de pesquisa.',
+              emptyActionLabel: _talhoes.isEmpty ? 'Novo talhão' : null,
+              emptyAction: _talhoes.isEmpty ? _createTalhao : null,
+              items: () =>
+                  talhoes.map((talhao) => _talhaoCard(talhao)).toList(),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _talhaoCard(Talhao talhao) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const CatalogIconBox(icon: Icons.crop_square_outlined),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  talhao.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.home_work_outlined,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _property.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (talhao.isPendingSync)
+                  Text(
+                    'Pendente de sincronização',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                if (widget.catalogRepository.canMutate(talhao)) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: CompactCatalogButton(
+                          onPressed: talhao.isPendingSync
+                              ? _showPendingSyncBlockedMessage
+                              : () => _editTalhao(talhao),
+                          icon: Icons.edit_outlined,
+                          label: 'Editar',
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: CompactCatalogButton(
+                          onPressed: talhao.isPendingSync
+                              ? _showPendingSyncBlockedMessage
+                              : () => _deleteTalhao(talhao),
+                          icon: Icons.delete_outline,
+                          label: 'Excluir',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class PropertyFormScreen extends StatefulWidget {
@@ -778,7 +656,8 @@ class PropertyFormScreen extends StatefulWidget {
   State<PropertyFormScreen> createState() => _PropertyFormScreenState();
 }
 
-class _PropertyFormScreenState extends State<PropertyFormScreen> {
+class _PropertyFormScreenState extends State<PropertyFormScreen>
+    with CatalogFormSaveMixin<PropertyFormScreen> {
   String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
@@ -786,8 +665,6 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
   late final TextEditingController _addressController;
   late final TextEditingController _latitudeController;
   late final TextEditingController _longitudeController;
-  bool _saving = false;
-  String? _error;
 
   LatLng? _currentCoordinateInput() {
     return parseCoordinatePair(
@@ -821,57 +698,32 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
-    try {
-      final result = widget.initialProperty == null
-          ? await widget.catalogRepository.createProperty(
-              name: _nameController.text.trim(),
-              owner: _ownerController.text.trim(),
-              address: _addressController.text.trim(),
-              latitude: double.parse(_latitudeController.text.trim()),
-              longitude: double.parse(_longitudeController.text.trim()),
-            )
-          : await widget.catalogRepository.updateProperty(
-              propertyId: widget.initialProperty!.id,
-              userId:
-                  _newOwnerId == null ||
-                      _newOwnerId!.isEmpty ||
-                      _newOwnerId == widget.initialProperty!.userId
-                  ? null
-                  : _newOwnerId,
-              name: _nameController.text.trim(),
-              owner: _ownerController.text.trim(),
-              address: _addressController.text.trim(),
-              latitude: double.parse(_latitudeController.text.trim()),
-              longitude: double.parse(_longitudeController.text.trim()),
-            );
-
-      if (!mounted) return;
-      Navigator.of(context).pop(result);
-    } catch (e) {
-      if (!mounted) return;
-      setState(
-        () =>
-            _error = 'Não foi possível salvar a propriedade. Tente novamente.',
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Não foi possível salvar a propriedade. Tente novamente.',
+  Future<void> _save() => saveCatalogForm(
+    _formKey,
+    failureMessage: 'Não foi possível salvar a propriedade. Tente novamente.',
+    action: () => widget.initialProperty == null
+        ? widget.catalogRepository.createProperty(
+            name: _nameController.text.trim(),
+            owner: _ownerController.text.trim(),
+            address: _addressController.text.trim(),
+            latitude: double.parse(_latitudeController.text.trim()),
+            longitude: double.parse(_longitudeController.text.trim()),
+          )
+        : widget.catalogRepository.updateProperty(
+            propertyId: widget.initialProperty!.id,
+            userId:
+                _newOwnerId == null ||
+                    _newOwnerId!.isEmpty ||
+                    _newOwnerId == widget.initialProperty!.userId
+                ? null
+                : _newOwnerId,
+            name: _nameController.text.trim(),
+            owner: _ownerController.text.trim(),
+            address: _addressController.text.trim(),
+            latitude: double.parse(_latitudeController.text.trim()),
+            longitude: double.parse(_longitudeController.text.trim()),
           ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
+  );
 
   Future<void> _openLocationPicker() async {
     final current = _currentCoordinateInput();
@@ -903,7 +755,7 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
           child: CustomButton(
             label: 'Salvar propriedade',
             onPressed: _save,
-            isLoading: _saving,
+            isLoading: saving,
             icon: Icons.save_outlined,
           ),
         ),
@@ -997,9 +849,9 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
               'Toque no mapa para ajustar as coordenadas.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            if (_error != null) ...[
+            if (saveError != null) ...[
               const SizedBox(height: 16),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              Text(saveError!, style: const TextStyle(color: Colors.red)),
             ],
           ],
         ),
@@ -1024,15 +876,14 @@ class TalhaoFormScreen extends StatefulWidget {
   State<TalhaoFormScreen> createState() => _TalhaoFormScreenState();
 }
 
-class _TalhaoFormScreenState extends State<TalhaoFormScreen> {
+class _TalhaoFormScreenState extends State<TalhaoFormScreen>
+    with CatalogFormSaveMixin<TalhaoFormScreen> {
   late Future<List<Property>> _parents;
   late String _parentId;
   String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _propertyController;
-  bool _saving = false;
-  String? _error;
 
   @override
   void initState() {
@@ -1054,50 +905,28 @@ class _TalhaoFormScreenState extends State<TalhaoFormScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
-    try {
-      final result = widget.initialTalhao == null
-          ? await widget.catalogRepository.createTalhao(
-              name: _nameController.text.trim(),
-              propertyId: widget.property.id,
-            )
-          : await widget.catalogRepository.updateTalhao(
-              talhaoId: widget.initialTalhao!.id,
-              userId:
-                  _newOwnerId == null ||
-                      _newOwnerId!.isEmpty ||
-                      _newOwnerId == widget.initialTalhao!.userId
-                  ? null
-                  : _newOwnerId,
-              name: _nameController.text.trim(),
-              propertyId: _parentId == widget.initialTalhao!.propertyId
-                  ? null
-                  : _parentId,
-            );
-
-      if (!mounted) return;
-      Navigator.of(context).pop(result);
-    } catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _error = 'Não foi possível salvar o talhão. Tente novamente.',
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Não foi possível salvar o talhão. Tente novamente.'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
+  Future<void> _save() => saveCatalogForm(
+    _formKey,
+    failureMessage: 'Não foi possível salvar o talhão. Tente novamente.',
+    action: () => widget.initialTalhao == null
+        ? widget.catalogRepository.createTalhao(
+            name: _nameController.text.trim(),
+            propertyId: widget.property.id,
+          )
+        : widget.catalogRepository.updateTalhao(
+            talhaoId: widget.initialTalhao!.id,
+            userId:
+                _newOwnerId == null ||
+                    _newOwnerId!.isEmpty ||
+                    _newOwnerId == widget.initialTalhao!.userId
+                ? null
+                : _newOwnerId,
+            name: _nameController.text.trim(),
+            propertyId: _parentId == widget.initialTalhao!.propertyId
+                ? null
+                : _parentId,
+          ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1113,7 +942,7 @@ class _TalhaoFormScreenState extends State<TalhaoFormScreen> {
           child: CustomButton(
             label: 'Salvar talhão',
             onPressed: _save,
-            isLoading: _saving,
+            isLoading: saving,
             icon: Icons.save_outlined,
           ),
         ),
@@ -1167,7 +996,7 @@ class _TalhaoFormScreenState extends State<TalhaoFormScreen> {
                         ),
                       ),
                     ],
-                    onChanged: _saving
+                    onChanged: saving
                         ? null
                         : (value) {
                             if (value != null) {
@@ -1193,9 +1022,9 @@ class _TalhaoFormScreenState extends State<TalhaoFormScreen> {
                 label: 'ID do novo proprietário',
                 onChanged: (value) => _newOwnerId = value.trim(),
               ),
-            if (_error != null) ...[
+            if (saveError != null) ...[
               const SizedBox(height: 16),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              Text(saveError!, style: const TextStyle(color: Colors.red)),
             ],
           ],
         ),

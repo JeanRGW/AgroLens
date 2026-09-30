@@ -91,24 +91,6 @@ class CustomAppBarAction extends StatelessWidget {
 
   const CustomAppBarAction({super.key, required this.child});
 
-  factory CustomAppBarAction.icon({
-    Key? key,
-    required IconData icon,
-    required VoidCallback? onPressed,
-    required String tooltip,
-  }) {
-    return CustomAppBarAction(
-      key: key,
-      child: IconButton(
-        icon: Icon(icon, color: Colors.white),
-        onPressed: onPressed,
-        tooltip: tooltip,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-      ),
-    );
-  }
-
   static Widget backButton(
     BuildContext context, {
     VoidCallback? onPressed,

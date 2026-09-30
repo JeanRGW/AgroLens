@@ -41,11 +41,6 @@ class SyncService {
   /// Stream of connection status (true = online).
   Stream<bool> get connectionStatus => _connectivityMonitor.connectionStatus;
 
-  /// Stream of sync activity (true = syncing).
-  final StreamController<bool> _syncActivityController =
-      StreamController<bool>.broadcast();
-  Stream<bool> get syncActivity => _syncActivityController.stream;
-
   SyncService({
     required ApiClient apiClient,
     required AuthService authService,
@@ -109,9 +104,6 @@ class SyncService {
     stop();
     _disposed = true;
     _connectivityMonitor.dispose();
-    if (!_syncActivityController.isClosed) {
-      _syncActivityController.close();
-    }
   }
 
   // ── Individual sync steps ─────────────────────────────────────────
@@ -269,10 +261,6 @@ class SyncService {
 
     _isSyncingAll = true;
     final session = _sessionGeneration;
-    if (!_syncActivityController.isClosed) {
-      _syncActivityController.add(true);
-    }
-
     try {
       final uploads = await _databaseHelper.getPendingAndFailedUploads();
       if (session != _sessionGeneration || _authService.currentUser == null) {
@@ -356,9 +344,6 @@ class SyncService {
       );
     } finally {
       _isSyncingAll = false;
-      if (!_syncActivityController.isClosed) {
-        _syncActivityController.add(false);
-      }
     }
   }
 
@@ -502,20 +487,6 @@ class SyncService {
     if (token == null) throw const ApiException(401, 'Not authenticated');
     return _apiClient.getUploadDetail(accessToken: token, uploadId: uploadId);
   }
-
-  // ── Catalog refresh ────────────────────────────────────────────────
-
-  Future<void> refreshCatalogs(CatalogRepository catalogRepository) async {
-    await catalogRepository.syncPendingCatalogCreates();
-    await Future.wait([
-      catalogRepository.getProperties(forceRefresh: true),
-      catalogRepository.getTalhoes(forceRefresh: true),
-      catalogRepository.getCropTypes(forceRefresh: true),
-      catalogRepository.getEstadios(forceRefresh: true),
-    ]);
-  }
-
-  bool get isSyncing => _isSyncingAll;
 
   // ── Internal Helpers ───────────────────────────────────────────────
 

@@ -1,1 +1,2 @@
-export 'api_base_url_io.dart' if (dart.library.html) 'api_base_url_web.dart';
+export 'api_base_url_io.dart'
+    if (dart.library.js_interop) 'api_base_url_web.dart';

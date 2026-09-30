@@ -315,7 +315,14 @@ void main() {
         refreshToken: regJson['refreshToken'] as String,
       );
       await authService.tryRestoreSession();
-      await syncService.refreshCatalogs(catalogRepository);
+      // Refresh catalogs exactly like the old SyncService.refreshCatalogs seam.
+      await catalogRepository.syncPendingCatalogCreates();
+      await Future.wait([
+        catalogRepository.getProperties(forceRefresh: true),
+        catalogRepository.getTalhoes(forceRefresh: true),
+        catalogRepository.getCropTypes(forceRefresh: true),
+        catalogRepository.getEstadios(forceRefresh: true),
+      ]);
 
       // Tokens stored directly; getValidAccessToken() reads the stored token.
 

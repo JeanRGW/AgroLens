@@ -1,5 +1,188 @@
 import 'package:flutter/material.dart';
 
+/// Shared search box for catalog list and detail screens.
+class CatalogSearchField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hintText;
+  final VoidCallback onChanged;
+
+  const CatalogSearchField({
+    super.key,
+    required this.controller,
+    required this.hintText,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    controller: controller,
+    decoration: InputDecoration(
+      hintText: hintText,
+      prefixIcon: const Icon(Icons.search),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      suffixIcon: controller.text.isEmpty
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: () {
+                controller.clear();
+                onChanged();
+              },
+            ),
+    ),
+    onChanged: (_) => onChanged(),
+  );
+}
+
+/// Shared "N de M" count banner shown above catalog lists.
+class CatalogCountBanner extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final double iconSpacing;
+  final bool singleLine;
+
+  const CatalogCountBanner({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.iconSpacing = 10,
+    this.singleLine = false,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: Colors.white),
+        SizedBox(width: iconSpacing),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: singleLine ? 1 : null,
+            overflow: singleLine ? TextOverflow.ellipsis : null,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Resolves the loading/error/empty ladder shared by catalog list screens.
+/// Spreads its result into the list's children; [items] is evaluated only
+/// when the list itself is shown.
+List<Widget> catalogListChildren({
+  required bool loading,
+  required String? error,
+  required String errorTitle,
+  required VoidCallback onRetry,
+  required bool listIsEmpty,
+  required IconData emptyIcon,
+  required String emptyTitle,
+  required String emptyMessage,
+  String? emptyActionLabel,
+  VoidCallback? emptyAction,
+  required List<Widget> Function() items,
+}) {
+  if (loading) {
+    return const [
+      Padding(
+        padding: EdgeInsets.only(top: 80),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+    ];
+  }
+  if (error != null) {
+    return [
+      CatalogStateMessage(
+        icon: Icons.error_outline,
+        title: errorTitle,
+        message: error,
+        actionLabel: 'Tentar novamente',
+        onAction: onRetry,
+      ),
+    ];
+  }
+  if (listIsEmpty) {
+    return [
+      CatalogStateMessage(
+        icon: emptyIcon,
+        title: emptyTitle,
+        message: emptyMessage,
+        actionLabel: emptyActionLabel,
+        onAction: emptyAction,
+      ),
+    ];
+  }
+  return items();
+}
+
+/// Confirmation dialog shared by destructive catalog and cloud actions.
+Future<bool> confirmDestructiveAction(
+  BuildContext context, {
+  required String title,
+  required String message,
+  String cancelLabel = 'Cancelar',
+  String confirmLabel = 'Excluir',
+}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: Text(cancelLabel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true;
+}
+
+/// Shared saving state and submit flow for catalog create/edit forms.
+mixin CatalogFormSaveMixin<T extends StatefulWidget> on State<T> {
+  bool saving = false;
+  String? saveError;
+
+  Future<void> saveCatalogForm<I>(
+    GlobalKey<FormState> formKey, {
+    required Future<I> Function() action,
+    required String failureMessage,
+  }) async {
+    if (!formKey.currentState!.validate()) return;
+
+    setState(() {
+      saving = true;
+      saveError = null;
+    });
+
+    try {
+      final result = await action();
+      if (!mounted) return;
+      Navigator.of(context).pop(result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => saveError = failureMessage);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failureMessage)));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+}
+
 class CompactCatalogButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final IconData icon;

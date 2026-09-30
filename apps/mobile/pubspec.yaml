@@ -23,7 +23,6 @@ dependencies:
   # Shared SQLite storage on native platforms and web.
   drift: ^2.32.0
   drift_flutter: ^0.3.1
-  path: ^1.9.1
   path_provider: ^2.1.6
 
   # Browser APIs for the web build (IndexedDB, storage persistence)

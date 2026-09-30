@@ -7,7 +7,9 @@ import '../models/catalog.dart';
 import '../services/auth_service.dart';
 import '../services/sync_service.dart';
 import '../services/catalog_repository.dart';
+import '../utils/remote_upload_status.dart';
 import '../utils/source_labels.dart';
+import '../widgets/catalog_widgets.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_scaffold.dart';
 import '../widgets/custom_button.dart';
@@ -379,34 +381,7 @@ class _UploadListTile extends StatelessWidget {
     );
   }
 
-  String _statusLabel(String status) => _statusInfo(status).label;
-
-  _RemoteStatusInfo _statusInfo(String status) {
-    switch (status) {
-      case 'ready':
-        return const _RemoteStatusInfo(
-          'Pronto',
-          Icons.check_circle,
-          Colors.green,
-        );
-      case 'finalizing':
-        return const _RemoteStatusInfo(
-          'Finalizando',
-          Icons.autorenew,
-          Colors.blue,
-        );
-      case 'draft':
-        return const _RemoteStatusInfo('Rascunho', Icons.edit, Colors.grey);
-      case 'failed':
-        return const _RemoteStatusInfo('Falhou', Icons.error, Colors.red);
-      default:
-        return const _RemoteStatusInfo(
-          'Desconhecido',
-          Icons.help_outline,
-          Colors.grey,
-        );
-    }
-  }
+  String _statusLabel(String status) => remoteUploadStatusInfo(status).label;
 }
 
 class _ResolvedCatalogNames {
@@ -420,14 +395,6 @@ class _ResolvedCatalogNames {
     required this.cropTypeName,
     this.estadioName,
   });
-}
-
-class _RemoteStatusInfo {
-  final String label;
-  final IconData icon;
-  final Color color;
-
-  const _RemoteStatusInfo(this.label, this.icon, this.color);
 }
 
 /// 60×60 thumbnail for a remote upload's preview image.
@@ -593,26 +560,14 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
   }
 
   Future<void> _deleteUpload() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Excluir upload na nuvem?'),
-        content: const Text(
+    final confirmed = await confirmDestructiveAction(
+      context,
+      title: 'Excluir upload na nuvem?',
+      message:
           'Isso remove o upload do servidor e atualiza a lista. A limpeza local da fila é feita separadamente no aparelho.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Excluir na nuvem'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Excluir na nuvem',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     setState(() {
       _deleting = true;
@@ -1111,7 +1066,7 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
   }
 
   Widget _statusBadge(String status) {
-    final info = _statusInfo(status);
+    final info = remoteUploadStatusInfo(status);
     final color = info.color;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1131,33 +1086,6 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
         ],
       ),
     );
-  }
-
-  _RemoteStatusInfo _statusInfo(String status) {
-    switch (status) {
-      case 'ready':
-        return const _RemoteStatusInfo(
-          'Pronto',
-          Icons.check_circle,
-          Colors.green,
-        );
-      case 'finalizing':
-        return const _RemoteStatusInfo(
-          'Finalizando',
-          Icons.autorenew,
-          Colors.blue,
-        );
-      case 'draft':
-        return const _RemoteStatusInfo('Rascunho', Icons.edit, Colors.grey);
-      case 'failed':
-        return const _RemoteStatusInfo('Falhou', Icons.error, Colors.red);
-      default:
-        return const _RemoteStatusInfo(
-          'Desconhecido',
-          Icons.help_outline,
-          Colors.grey,
-        );
-    }
   }
 
   String _formatBytes(int bytes) {

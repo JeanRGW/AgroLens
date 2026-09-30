@@ -57,10 +57,6 @@ class _CropTypeCatalogScreenState extends State<CropTypeCatalogScreen> {
     }
   }
 
-  bool _canMutate(CatalogItem item) =>
-      widget.catalogRepository.currentUserIsAdmin ||
-      item.userId == widget.catalogRepository.currentUserId;
-
   List<CropType> get _filteredCropTypes {
     final query = _searchController.text;
     return _cropTypes
@@ -110,26 +106,13 @@ class _CropTypeCatalogScreenState extends State<CropTypeCatalogScreen> {
 
   Future<void> _deleteCropType(CropType cropType) async {
     final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Excluir cultura?'),
-        content: Text(
+    final confirmed = await confirmDestructiveAction(
+      context,
+      title: 'Excluir cultura?',
+      message:
           'Excluir "${cropType.name}" também remove os estádios associados.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       await widget.catalogRepository.deleteCropType(cropTypeId: cropType.id);
@@ -193,139 +176,101 @@ class _CropTypeCatalogScreenState extends State<CropTypeCatalogScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
-            TextField(
+            CatalogSearchField(
               controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar culturas',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      ),
-              ),
-              onChanged: (_) => setState(() {}),
+              hintText: 'Buscar culturas',
+              onChanged: () => setState(() {}),
             ),
             const SizedBox(height: 16),
             if (!_loading && _error == null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.eco_outlined, color: Colors.white),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _searchController.text.isNotEmpty
-                            ? '${filtered.length} ${filtered.length == 1 ? 'resultado' : 'resultados'} de ${_cropTypes.length} ${_cropTypes.length == 1 ? 'cultura' : 'culturas'}.'
-                            : '${filtered.length} ${filtered.length == 1 ? 'cultura cadastrada' : 'culturas cadastradas'}.',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
+              CatalogCountBanner(
+                icon: Icons.eco_outlined,
+                text: _searchController.text.isNotEmpty
+                    ? '${filtered.length} ${filtered.length == 1 ? 'resultado' : 'resultados'} de ${_cropTypes.length} ${_cropTypes.length == 1 ? 'cultura' : 'culturas'}.'
+                    : '${filtered.length} ${filtered.length == 1 ? 'cultura cadastrada' : 'culturas cadastradas'}.',
               ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(top: 80),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null)
-              CatalogStateMessage(
-                icon: Icons.error_outline,
-                title: 'Erro ao carregar culturas',
-                message: _error!,
-                actionLabel: 'Tentar novamente',
-                onAction: () => _loadCropTypes(forceRefresh: true),
-              )
-            else if (filtered.isEmpty)
-              CatalogStateMessage(
-                icon: Icons.local_florist_outlined,
-                title: _cropTypes.isEmpty
-                    ? 'Nenhuma cultura cadastrada'
-                    : 'Nenhum resultado para a busca',
-                message: _cropTypes.isEmpty
-                    ? 'Cadastre a primeira cultura para começar.'
-                    : 'Ajuste o filtro de pesquisa.',
-                actionLabel: _cropTypes.isEmpty ? 'Nova cultura' : null,
-                onAction: _cropTypes.isEmpty ? _openCreateForm : null,
-              )
-            else
-              ...filtered.map(
-                (cropType) => Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const CatalogIconBox(icon: Icons.eco_outlined),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                cropType.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        CatalogDetailText(
-                          cropType.isPendingSync
-                              ? 'Pendente de sincronização'
-                              : 'Gerencie os estádios desta cultura e use nos uploads.',
-                        ),
-                        const SizedBox(height: 6),
-                        CatalogActionRow(
-                          actions: [
-                            CatalogAction(
-                              label: 'Estádios',
-                              icon: Icons.timeline_outlined,
-                              onPressed: () => _openDetails(cropType),
-                            ),
-                            if (_canMutate(cropType)) ...[
-                              CatalogAction(
-                                label: 'Editar',
-                                icon: Icons.edit_outlined,
-                                onPressed: cropType.isPendingSync
-                                    ? _showPendingSyncBlockedMessage
-                                    : () => _openEditForm(cropType),
-                              ),
-                              CatalogAction(
-                                label: 'Excluir',
-                                icon: Icons.delete_outline,
-                                onPressed: cropType.isPendingSync
-                                    ? _showPendingSyncBlockedMessage
-                                    : () => _deleteCropType(cropType),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+            ...catalogListChildren(
+              loading: _loading,
+              error: _error,
+              errorTitle: 'Erro ao carregar culturas',
+              onRetry: () => _loadCropTypes(forceRefresh: true),
+              listIsEmpty: filtered.isEmpty,
+              emptyIcon: Icons.local_florist_outlined,
+              emptyTitle: _cropTypes.isEmpty
+                  ? 'Nenhuma cultura cadastrada'
+                  : 'Nenhum resultado para a busca',
+              emptyMessage: _cropTypes.isEmpty
+                  ? 'Cadastre a primeira cultura para começar.'
+                  : 'Ajuste o filtro de pesquisa.',
+              emptyActionLabel: _cropTypes.isEmpty ? 'Nova cultura' : null,
+              emptyAction: _cropTypes.isEmpty ? _openCreateForm : null,
+              items: () =>
+                  filtered.map((cropType) => _cropTypeCard(cropType)).toList(),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _cropTypeCard(CropType cropType) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const CatalogIconBox(icon: Icons.eco_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  cropType.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          CatalogDetailText(
+            cropType.isPendingSync
+                ? 'Pendente de sincronização'
+                : 'Gerencie os estádios desta cultura e use nos uploads.',
+          ),
+          const SizedBox(height: 6),
+          CatalogActionRow(
+            actions: [
+              CatalogAction(
+                label: 'Estádios',
+                icon: Icons.timeline_outlined,
+                onPressed: () => _openDetails(cropType),
+              ),
+              if (widget.catalogRepository.canMutate(cropType)) ...[
+                CatalogAction(
+                  label: 'Editar',
+                  icon: Icons.edit_outlined,
+                  onPressed: cropType.isPendingSync
+                      ? _showPendingSyncBlockedMessage
+                      : () => _openEditForm(cropType),
+                ),
+                CatalogAction(
+                  label: 'Excluir',
+                  icon: Icons.delete_outline,
+                  onPressed: cropType.isPendingSync
+                      ? _showPendingSyncBlockedMessage
+                      : () => _deleteCropType(cropType),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class CropTypeDetailScreen extends StatefulWidget {
@@ -389,10 +334,6 @@ class _CropTypeDetailScreenState extends State<CropTypeDetailScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  bool _canMutate(CatalogItem item) =>
-      widget.catalogRepository.currentUserIsAdmin ||
-      item.userId == widget.catalogRepository.currentUserId;
 
   void _showPendingSyncBlockedMessage() =>
       showPendingSyncBlockedMessage(context);
@@ -468,24 +409,12 @@ class _CropTypeDetailScreenState extends State<CropTypeDetailScreen> {
 
   Future<void> _deleteEstadio(Estadio estadio) async {
     final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Excluir estádio?'),
-        content: Text('Excluir "${estadio.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmDestructiveAction(
+      context,
+      title: 'Excluir estádio?',
+      message: 'Excluir "${estadio.name}"?',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       await widget.catalogRepository.deleteEstadio(estadioId: estadio.id);
@@ -518,7 +447,7 @@ class _CropTypeDetailScreenState extends State<CropTypeDetailScreen> {
               tooltip: 'Atualizar',
             ),
           ),
-          if (_canMutate(_cropType))
+          if (widget.catalogRepository.canMutate(_cropType))
             CustomAppBarAction(
               child: IconButton(
                 onPressed: _cropType.isPendingSync ? null : _editCropType,
@@ -528,7 +457,7 @@ class _CropTypeDetailScreenState extends State<CropTypeDetailScreen> {
             ),
         ],
       ),
-      floatingActionButton: _canMutate(_cropType)
+      floatingActionButton: widget.catalogRepository.canMutate(_cropType)
           ? FloatingActionButton(
               onPressed: _createEstadio,
               tooltip: 'Novo estádio',
@@ -559,136 +488,102 @@ class _CropTypeDetailScreenState extends State<CropTypeDetailScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
+            CatalogSearchField(
               controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar estádios',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      ),
-              ),
-              onChanged: (_) => setState(() {}),
+              hintText: 'Buscar estádios',
+              onChanged: () => setState(() {}),
             ),
             const SizedBox(height: 16),
             if (!_loading && _error == null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.grass_outlined, color: Colors.white),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _searchController.text.isNotEmpty
-                            ? '${estadios.length} ${estadios.length == 1 ? 'resultado' : 'resultados'} de ${_estadios.length} ${estadios.length == 1 ? 'estádio' : 'estádios'}'
-                            : '${estadios.length} ${estadios.length == 1 ? 'estádio cadastrado' : 'estádios cadastrados'}',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(top: 80),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null)
-              CatalogStateMessage(
-                icon: Icons.error_outline,
-                title: 'Erro ao carregar estádios',
-                message: _error!,
-                actionLabel: 'Tentar novamente',
-                onAction: () => _loadEstadios(forceRefresh: true),
-              )
-            else if (estadios.isEmpty)
-              CatalogStateMessage(
+              CatalogCountBanner(
                 icon: Icons.grass_outlined,
-                title: _estadios.isEmpty
-                    ? 'Nenhum estádio cadastrado'
-                    : 'Nenhum resultado para a busca',
-                message: _estadios.isEmpty
-                    ? 'Adicione o primeiro estádio desta cultura.'
-                    : 'Ajuste o filtro de pesquisa.',
-                actionLabel: _estadios.isEmpty && _canMutate(_cropType)
-                    ? 'Novo estádio'
-                    : null,
-                onAction: _estadios.isEmpty && _canMutate(_cropType)
-                    ? _createEstadio
-                    : null,
-              )
-            else
-              ...estadios.map(
-                (estadio) => Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const CatalogIconBox(icon: Icons.spa_outlined),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                estadio.name,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        CatalogDetailText(
-                          estadio.isPendingSync
-                              ? 'Pendente de sincronização'
-                              : 'Cultura: ${_cropType.name}',
-                        ),
-                        if (_canMutate(estadio)) ...[
-                          const SizedBox(height: 6),
-                          CatalogActionRow(
-                            actions: [
-                              CatalogAction(
-                                label: 'Editar',
-                                icon: Icons.edit_outlined,
-                                onPressed: estadio.isPendingSync
-                                    ? _showPendingSyncBlockedMessage
-                                    : () => _editEstadio(estadio),
-                              ),
-                              CatalogAction(
-                                label: 'Excluir',
-                                icon: Icons.delete_outline,
-                                onPressed: estadio.isPendingSync
-                                    ? _showPendingSyncBlockedMessage
-                                    : () => _deleteEstadio(estadio),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
+                text: _searchController.text.isNotEmpty
+                    ? '${estadios.length} ${estadios.length == 1 ? 'resultado' : 'resultados'} de ${_estadios.length} ${estadios.length == 1 ? 'estádio' : 'estádios'}'
+                    : '${estadios.length} ${estadios.length == 1 ? 'estádio cadastrado' : 'estádios cadastrados'}',
               ),
+            ...catalogListChildren(
+              loading: _loading,
+              error: _error,
+              errorTitle: 'Erro ao carregar estádios',
+              onRetry: () => _loadEstadios(forceRefresh: true),
+              listIsEmpty: estadios.isEmpty,
+              emptyIcon: Icons.grass_outlined,
+              emptyTitle: _estadios.isEmpty
+                  ? 'Nenhum estádio cadastrado'
+                  : 'Nenhum resultado para a busca',
+              emptyMessage: _estadios.isEmpty
+                  ? 'Adicione o primeiro estádio desta cultura.'
+                  : 'Ajuste o filtro de pesquisa.',
+              emptyActionLabel:
+                  _estadios.isEmpty &&
+                      widget.catalogRepository.canMutate(_cropType)
+                  ? 'Novo estádio'
+                  : null,
+              emptyAction:
+                  _estadios.isEmpty &&
+                      widget.catalogRepository.canMutate(_cropType)
+                  ? _createEstadio
+                  : null,
+              items: () =>
+                  estadios.map((estadio) => _estadioCard(estadio)).toList(),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _estadioCard(Estadio estadio) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const CatalogIconBox(icon: Icons.spa_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  estadio.name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          CatalogDetailText(
+            estadio.isPendingSync
+                ? 'Pendente de sincronização'
+                : 'Cultura: ${_cropType.name}',
+          ),
+          if (widget.catalogRepository.canMutate(estadio)) ...[
+            const SizedBox(height: 6),
+            CatalogActionRow(
+              actions: [
+                CatalogAction(
+                  label: 'Editar',
+                  icon: Icons.edit_outlined,
+                  onPressed: estadio.isPendingSync
+                      ? _showPendingSyncBlockedMessage
+                      : () => _editEstadio(estadio),
+                ),
+                CatalogAction(
+                  label: 'Excluir',
+                  icon: Icons.delete_outline,
+                  onPressed: estadio.isPendingSync
+                      ? _showPendingSyncBlockedMessage
+                      : () => _deleteEstadio(estadio),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 }
 
 class CropTypeFormScreen extends StatefulWidget {
@@ -705,12 +600,11 @@ class CropTypeFormScreen extends StatefulWidget {
   State<CropTypeFormScreen> createState() => _CropTypeFormScreenState();
 }
 
-class _CropTypeFormScreenState extends State<CropTypeFormScreen> {
+class _CropTypeFormScreenState extends State<CropTypeFormScreen>
+    with CatalogFormSaveMixin<CropTypeFormScreen> {
   String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
-  bool _saving = false;
-  String? _error;
 
   @override
   void initState() {
@@ -726,46 +620,24 @@ class _CropTypeFormScreenState extends State<CropTypeFormScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
-    try {
-      final result = widget.initialCropType == null
-          ? await widget.catalogRepository.createCropType(
-              name: _nameController.text.trim(),
-            )
-          : await widget.catalogRepository.updateCropType(
-              cropTypeId: widget.initialCropType!.id,
-              userId:
-                  _newOwnerId == null ||
-                      _newOwnerId!.isEmpty ||
-                      _newOwnerId == widget.initialCropType!.userId
-                  ? null
-                  : _newOwnerId,
-              name: _nameController.text.trim(),
-            );
-
-      if (!mounted) return;
-      Navigator.of(context).pop(result);
-    } catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _error = 'Não foi possível salvar a cultura. Tente novamente.',
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Não foi possível salvar a cultura. Tente novamente.'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
+  Future<void> _save() => saveCatalogForm(
+    _formKey,
+    failureMessage: 'Não foi possível salvar a cultura. Tente novamente.',
+    action: () => widget.initialCropType == null
+        ? widget.catalogRepository.createCropType(
+            name: _nameController.text.trim(),
+          )
+        : widget.catalogRepository.updateCropType(
+            cropTypeId: widget.initialCropType!.id,
+            userId:
+                _newOwnerId == null ||
+                    _newOwnerId!.isEmpty ||
+                    _newOwnerId == widget.initialCropType!.userId
+                ? null
+                : _newOwnerId,
+            name: _nameController.text.trim(),
+          ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -795,10 +667,10 @@ class _CropTypeFormScreenState extends State<CropTypeFormScreen> {
                 label: 'ID do novo proprietário',
                 onChanged: (value) => _newOwnerId = value.trim(),
               ),
-            if (_error != null) ...[
+            if (saveError != null) ...[
               const SizedBox(height: 0),
               Text(
-                _error!,
+                saveError!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
@@ -807,7 +679,7 @@ class _CropTypeFormScreenState extends State<CropTypeFormScreen> {
               label: 'Salvar',
               icon: Icons.save,
               onPressed: _save,
-              isLoading: _saving,
+              isLoading: saving,
             ),
           ],
         ),
@@ -832,15 +704,14 @@ class EstadioFormScreen extends StatefulWidget {
   State<EstadioFormScreen> createState() => _EstadioFormScreenState();
 }
 
-class _EstadioFormScreenState extends State<EstadioFormScreen> {
+class _EstadioFormScreenState extends State<EstadioFormScreen>
+    with CatalogFormSaveMixin<EstadioFormScreen> {
   late Future<List<CropType>> _parents;
   late String _parentId;
   String? _newOwnerId;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _cropTypeController;
-  bool _saving = false;
-  String? _error;
 
   @override
   void initState() {
@@ -862,50 +733,28 @@ class _EstadioFormScreenState extends State<EstadioFormScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
-    try {
-      final result = widget.initialEstadio == null
-          ? await widget.catalogRepository.createEstadio(
-              name: _nameController.text.trim(),
-              cropTypeId: widget.cropType.id,
-            )
-          : await widget.catalogRepository.updateEstadio(
-              estadioId: widget.initialEstadio!.id,
-              userId:
-                  _newOwnerId == null ||
-                      _newOwnerId!.isEmpty ||
-                      _newOwnerId == widget.initialEstadio!.userId
-                  ? null
-                  : _newOwnerId,
-              name: _nameController.text.trim(),
-              cropTypeId: _parentId == widget.initialEstadio!.cropTypeId
-                  ? null
-                  : _parentId,
-            );
-
-      if (!mounted) return;
-      Navigator.of(context).pop(result);
-    } catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _error = 'Não foi possível salvar o estádio. Tente novamente.',
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Não foi possível salvar o estádio. Tente novamente.'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
+  Future<void> _save() => saveCatalogForm(
+    _formKey,
+    failureMessage: 'Não foi possível salvar o estádio. Tente novamente.',
+    action: () => widget.initialEstadio == null
+        ? widget.catalogRepository.createEstadio(
+            name: _nameController.text.trim(),
+            cropTypeId: widget.cropType.id,
+          )
+        : widget.catalogRepository.updateEstadio(
+            estadioId: widget.initialEstadio!.id,
+            userId:
+                _newOwnerId == null ||
+                    _newOwnerId!.isEmpty ||
+                    _newOwnerId == widget.initialEstadio!.userId
+                ? null
+                : _newOwnerId,
+            name: _nameController.text.trim(),
+            cropTypeId: _parentId == widget.initialEstadio!.cropTypeId
+                ? null
+                : _parentId,
+          ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -963,7 +812,7 @@ class _EstadioFormScreenState extends State<EstadioFormScreen> {
                         ),
                       ),
                     ],
-                    onChanged: _saving
+                    onChanged: saving
                         ? null
                         : (value) {
                             if (value != null) {
@@ -988,10 +837,10 @@ class _EstadioFormScreenState extends State<EstadioFormScreen> {
                 label: 'ID do novo proprietário',
                 onChanged: (value) => _newOwnerId = value.trim(),
               ),
-            if (_error != null) ...[
+            if (saveError != null) ...[
               const SizedBox(height: 0),
               Text(
-                _error!,
+                saveError!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
@@ -1000,7 +849,7 @@ class _EstadioFormScreenState extends State<EstadioFormScreen> {
               label: 'Salvar',
               icon: Icons.save,
               onPressed: _save,
-              isLoading: _saving,
+              isLoading: saving,
             ),
           ],
         ),

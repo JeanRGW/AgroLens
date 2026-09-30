@@ -1,5 +1,5 @@
 import 'storage_persist_io.dart'
-    if (dart.library.html) 'storage_persist_web.dart'
+    if (dart.library.js_interop) 'storage_persist_web.dart'
     as platform;
 
 /// Best-effort request for persistent local storage so browsers (and iOS

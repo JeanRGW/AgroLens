@@ -1056,7 +1056,6 @@ void main() {
           activePasses--;
         },
       );
-      final activity = service.syncActivity.listen((_) {});
       service.initialize();
       final firstPass = service.syncPendingCatalogsAndUploads();
       await Future<void>.delayed(Duration.zero);
@@ -1074,7 +1073,6 @@ void main() {
       expect(maxActivePasses, 1);
       expect(passCount, 2);
       service.dispose();
-      await activity.cancel();
       await connectivity.close();
     });
   });
@@ -1494,14 +1492,27 @@ void main() {
       expect(result.message, contains('Nothing'));
     });
 
-    test('returns early when sync already in progress', () async {
-      await syncService.syncAll();
-      // First call processed nothing (or whatever), but the isSyncing flag
-      // should have been set to false after completion.
-      // A second call while the first is still happening would return early.
-      // Since sync is not actually concurrent here, we verify the flag is false.
-      expect(syncService.isSyncing, false);
-      // The syncAll ref count check works correctly
+    test('a second syncAll while one is in flight returns early', () async {
+      final image = await createTempFile('/tmp/overlap-sync.jpg', 'data');
+      await databaseHelper.insertPendingUpload(
+        PendingUpload(
+          id: 'overlap-sync',
+          paths: [image.path],
+          latitude: 0,
+          longitude: 0,
+          createdAt: DateTime.utc(2026, 1, 1),
+          propertyId: 'p1',
+          talhaoId: 't1',
+          cropTypeId: 'c1',
+        ),
+      );
+      // The queued init response fails, but the first call still holds the
+      // in-progress flag while it runs; the second must not overlap it.
+      final first = syncService.syncAll();
+      final second = await syncService.syncAll();
+      expect(second.totalAttempted, 0);
+      expect(second.message, contains('already in progress'));
+      await first;
     });
   });
 

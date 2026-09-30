@@ -1,5 +1,5 @@
 import 'platform_errors_io.dart'
-    if (dart.library.html) 'platform_errors_web.dart'
+    if (dart.library.js_interop) 'platform_errors_web.dart'
     as platform;
 
 /// Whether [error] is a transport-level connection failure (no route to
