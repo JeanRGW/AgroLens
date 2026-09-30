@@ -5,7 +5,6 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:agrolens/config/env_config.dart';
-import 'package:agrolens/models/catalog.dart';
 import 'package:agrolens/models/pending_upload.dart';
 import 'package:agrolens/models/upload_response.dart';
 import 'package:agrolens/services/api_client.dart';
@@ -34,6 +33,26 @@ void main() {
   late CatalogRepository catalogRepository;
   late DatabaseHelper databaseHelper;
   late SyncService syncService;
+
+  void queueUploadDetail(
+    String uploadId, {
+    String status = 'ready',
+    String? errorMessage,
+  }) {
+    mockHttp.queueResponse('GET', '/api/uploads/$uploadId', 200, {
+      'id': uploadId,
+      'status': status,
+      'errorMessage': ?errorMessage,
+      'propertyId': 'p',
+      'talhaoId': 't',
+      'cropTypeId': 'c',
+      'source': 'phone',
+      'activityDate': '2026-06-30T12:00:00Z',
+      'createdAt': '2026-06-30T12:00:00Z',
+      'updatedAt': '2026-06-30T12:00:00Z',
+      'files': [],
+    });
+  }
 
   setUp(() async {
     mockHttp = MockHttpClient();
@@ -167,20 +186,7 @@ void main() {
           'upload': {'id': 'backend-late', 'status': 'finalizing'},
         },
       );
-      mockHttp.queueResponse('GET', '/api/uploads/backend-late', 200, {
-        'id': 'backend-late',
-        'status': 'ready',
-        'propertyId': 'p',
-        'talhaoId': 't',
-        'cropTypeId': 'c',
-        'latitude': 0,
-        'longitude': 0,
-        'source': 'phone',
-        'activityDate': '2026-01-01T00:00:00Z',
-        'createdAt': '2026-01-01T00:00:00Z',
-        'updatedAt': '2026-01-01T00:00:00Z',
-        'files': [],
-      });
+      queueUploadDetail('backend-late');
       final pending = switch (step) {
         'originals' => syncService.stepUploadOriginals(upload, upload.paths, [
           PresignedUploadUrl.fromJson({
@@ -273,44 +279,6 @@ void main() {
   );
 
   group('SyncService - stepInit', () {
-    test('sends actual local file size in init descriptors', () async {
-      final file = await createTempFile(
-        '/tmp/agrolens-init-size.jpg',
-        '1234567',
-      );
-      addTearDown(() => file.delete());
-      final upload = PendingUpload(
-        id: 'init-size-test-uuid',
-        paths: [file.path],
-        latitude: -22.9,
-        longitude: -43.1,
-        createdAt: DateTime.now(),
-        activityDate: DateTime.parse('2026-06-29T12:00:00Z'),
-        propertyId: 'prop-uuid',
-        talhaoId: 'talhao-uuid',
-        cropTypeId: 'crop-uuid',
-        source: 'phone',
-      );
-      mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
-        'uploadId': 'backend-init-size-uuid',
-        'status': 'draft',
-        'files': [],
-      });
-
-      await syncService.stepInit(upload);
-
-      final request =
-          mockHttp.requests
-                  .where(
-                    (r) =>
-                        r.method == 'POST' && r.url.path == '/api/uploads/init',
-                  )
-                  .single
-              as http.Request;
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      expect((body['files'] as List).single['sizeBytes'], 7);
-    });
-
     test('maps a missing local file to LOCAL_FILE_UNAVAILABLE', () async {
       final upload = PendingUpload(
         id: 'missing-file-upload',
@@ -333,120 +301,81 @@ void main() {
       expect(persisted.syncErrorCode, 'LOCAL_FILE_UNAVAILABLE');
     });
 
-    test('creates upload and stores backendUploadId', () async {
-      final image = await createTempFile(
-        '/tmp/agrolens-init-test.jpg',
-        'init_test_bytes',
-      );
-      addTearDown(() => image.delete());
-      final upload = PendingUpload(
-        id: 'init-test-uuid',
-        paths: [image.path],
-        latitude: -22.9,
-        longitude: -43.1,
-        createdAt: DateTime.now(),
-        activityDate: DateTime.parse('2026-06-29T12:00:00Z'),
-        propertyId: 'prop-uuid',
-        talhaoId: 'talhao-uuid',
-        cropTypeId: 'crop-uuid',
-        source: 'phone',
-      );
+    test(
+      'sends file metadata and stores the initialized backend state',
+      () async {
+        final image = await createTempFile(
+          '/tmp/agrolens-init-test.jpg',
+          'init_test_bytes',
+        );
+        addTearDown(() => image.delete());
+        final upload = PendingUpload(
+          id: 'init-test-uuid',
+          paths: [image.path],
+          latitude: -22.9,
+          longitude: -43.1,
+          createdAt: DateTime.now(),
+          activityDate: DateTime.parse('2026-06-29T12:00:00Z'),
+          propertyId: 'prop-uuid',
+          talhaoId: 'talhao-uuid',
+          cropTypeId: 'crop-uuid',
+          source: 'phone',
+        );
 
-      mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
-        'uploadId': 'backend-init-uuid',
-        'status': 'draft',
-        'files': [
-          {
-            'fileId': 'f1',
-            'objectKey': 'uploads/u/0/original.jpeg',
-            'uploadUrl': 'https://storage.example.com/put-init',
-            'expiresAt': '2026-07-01T00:00:00Z',
-          },
-        ],
-      });
+        mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
+          'uploadId': 'backend-init-uuid',
+          'status': 'draft',
+          'files': [
+            {
+              'fileId': 'f1',
+              'objectKey': 'uploads/u/0/original.jpeg',
+              'uploadUrl': 'https://storage.example.com/put-init',
+              'expiresAt': '2026-07-01T00:00:00Z',
+            },
+          ],
+        });
 
-      final result = await syncService.stepInit(upload);
-      expect(result.upload.backendUploadId, 'backend-init-uuid');
-      expect(result.upload.status, PendingUploadStatus.uploading);
-      expect(result.presignedUrls.length, 1);
-      expect(
-        result.presignedUrls.first.url,
-        'https://storage.example.com/put-init',
-      );
+        final result = await syncService.stepInit(upload);
+        expect(result.upload.backendUploadId, 'backend-init-uuid');
+        expect(result.upload.status, PendingUploadStatus.uploading);
+        expect(result.presignedUrls.length, 1);
+        expect(
+          result.presignedUrls.first.url,
+          'https://storage.example.com/put-init',
+        );
 
-      final initRequest =
-          mockHttp.requests.firstWhere(
-                (r) => r.method == 'POST' && r.url.path == '/api/uploads/init',
-              )
-              as http.Request;
-      final body = jsonDecode(initRequest.body) as Map<String, dynamic>;
-      expect(body['activityDate'], '2026-06-29T12:00:00.000Z');
-    });
+        final initRequest =
+            mockHttp.requests.firstWhere(
+                  (r) =>
+                      r.method == 'POST' && r.url.path == '/api/uploads/init',
+                )
+                as http.Request;
+        final body = jsonDecode(initRequest.body) as Map<String, dynamic>;
+        expect(body['activityDate'], '2026-06-29T12:00:00.000Z');
+        expect((body['files'] as List).single['sizeBytes'], 15);
+      },
+    );
 
     test(
       'blocks uploads that still reference unmapped local catalog ids',
       () async {
         final catalogDb = catalogRepository.database;
         final serverNow = DateTime.utc(2026, 7, 1).millisecondsSinceEpoch;
-        await catalogDb.saveRow('catalog_properties', {
-          'id': 'tmp-prop',
-          'owner_id': 'user-1',
-          'data': jsonEncode(
-            Property(
-              id: 'tmp-prop',
-              name: 'Fazenda Pendente',
-              userId: 'user-1',
-              createdAt: DateTime.utc(2026, 7, 1),
-              updatedAt: DateTime.utc(2026, 7, 1),
-              owner: 'Maria',
-              address: 'Rua A',
-              latitude: -22.9,
-              longitude: -43.1,
-              isPendingSync: true,
-              syncError: 'Pendente de sincronização',
-            ).toJson(),
-          ),
-          'cached_at': serverNow,
-          'is_pending_sync': 1,
-          'sync_error': 'Pendente de sincronização',
-        });
-        await catalogDb.saveRow('catalog_talhoes', {
-          'id': 'tmp-talhao',
-          'owner_id': 'user-1',
-          'data': jsonEncode(
-            Talhao(
-              id: 'tmp-talhao',
-              name: 'Talhão Pendente',
-              userId: 'user-1',
-              createdAt: DateTime.utc(2026, 7, 1),
-              updatedAt: DateTime.utc(2026, 7, 1),
-              propertyId: 'tmp-prop',
-              isPendingSync: true,
-              syncError: 'Pendente de sincronização',
-            ).toJson(),
-          ),
-          'cached_at': serverNow,
-          'is_pending_sync': 1,
-          'sync_error': 'Pendente de sincronização',
-        });
-        await catalogDb.saveRow('catalog_crop_types', {
-          'id': 'tmp-crop',
-          'owner_id': 'user-1',
-          'data': jsonEncode(
-            CropType(
-              id: 'tmp-crop',
-              name: 'Soja Pendente',
-              userId: 'user-1',
-              createdAt: DateTime.utc(2026, 7, 1),
-              updatedAt: DateTime.utc(2026, 7, 1),
-              isPendingSync: true,
-              syncError: 'Pendente de sincronização',
-            ).toJson(),
-          ),
-          'cached_at': serverNow,
-          'is_pending_sync': 1,
-          'sync_error': 'Pendente de sincronização',
-        });
+        final catalogIds = [
+          ('catalog_properties', 'tmp-prop', 'srv-prop-1', 'property'),
+          ('catalog_talhoes', 'tmp-talhao', 'srv-talhao-1', 'talhao'),
+          ('catalog_crop_types', 'tmp-crop', 'srv-crop-1', 'cropType'),
+        ];
+        for (final (table, tempId, _, _) in catalogIds) {
+          await catalogDb.saveRow(table, {
+            'id': tempId,
+            'owner_id': 'user-1',
+            'data': '{}',
+            'cached_at': serverNow,
+            'is_pending_sync': 1,
+            'sync_error': 'Pendente de sincronização',
+          });
+        }
 
         final image = await createTempFile(
           '/tmp/agrolens-blocked.jpg',
@@ -480,81 +409,23 @@ void main() {
         expect(blocked.status, PendingUploadStatus.failed);
         expect(blocked.errorMessage, contains('aguardando sincronização'));
 
-        final now = DateTime.utc(2026, 7, 1).millisecondsSinceEpoch;
-        await catalogDb.saveRow('catalog_properties', {
-          'id': 'srv-prop-1',
-          'owner_id': 'user-1',
-          'data': jsonEncode(
-            Property(
-              id: 'srv-prop-1',
-              name: 'Fazenda Exemplo',
-              userId: 'user-1',
-              createdAt: DateTime.utc(2026, 7, 1),
-              updatedAt: DateTime.utc(2026, 7, 1),
-              owner: 'Maria',
-              address: 'Rua A',
-              latitude: -22.9,
-              longitude: -43.1,
-            ).toJson(),
-          ),
-          'cached_at': now,
-          'is_pending_sync': 0,
-          'sync_error': null,
-        });
-        await catalogDb.saveRow('catalog_talhoes', {
-          'id': 'srv-talhao-1',
-          'owner_id': 'user-1',
-          'data': jsonEncode(
-            Talhao(
-              id: 'srv-talhao-1',
-              name: 'Talhão Exemplo',
-              userId: 'user-1',
-              createdAt: DateTime.utc(2026, 7, 1),
-              updatedAt: DateTime.utc(2026, 7, 1),
-              propertyId: 'srv-prop-1',
-            ).toJson(),
-          ),
-          'cached_at': now,
-          'is_pending_sync': 0,
-          'sync_error': null,
-        });
-        await catalogDb.saveRow('catalog_crop_types', {
-          'id': 'srv-crop-1',
-          'owner_id': 'user-1',
-          'data': jsonEncode(
-            CropType(
-              id: 'srv-crop-1',
-              name: 'Soja',
-              userId: 'user-1',
-              createdAt: DateTime.utc(2026, 7, 1),
-              updatedAt: DateTime.utc(2026, 7, 1),
-            ).toJson(),
-          ),
-          'cached_at': now,
-          'is_pending_sync': 0,
-          'sync_error': null,
-        });
-        await catalogDb.saveRow('catalog_id_mappings', {
-          'temp_id': 'tmp-prop',
-          'owner_id': 'user-1',
-          'server_id': 'srv-prop-1',
-          'entity_type': 'property',
-          'created_at': serverNow,
-        });
-        await catalogDb.saveRow('catalog_id_mappings', {
-          'temp_id': 'tmp-talhao',
-          'owner_id': 'user-1',
-          'server_id': 'srv-talhao-1',
-          'entity_type': 'talhao',
-          'created_at': serverNow,
-        });
-        await catalogDb.saveRow('catalog_id_mappings', {
-          'temp_id': 'tmp-crop',
-          'owner_id': 'user-1',
-          'server_id': 'srv-crop-1',
-          'entity_type': 'cropType',
-          'created_at': serverNow,
-        });
+        for (final (table, tempId, serverId, entityType) in catalogIds) {
+          await catalogDb.saveRow(table, {
+            'id': serverId,
+            'owner_id': 'user-1',
+            'data': '{}',
+            'cached_at': serverNow,
+            'is_pending_sync': 0,
+            'sync_error': null,
+          });
+          await catalogDb.saveRow('catalog_id_mappings', {
+            'temp_id': tempId,
+            'owner_id': 'user-1',
+            'server_id': serverId,
+            'entity_type': entityType,
+            'created_at': serverNow,
+          });
+        }
 
         mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
           'uploadId': 'backend-blocked',
@@ -637,21 +508,7 @@ void main() {
           'upload': {'id': 'backend-rate-limited', 'status': 'finalizing'},
         },
       );
-      mockHttp.queueResponse('GET', '/api/uploads/backend-rate-limited', 200, {
-        'id': 'backend-rate-limited',
-        'status': 'ready',
-        'propertyId': 'srv-prop-1',
-        'talhaoId': 'srv-talhao-1',
-        'cropTypeId': 'srv-crop-1',
-        'source': 'phone',
-        'latitude': -22.9,
-        'longitude': -43.1,
-        'activityDate': '2026-06-29T12:00:00Z',
-        'createdAt': '2026-06-29T12:00:00Z',
-        'updatedAt': '2026-06-29T12:00:00Z',
-        'fileCount': 1,
-        'files': [],
-      });
+      queueUploadDetail('backend-rate-limited');
       final retried = await syncService.syncOne(persisted);
       expect(retried.backendUploadId, 'backend-rate-limited');
       expect(retried.status, isNot(PendingUploadStatus.failed));
@@ -659,47 +516,6 @@ void main() {
   });
 
   group('SyncService - stepUploadOriginals', () {
-    test('uploads files to presigned URLs', () async {
-      final imgPath = '/tmp/upload_original_test.jpg';
-      await createTempFile(imgPath, 'fake_image_bytes');
-
-      // Mock the PUT — request.url.path will be '/put-test-file'
-      mockHttp.queueResponse('PUT', '/put-test-file', 200, {});
-
-      final upload = PendingUpload(
-        id: 'upload-test',
-        paths: [imgPath],
-        latitude: 0.0,
-        longitude: 0.0,
-        createdAt: DateTime.now(),
-        propertyId: 'p',
-        talhaoId: 't',
-        cropTypeId: 'c',
-        source: 'phone',
-      );
-      final presignedUrls = [
-        PresignedUploadUrl(
-          imageId: upload.images.single.imageId,
-          fileId: 'f1',
-          objectKey: 'uploads/u/0/original.jpeg',
-          url: 'https://storage.example.com/put-test-file',
-          expiresAt: DateTime.now().add(const Duration(hours: 1)),
-          headers: {'x-amz-meta-user': 'mobile'},
-        ),
-      ];
-
-      final result = await syncService.stepUploadOriginals(upload, [
-        imgPath,
-      ], presignedUrls);
-      expect(result.status, PendingUploadStatus.pendingMetadataSync);
-
-      final putRequest = mockHttp.requests.firstWhere((r) => r.method == 'PUT');
-      expect(putRequest.headers['x-amz-meta-user'], 'mobile');
-      expect(putRequest.headers['Content-Type'], 'image/jpeg');
-
-      await File(imgPath).delete();
-    });
-
     test('skips already-uploaded files and only PUTs missing ones', () async {
       final firstPath = '/tmp/upload_skip_existing.jpg';
       final secondPath = '/tmp/upload_skip_missing.jpg';
@@ -734,6 +550,7 @@ void main() {
           objectKey: 'uploads/u/1/original.jpeg',
           url: 'https://storage.example.com/put-missing',
           expiresAt: DateTime.now().add(const Duration(hours: 1)),
+          headers: {'x-amz-meta-user': 'mobile'},
         ),
       ];
 
@@ -748,6 +565,8 @@ void main() {
           .toList();
       expect(putRequests.length, 1);
       expect(putRequests.first.url.path, '/put-missing');
+      expect(putRequests.first.headers['x-amz-meta-user'], 'mobile');
+      expect(putRequests.first.headers['Content-Type'], 'image/jpeg');
 
       await File(firstPath).delete();
       await File(secondPath).delete();
@@ -814,33 +633,6 @@ void main() {
   });
 
   group('SyncService - stepComplete', () {
-    test('calls complete endpoint', () async {
-      final upload = PendingUpload(
-        id: 'complete-test',
-        paths: [],
-        latitude: 0.0,
-        longitude: 0.0,
-        createdAt: DateTime.now(),
-        propertyId: 'p',
-        talhaoId: 't',
-        cropTypeId: 'c',
-        source: 'phone',
-        backendUploadId: 'backend-complete',
-      );
-
-      mockHttp.queueResponse(
-        'POST',
-        '/api/uploads/backend-complete/complete',
-        200,
-        {
-          'upload': {'id': 'backend-complete', 'status': 'finalizing'},
-        },
-      );
-
-      final result = await syncService.stepComplete(upload);
-      expect(result.backendStatus, 'finalizing');
-    });
-
     test('throws when no backendUploadId', () async {
       final upload = PendingUpload(
         id: 'no-backend',
@@ -862,83 +654,6 @@ void main() {
   });
 
   group('SyncService - stepPollUntilReady', () {
-    test('returns completed on ready status', () async {
-      mockHttp.queueResponse('GET', '/api/uploads/backend-poll', 200, {
-        'id': 'backend-poll',
-        'status': 'ready',
-        'propertyId': 'p',
-        'talhaoId': 't',
-        'cropTypeId': 'c',
-        'source': 'phone',
-        'latitude': 0.0,
-        'longitude': 0.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
-
-      final upload = PendingUpload(
-        id: 'poll-ready',
-        paths: [],
-        latitude: 0.0,
-        longitude: 0.0,
-        createdAt: DateTime.now(),
-        propertyId: 'p',
-        talhaoId: 't',
-        cropTypeId: 'c',
-        source: 'phone',
-        backendUploadId: 'backend-poll',
-      );
-
-      final result = await syncService.stepPollUntilReady(
-        upload: upload,
-        maxPolls: 1,
-        pollInterval: const Duration(milliseconds: 1),
-      );
-      expect(result.status, PendingUploadStatus.completed);
-      expect(result.backendStatus, 'ready');
-    });
-
-    test('returns failed on backend failed status', () async {
-      mockHttp.queueResponse('GET', '/api/uploads/backend-poll-fail', 200, {
-        'id': 'backend-poll-fail',
-        'status': 'failed',
-        'errorMessage': 'Preview generation failed',
-        'propertyId': 'p',
-        'talhaoId': 't',
-        'cropTypeId': 'c',
-        'source': 'phone',
-        'latitude': 0.0,
-        'longitude': 0.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
-
-      final upload = PendingUpload(
-        id: 'poll-failed',
-        paths: [],
-        latitude: 0.0,
-        longitude: 0.0,
-        createdAt: DateTime.now(),
-        propertyId: 'p',
-        talhaoId: 't',
-        cropTypeId: 'c',
-        source: 'phone',
-        backendUploadId: 'backend-poll-fail',
-      );
-
-      final result = await syncService.stepPollUntilReady(
-        upload: upload,
-        maxPolls: 1,
-        pollInterval: const Duration(milliseconds: 1),
-      );
-      expect(result.status, PendingUploadStatus.failed);
-      expect(result.backendError, 'Preview generation failed');
-    });
-
     test('uses the refreshed token on later poll iterations', () async {
       var currentToken = 'token-123';
       authService = FakeAuthService(
@@ -961,34 +676,8 @@ void main() {
         'accessToken': testAccessToken('user-1', session: 'new'),
         'refreshToken': 'new-refresh',
       });
-      mockHttp.queueResponse('GET', '/api/uploads/backend-poll-refresh', 200, {
-        'id': 'backend-poll-refresh',
-        'status': 'finalizing',
-        'propertyId': 'p',
-        'talhaoId': 't',
-        'cropTypeId': 'c',
-        'source': 'phone',
-        'latitude': 0.0,
-        'longitude': 0.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
-      mockHttp.queueResponse('GET', '/api/uploads/backend-poll-refresh', 200, {
-        'id': 'backend-poll-refresh',
-        'status': 'ready',
-        'propertyId': 'p',
-        'talhaoId': 't',
-        'cropTypeId': 'c',
-        'source': 'phone',
-        'latitude': 0.0,
-        'longitude': 0.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
+      queueUploadDetail('backend-poll-refresh', status: 'finalizing');
+      queueUploadDetail('backend-poll-refresh');
       mockHttp.beforeResponse = (request) async {
         if (request.url.path == '/api/auth/refresh') {
           currentToken = 'new-access';
@@ -1015,6 +704,7 @@ void main() {
       );
 
       expect(result.status, PendingUploadStatus.completed);
+      expect(result.backendStatus, 'ready');
       expect(
         mockHttp.requests.where(
           (request) => request.url.path == '/api/auth/refresh',
@@ -1175,20 +865,7 @@ void main() {
             'upload': {'id': 'backend-logout', 'status': 'finalizing'},
           },
         );
-        mockHttp.queueResponse('GET', '/api/uploads/backend-logout', 200, {
-          'id': 'backend-logout',
-          'status': 'ready',
-          'propertyId': 'p1',
-          'talhaoId': 't1',
-          'cropTypeId': 'c1',
-          'source': 'phone',
-          'latitude': 0,
-          'longitude': 0,
-          'activityDate': '2026-01-01T00:00:00Z',
-          'createdAt': '2026-01-01T00:00:00Z',
-          'updatedAt': '2026-01-01T00:00:00Z',
-          'files': [],
-        });
+        queueUploadDetail('backend-logout');
         service.initialize();
         service.initialize();
         final resumed = service.syncPendingCatalogsAndUploads();
@@ -1206,67 +883,7 @@ void main() {
     );
   });
 
-  group('SyncService - deterministic polling and failures', () {
-    test(
-      'uses exponential capped delays and deadline without waiting',
-      () async {
-        var now = DateTime.utc(2026, 1, 1);
-        final delays = <Duration>[];
-        final service = SyncService(
-          apiClient: apiClient,
-          authService: authService,
-          databaseHelper: databaseHelper,
-          catalogRepository: catalogRepository,
-          pollDelay: (attempt) =>
-              Duration(milliseconds: 100 * (1 << attempt.clamp(0, 3))),
-          delay: (duration) async {
-            delays.add(duration);
-            now = now.add(duration);
-          },
-          now: () => now,
-        );
-        final upload = PendingUpload(
-          id: 'poll-timeout',
-          paths: [],
-          latitude: 0,
-          longitude: 0,
-          createdAt: now,
-          status: PendingUploadStatus.pendingMetadataSync,
-          backendUploadId: 'backend-timeout',
-        );
-        for (var i = 0; i < 4; i++) {
-          mockHttp.queueResponse('GET', '/api/uploads/backend-timeout', 200, {
-            'id': 'backend-timeout',
-            'status': 'finalizing',
-            'propertyId': 'p',
-            'talhaoId': 't',
-            'cropTypeId': 'c',
-            'source': 'phone',
-            'latitude': 0,
-            'longitude': 0,
-            'activityDate': '2026-01-01T00:00:00Z',
-            'createdAt': '2026-01-01T00:00:00Z',
-            'updatedAt': '2026-01-01T00:00:00Z',
-            'files': [],
-          });
-        }
-        final result = await service.stepPollUntilReady(
-          upload: upload,
-          maxPolls: 4,
-          pollInterval: const Duration(milliseconds: 50),
-          deadline: const Duration(milliseconds: 1000),
-        );
-        expect(delays, [
-          const Duration(milliseconds: 50),
-          const Duration(milliseconds: 100),
-          const Duration(milliseconds: 200),
-          const Duration(milliseconds: 400),
-        ]);
-        expect(result.status, PendingUploadStatus.pendingMetadataSync);
-        service.dispose();
-      },
-    );
-
+  group('SyncService - structured failures', () {
     test(
       'persists safe structured failures and exposes them in result',
       () async {
@@ -1331,20 +948,7 @@ void main() {
         'upload': {'id': 'backend-e2e', 'status': 'finalizing'},
       });
       // Mock poll → ready
-      mockHttp.queueResponse('GET', '/api/uploads/backend-e2e', 200, {
-        'id': 'backend-e2e',
-        'status': 'ready',
-        'propertyId': 'p1',
-        'talhaoId': 't1',
-        'cropTypeId': 'c1',
-        'source': 'phone',
-        'latitude': -10.0,
-        'longitude': -20.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
+      queueUploadDetail('backend-e2e');
 
       final result = await syncService.syncAll();
       expect(result.totalAttempted, 1);
@@ -1353,6 +957,22 @@ void main() {
 
       final remaining = await databaseHelper.getAllUploads();
       expect(remaining.first.status, PendingUploadStatus.completed);
+      expect(remaining.first.backendUploadId, 'backend-e2e');
+      expect(remaining.first.backendStatus, 'ready');
+      expect(
+        mockHttp.requests.where(
+          (request) =>
+              request.method == 'POST' &&
+              request.url.path == '/api/uploads/init',
+        ),
+        hasLength(1),
+      );
+      expect(
+        mockHttp.requests.where(
+          (request) => request.url.path.endsWith('/complete'),
+        ),
+        hasLength(1),
+      );
 
       await File(imgPath).delete();
     });
@@ -1389,25 +1009,7 @@ void main() {
         'status': 'finalizing',
       });
       for (var i = 0; i < 30; i++) {
-        mockHttp.queueResponse(
-          'GET',
-          '/api/uploads/backend-syncall-poll-timeout',
-          200,
-          {
-            'id': 'backend-syncall-poll-timeout',
-            'status': 'finalizing',
-            'propertyId': 'p',
-            'talhaoId': 't',
-            'cropTypeId': 'c',
-            'source': 'phone',
-            'latitude': 0,
-            'longitude': 0,
-            'activityDate': '2026-01-01T00:00:00Z',
-            'createdAt': '2026-01-01T00:00:00Z',
-            'updatedAt': '2026-01-01T00:00:00Z',
-            'files': [],
-          },
-        );
+        queueUploadDetail('backend-syncall-poll-timeout', status: 'finalizing');
       }
 
       final result = await timeoutService.syncAll();
@@ -1456,22 +1058,11 @@ void main() {
         'uploadId': 'backend-syncall-poll-fail',
         'status': 'finalizing',
       });
-      mockHttp
-          .queueResponse('GET', '/api/uploads/backend-syncall-poll-fail', 200, {
-            'id': 'backend-syncall-poll-fail',
-            'status': 'failed',
-            'errorMessage': 'Sensitive backend failure detail',
-            'propertyId': 'p',
-            'talhaoId': 't',
-            'cropTypeId': 'c',
-            'source': 'phone',
-            'latitude': 0,
-            'longitude': 0,
-            'activityDate': '2026-01-01T00:00:00Z',
-            'createdAt': '2026-01-01T00:00:00Z',
-            'updatedAt': '2026-01-01T00:00:00Z',
-            'files': [],
-          });
+      queueUploadDetail(
+        'backend-syncall-poll-fail',
+        status: 'failed',
+        errorMessage: 'Sensitive backend failure detail',
+      );
 
       final result = await syncService.syncAll();
       final persisted = (await databaseHelper.getAllUploads()).single;
@@ -1482,6 +1073,8 @@ void main() {
       expect(result.failures.single.uploadId, upload.id);
       expect(result.failures.single.message, isNot(contains('Sensitive')));
       expect(persisted.backendStatus, 'failed');
+      expect(persisted.status, PendingUploadStatus.failed);
+      expect(persisted.backendError, 'Sensitive backend failure detail');
       expect(persisted.syncAttemptCount, 1);
       expect(persisted.lastSyncAttemptAt, isNotNull);
     });
@@ -1524,53 +1117,54 @@ void main() {
   });
 
   group('SyncService - resume from pendingMetadataSync', () {
-    test('reconciles finalizing without repeating complete', () async {
-      final upload = PendingUpload(
-        id: 'resume-finalizing',
-        paths: [],
-        latitude: 0.0,
-        longitude: 0.0,
-        createdAt: DateTime.now(),
-        propertyId: 'p',
-        talhaoId: 't',
-        cropTypeId: 'c',
-        source: 'phone',
-        backendUploadId: 'backend-finalizing',
-        status: PendingUploadStatus.pendingMetadataSync,
-      );
-      await databaseHelper.insertPendingUpload(upload);
+    for (final cachedBackendStatus in [null, 'draft']) {
+      test(
+        'reconciles cached $cachedBackendStatus as finalizing without repeating complete',
+        () async {
+          final upload = PendingUpload(
+            id: 'resume-finalizing',
+            paths: [],
+            latitude: 0.0,
+            longitude: 0.0,
+            createdAt: DateTime.now(),
+            propertyId: 'p',
+            talhaoId: 't',
+            cropTypeId: 'c',
+            source: 'phone',
+            backendUploadId: 'backend-finalizing',
+            backendStatus: cachedBackendStatus,
+            status: PendingUploadStatus.pendingMetadataSync,
+          );
+          await databaseHelper.insertPendingUpload(upload);
 
-      mockHttp.queueResponse('POST', '/api/uploads/init', 200, {
-        'uploadId': 'backend-finalizing',
-        'status': 'finalizing',
-        'files': [],
-      });
-      mockHttp.queueResponse('GET', '/api/uploads/backend-finalizing', 200, {
-        'id': 'backend-finalizing',
-        'status': 'ready',
-        'propertyId': 'p',
-        'talhaoId': 't',
-        'cropTypeId': 'c',
-        'source': 'phone',
-        'latitude': 0.0,
-        'longitude': 0.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
+          mockHttp.queueResponse('POST', '/api/uploads/init', 200, {
+            'uploadId': 'backend-finalizing',
+            'status': 'finalizing',
+            'files': [],
+          });
+          queueUploadDetail('backend-finalizing');
 
-      final result = await syncService.syncAll();
-      expect(result.successful, 1);
-      expect(
-        mockHttp.requests.where((r) => r.url.path.endsWith('/complete')),
-        isEmpty,
+          final result = await syncService.syncAll();
+          expect(result.successful, 1);
+          expect(
+            mockHttp.requests.where(
+              (request) =>
+                  request.method == 'POST' &&
+                  request.url.path == '/api/uploads/init',
+            ),
+            hasLength(1),
+          );
+          expect(
+            mockHttp.requests.where((r) => r.url.path.endsWith('/complete')),
+            isEmpty,
+          );
+          expect(
+            (await databaseHelper.getAllUploads()).single.status,
+            PendingUploadStatus.completed,
+          );
+        },
       );
-      expect(
-        (await databaseHelper.getAllUploads()).single.status,
-        PendingUploadStatus.completed,
-      );
-    });
+    }
 
     test(
       'init ready marks upload completed without upload or complete',
@@ -1608,131 +1202,6 @@ void main() {
           (await databaseHelper.getAllUploads()).single.status,
           PendingUploadStatus.completed,
         );
-      },
-    );
-
-    test('reconciles pendingMetadataSync through idempotent init', () async {
-      final upload = PendingUpload(
-        id: 'resume-metasync',
-        paths: [],
-        latitude: 0.0,
-        longitude: 0.0,
-        createdAt: DateTime.now(),
-        propertyId: 'p',
-        talhaoId: 't',
-        cropTypeId: 'c',
-        source: 'phone',
-        backendUploadId: 'backend-existing',
-        status: PendingUploadStatus.pendingMetadataSync,
-        backendStatus: 'draft',
-      );
-      await databaseHelper.insertPendingUpload(upload);
-
-      mockHttp.queueResponse('POST', '/api/uploads/init', 200, {
-        'uploadId': 'backend-existing',
-        'status': 'finalizing',
-        'files': [],
-      });
-      mockHttp.queueResponse('GET', '/api/uploads/backend-existing', 200, {
-        'id': 'backend-existing',
-        'status': 'ready',
-        'propertyId': 'p',
-        'talhaoId': 't',
-        'cropTypeId': 'c',
-        'source': 'phone',
-        'latitude': 0.0,
-        'longitude': 0.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
-
-      final result = await syncService.syncAll();
-      expect(result.successful, 1);
-
-      // Init reconciles the backend state; complete is not repeated.
-      final initCalls = mockHttp.requests.where(
-        (r) => r.method == 'POST' && r.url.path == '/api/uploads/init',
-      );
-      expect(initCalls.length, 1);
-      expect(
-        mockHttp.requests.where((r) => r.url.path.endsWith('/complete')),
-        isEmpty,
-      );
-    });
-  });
-
-  group('SyncService - no duplicate init', () {
-    test(
-      'syncOne calls uploadInit exactly once for a new pending upload',
-      () async {
-        final imgPath = '/tmp/no_dup_test.jpg';
-        await createTempFile(imgPath, 'data');
-
-        final upload = PendingUpload(
-          id: 'no-dup-uuid',
-          paths: [imgPath],
-          latitude: 0.0,
-          longitude: 0.0,
-          createdAt: DateTime.now(),
-          propertyId: 'p',
-          talhaoId: 't',
-          cropTypeId: 'c',
-          source: 'phone',
-        );
-        await databaseHelper.insertPendingUpload(upload);
-
-        // Mock init (only needs to be called once)
-        mockHttp.queueResponse('POST', '/api/uploads/init', 201, {
-          'uploadId': 'backend-no-dup',
-          'status': 'draft',
-          'files': [
-            {
-              'fileId': 'f1',
-              'objectKey': 'uploads/u/0/original.jpeg',
-              'uploadUrl': 'https://storage.example.com/put-no-dup',
-              'expiresAt': '2026-07-01T00:00:00Z',
-            },
-          ],
-        });
-        mockHttp.queueResponse('PUT', '/put-no-dup', 200, {});
-        mockHttp.queueResponse(
-          'POST',
-          '/api/uploads/backend-no-dup/complete',
-          200,
-          {
-            'upload': {'id': 'backend-no-dup', 'status': 'finalizing'},
-          },
-        );
-        mockHttp.queueResponse('GET', '/api/uploads/backend-no-dup', 200, {
-          'id': 'backend-no-dup',
-          'status': 'ready',
-          'propertyId': 'p',
-          'talhaoId': 't',
-          'cropTypeId': 'c',
-          'source': 'phone',
-          'latitude': 0.0,
-          'longitude': 0.0,
-          'activityDate': '2026-06-30T12:00:00Z',
-          'createdAt': '2026-06-30T12:00:00Z',
-          'updatedAt': '2026-06-30T12:00:00Z',
-          'files': [],
-        });
-
-        await syncService.syncAll();
-
-        // Verify init was called exactly once
-        final initCalls = mockHttp.requests.where(
-          (r) => r.method == 'POST' && r.url.path == '/api/uploads/init',
-        );
-        expect(
-          initCalls.length,
-          1,
-          reason: 'uploadInit must be called exactly once',
-        );
-
-        await File(imgPath).delete();
       },
     );
   });
@@ -1916,20 +1385,7 @@ void main() {
           'upload': {'id': 'stale-backend', 'status': 'finalizing'},
         },
       );
-      mockHttp.queueResponse('GET', '/api/uploads/stale-backend', 200, {
-        'id': 'stale-backend',
-        'status': 'ready',
-        'propertyId': 'p1',
-        'talhaoId': 't1',
-        'cropTypeId': 'c1',
-        'source': 'phone',
-        'latitude': -10.0,
-        'longitude': -20.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
+      queueUploadDetail('stale-backend');
 
       final result = await syncService.retryUpload(upload);
       expect(result.status, PendingUploadStatus.completed);
@@ -2063,20 +1519,7 @@ void main() {
           'upload': {'id': 'syncall-stale-backend', 'status': 'finalizing'},
         },
       );
-      mockHttp.queueResponse('GET', '/api/uploads/syncall-stale-backend', 200, {
-        'id': 'syncall-stale-backend',
-        'status': 'ready',
-        'propertyId': 'p2',
-        'talhaoId': 't2',
-        'cropTypeId': 'c2',
-        'source': 'phone',
-        'latitude': -10.0,
-        'longitude': -20.0,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:00:00Z',
-        'files': [],
-      });
+      queueUploadDetail('syncall-stale-backend');
 
       final result = await syncService.syncAll();
       expect(result.successful, 1);

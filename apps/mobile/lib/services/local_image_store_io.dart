@@ -53,6 +53,10 @@ class IoLocalImageStore implements LocalImageStore {
   Future<void> deleteImage(String path) => File(path).delete();
 
   @override
+  String comparisonKey(String path) =>
+      File(path).absolute.uri.normalizePath().toString();
+
+  @override
   Future<List<String>> listPaths() async {
     final dir = await _resolveDirectory();
     if (!await dir.exists()) return const [];

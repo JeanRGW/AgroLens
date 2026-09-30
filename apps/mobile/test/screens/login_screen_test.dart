@@ -42,6 +42,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('forgot password navigates to password recovery screen', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: LoginScreen(authService: authService)),
+    );
+    await tester.tap(find.text('Esqueceu a senha?'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recuperação de senha'), findsOneWidget);
+    expect(find.text('Enviar link'), findsOneWidget);
+  });
+
   testWidgets('shows the suspension message for disabled accounts', (
     tester,
   ) async {

@@ -22,6 +22,9 @@ abstract class LocalImageStore {
 
   Future<void> deleteImage(String path);
 
+  /// Comparison key for the same image; stored paths and web blob keys stay intact.
+  String comparisonKey(String path);
+
   /// Keys of every image currently stored (used for orphan cleanup).
   Future<List<String>> listPaths();
 }

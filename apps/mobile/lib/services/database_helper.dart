@@ -193,7 +193,11 @@ class DatabaseHelper {
         try {
           final images = (jsonDecode(raw) as List<dynamic>)
               .cast<Map<String, dynamic>>();
-          activePaths.addAll(images.map((image) => image['path'] as String));
+          activePaths.addAll(
+            images.map(
+              (image) => imageStore.comparisonKey(image['path'] as String),
+            ),
+          );
         } catch (_) {
           // A corrupt queue row must not cause cleanup to delete another batch's images.
           return 0;
@@ -205,7 +209,7 @@ class DatabaseHelper {
     try {
       final storedPaths = await imageStore.listPaths();
       for (final path in storedPaths) {
-        if (!activePaths.contains(path)) {
+        if (!activePaths.contains(imageStore.comparisonKey(path))) {
           try {
             await imageStore.deleteImage(path);
             deleted++;

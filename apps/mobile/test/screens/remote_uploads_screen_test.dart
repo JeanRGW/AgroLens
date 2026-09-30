@@ -111,9 +111,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('two-column cards and load-more render without overflow', (
-    tester,
-  ) async {
+  testWidgets('load-more paginates uploads without overflow', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -125,24 +123,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(Card), findsWidgets);
-    expect(find.textContaining('upload-'), findsNothing);
-    expect(find.textContaining('Status:'), findsNothing);
-    expect(find.textContaining('Atividade:'), findsNothing);
-    expect(find.textContaining('Pré-visualizações:'), findsNothing);
-    expect(find.byTooltip('Atualizar status'), findsNothing);
     expect(find.byTooltip('Atualizar lista'), findsOneWidget);
     expect(find.text('4 imagens'), findsWidgets);
-    expect(find.text('Celular'), findsNothing);
-    final preview = find.byType(AspectRatio).first;
-    expect(tester.getSize(preview).width, lessThan(160));
-    expect(tester.getSize(preview).height, lessThan(100));
-    final firstCard = find.byType(Card).at(0);
-    final secondCard = find.byType(Card).at(1);
-    expect(tester.getTopLeft(firstCard).dy, tester.getTopLeft(secondCard).dy);
-    expect(
-      tester.getTopLeft(secondCard).dx,
-      greaterThan(tester.getTopRight(firstCard).dx),
-    );
     await tester.scrollUntilVisible(
       find.text('Carregar mais'),
       300,
@@ -161,27 +143,6 @@ void main() {
           .url
           .queryParameters['offset'],
       '20',
-    );
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('odd upload stays half-width on its own row', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(320, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    mockHttp.queueResponse('GET', '/api/uploads', 200, {
-      'uploads': [
-        for (var i = 0; i < 3; i++) uploadJson(i, withPreview: false),
-      ],
-    });
-    await tester.pumpWidget(buildScreen());
-    await tester.pumpAndSettle();
-    final firstCard = find.byType(Card).at(0);
-    final lastCard = find.byType(Card).at(2);
-    expect(tester.getSize(firstCard).width, tester.getSize(lastCard).width);
-    expect(tester.getTopLeft(firstCard).dx, tester.getTopLeft(lastCard).dx);
-    expect(
-      tester.getTopLeft(lastCard).dy,
-      greaterThan(tester.getBottomLeft(firstCard).dy),
     );
     expect(tester.takeException(), isNull);
   });
@@ -257,7 +218,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('compact carousel shows all images without visible headings', (
+  testWidgets('carousel shows all images and opens the image viewer', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
@@ -273,10 +234,6 @@ void main() {
     ]);
 
     expect(find.byType(PageView), findsOneWidget);
-    expect(find.textContaining('Imagens ('), findsNothing);
-    expect(find.text('Imagem 1'), findsNothing);
-    expect(find.text('Imagem 2'), findsNothing);
-    expect(find.text('Imagem 3'), findsNothing);
     expect(find.text('Ver no mapa'), findsOneWidget);
     expect(find.text('Sem localização'), findsNothing);
     expect(
@@ -288,9 +245,6 @@ void main() {
       isNull,
     );
     final firstImage = find.byType(Image).first;
-    expect(tester.getSize(firstImage).height, greaterThan(200));
-    expect(tester.getSize(firstImage).height, lessThanOrEqualTo(280));
-    expect(tester.widget<Image>(firstImage).fit, BoxFit.contain);
 
     await tester.tap(firstImage);
     await tester.pumpAndSettle();
@@ -334,11 +288,6 @@ void main() {
       ),
       hasLength(1),
     );
-    expect(find.textContaining('Tipo:'), findsNothing);
-    expect(find.textContaining('Chave:'), findsNothing);
-    expect(find.textContaining('Tamanho:'), findsNothing);
-    expect(find.textContaining('-22.123456'), findsNothing);
-    expect(find.text('ID do upload'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

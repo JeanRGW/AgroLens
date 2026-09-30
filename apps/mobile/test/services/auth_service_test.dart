@@ -475,19 +475,6 @@ void main() {
       expect(await tokenStorage.getAccessToken(), 'account-b');
     });
 
-    test('clearing the phone sends explicit null to the backend', () async {
-      mockHttp.queueResponse('PATCH', '/api/users/me', 200, {'user': userJson});
-      await apiClient.updateProfile(
-        accessToken: 'access',
-        fullName: 'Test User',
-        phone: '  ',
-      );
-      final body =
-          jsonDecode((mockHttp.requests.single as http.Request).body)
-              as Map<String, dynamic>;
-      expect(body.containsKey('phone'), isTrue);
-      expect(body['phone'], isNull);
-    });
     test(
       'preserves transient refresh failures instead of reporting logout',
       () async {

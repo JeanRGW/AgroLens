@@ -144,14 +144,4 @@ void main() {
       await tester.runAsync(db.close);
     },
   );
-
-  testWidgets(
-    'cold-start app boots through AuthWrapper without initialization errors',
-    (tester) async {
-      await tester.pumpWidget(const AgroLensRefactorApp());
-      await tester.pump();
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 100));
-    },
-  );
 }

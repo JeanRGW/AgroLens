@@ -51,11 +51,14 @@ void main() {
         presignedUrl: 'https://storage.example.com/put-1',
         bytes: [1, 2, 3],
         contentType: 'image/jpeg',
+        headers: {'x-amz-meta-user': 'mobile'},
       );
 
       expect(statusCode, 200);
       expect(client.requests.single.method, 'PUT');
       expect(client.requests.single.url.host, 'storage.example.com');
+      expect(client.requests.single.headers['x-amz-meta-user'], 'mobile');
+      expect(client.requests.single.headers['Content-Type'], 'image/jpeg');
     });
 
     test('returns non-2xx status without throwing on error response', () async {

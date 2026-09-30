@@ -138,6 +138,8 @@ class MockHttpClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     _requests.add(request);
+    // Consume uploads like a real client so file handles close and read errors surface.
+    await request.finalize().drain<void>();
     await beforeResponse?.call(request);
     final key = '${request.method} ${request.url.path}';
 

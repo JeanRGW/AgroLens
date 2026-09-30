@@ -2,42 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:agrolens/models/pending_upload.dart';
 
 void main() {
-  group('PendingUploadStatus', () {
-    test('name returns correct string', () {
-      expect(PendingUploadStatus.pending.name, 'pending');
-      expect(PendingUploadStatus.uploading.name, 'uploading');
-      expect(
-        PendingUploadStatus.pendingMetadataSync.name,
-        'pendingMetadataSync',
-      );
-      expect(PendingUploadStatus.completed.name, 'completed');
-      expect(PendingUploadStatus.failed.name, 'failed');
-    });
-
-    test('values.byName parses correctly', () {
-      expect(
-        PendingUploadStatus.values.byName('pending'),
-        PendingUploadStatus.pending,
-      );
-      expect(
-        PendingUploadStatus.values.byName('uploading'),
-        PendingUploadStatus.uploading,
-      );
-      expect(
-        PendingUploadStatus.values.byName('pendingMetadataSync'),
-        PendingUploadStatus.pendingMetadataSync,
-      );
-      expect(
-        PendingUploadStatus.values.byName('completed'),
-        PendingUploadStatus.completed,
-      );
-      expect(
-        PendingUploadStatus.values.byName('failed'),
-        PendingUploadStatus.failed,
-      );
-    });
-  });
-
   group('PendingUpload', () {
     final base = PendingUpload(
       id: 'test-id-123',
@@ -47,25 +11,6 @@ void main() {
       createdAt: DateTime.now(),
       activityDate: DateTime.parse('2026-06-30T12:00:00Z'),
     );
-
-    test('has correct initial status', () {
-      expect(base.status, PendingUploadStatus.pending);
-    });
-
-    test('copyWith preserves unchanged fields', () {
-      final copy = base.copyWith(status: PendingUploadStatus.uploading);
-      expect(copy.id, base.id);
-      expect(copy.paths, base.paths);
-      expect(copy.status, PendingUploadStatus.uploading);
-    });
-
-    test('copyWith allows clearing error message', () {
-      final withError = base.copyWith(errorMessage: 'Something went wrong');
-      expect(withError.errorMessage, 'Something went wrong');
-
-      final cleared = withError.copyWith(clearErrorMessage: true);
-      expect(cleared.errorMessage, isNull);
-    });
 
     test('copyWith clear flags reset nullable fields to null', () {
       final populated = base.copyWith(
@@ -88,10 +33,12 @@ void main() {
       expect(clearedSyncCode.backendStatus, 'failed');
 
       final allCleared = populated.copyWith(
+        clearErrorMessage: true,
         clearBackendStatus: true,
         clearBackendError: true,
         clearSyncErrorCode: true,
       );
+      expect(allCleared.errorMessage, isNull);
       expect(allCleared.backendStatus, isNull);
       expect(allCleared.backendError, isNull);
       expect(allCleared.syncErrorCode, isNull);
@@ -123,19 +70,6 @@ void main() {
       expect(clearedOverValue.backendStatus, isNull);
       expect(clearedOverValue.backendError, 'boom');
       expect(clearedOverValue.syncErrorCode, 'SYNC_FAILED');
-    });
-
-    test('copyWith updates backend fields', () {
-      final withBackend = base.copyWith(
-        backendUploadId: 'backend-uuid',
-        backendStatus: 'draft',
-      );
-      expect(withBackend.backendUploadId, 'backend-uuid');
-      expect(withBackend.backendStatus, 'draft');
-    });
-
-    test('paths projects the current image list', () {
-      expect(base.paths, ['/tmp/img1.jpg', '/tmp/img2.jpg']);
     });
 
     test('toSqliteRow and fromSqliteRow roundtrip', () {

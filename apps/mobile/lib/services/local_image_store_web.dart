@@ -136,6 +136,9 @@ class WebLocalImageStore implements LocalImageStore {
   }
 
   @override
+  String comparisonKey(String path) => path;
+
+  @override
   Future<List<String>> listPaths() {
     return _withStore('readonly', (store) async {
       final raw = await _run(store.getAllKeys());

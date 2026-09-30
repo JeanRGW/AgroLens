@@ -22,6 +22,30 @@ void main() {
   late MockHttpClient mockHttp;
   late ApiClient apiClient;
 
+  const timestamp = '2026-06-30T12:00:00Z';
+  final userJson = {
+    'id': 'user-1',
+    'email': 'test@example.com',
+    'fullName': 'Test User',
+    'phone': null,
+    'role': 'user',
+    'disabledAt': null,
+    'createdAt': timestamp,
+    'updatedAt': timestamp,
+  };
+  final uploadJson = {
+    'id': 'upload-1',
+    'status': 'ready',
+    'propertyId': 'prop-uuid',
+    'talhaoId': 'talhao-uuid',
+    'cropTypeId': 'crop-uuid',
+    'estadioId': null,
+    'source': 'phone',
+    'activityDate': timestamp,
+    'createdAt': timestamp,
+    'updatedAt': timestamp,
+  };
+
   setUp(() {
     mockHttp = MockHttpClient();
     apiClient = ApiClient(
@@ -46,18 +70,8 @@ void main() {
     });
 
     test('login constructs correct request and parses response', () async {
-      final now = DateTime.now().toIso8601String();
       mockHttp.queueResponse('POST', '/api/auth/login', 200, {
-        'user': {
-          'id': 'user-1',
-          'email': 'test@example.com',
-          'fullName': 'Test User',
-          'phone': null,
-          'role': 'user',
-          'disabledAt': null,
-          'createdAt': now,
-          'updatedAt': now,
-        },
+        'user': userJson,
         'accessToken': 'access-123',
         'refreshToken': 'refresh-456',
       });
@@ -78,17 +92,13 @@ void main() {
     });
 
     test('register sends mobile clientType', () async {
-      final now = DateTime.now().toIso8601String();
       mockHttp.queueResponse('POST', '/api/auth/register', 201, {
         'user': {
+          ...userJson,
           'id': 'user-2',
           'email': 'new@example.com',
           'fullName': 'New User',
           'phone': '+5511999999999',
-          'role': 'user',
-          'disabledAt': null,
-          'createdAt': now,
-          'updatedAt': now,
         },
         'accessToken': 'access-abc',
         'refreshToken': 'refresh-def',
@@ -134,19 +144,7 @@ void main() {
     });
 
     test('me uses Bearer token', () async {
-      final now = DateTime.now().toIso8601String();
-      mockHttp.queueResponse('GET', '/api/auth/me', 200, {
-        'user': {
-          'id': 'user-1',
-          'email': 'test@example.com',
-          'fullName': 'Test User',
-          'phone': null,
-          'role': 'user',
-          'disabledAt': null,
-          'createdAt': now,
-          'updatedAt': now,
-        },
-      });
+      mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
 
       final response = await apiClient.me(accessToken: 'bearer-token');
       expect(response.user.email, 'test@example.com');
@@ -168,6 +166,15 @@ void main() {
             'objectKey': 'uploads/u1/a/original.jpeg',
             'uploadUrl': 'https://storage.example.com/presigned-put-1',
             'expiresAt': '2026-07-01T00:00:00Z',
+            'headers': {'x-amz-meta-user': 'mobile'},
+          },
+          {
+            'imageId': 'image-2',
+            'fileId': 'existing-file',
+            'objectKey': 'uploads/u1/b/original.jpeg',
+            'uploadUrl': null,
+            'method': 'GET',
+            'expiresAt': null,
           },
         ],
       });
@@ -188,17 +195,26 @@ void main() {
               'latitude': -22.9,
               'longitude': -43.1,
             },
+            {'imageId': 'image-2', 'contentType': 'image/jpeg'},
           ],
         },
       );
 
       expect(response.uploadId, 'upload-1');
       expect(response.status, 'draft');
-      expect(response.presignedUrls.length, 1);
+      expect(response.presignedUrls.length, 2);
       expect(
         response.presignedUrls.first.url,
         'https://storage.example.com/presigned-put-1',
       );
+      expect(response.presignedUrls.first.fileId, 'file-1');
+      expect(
+        response.presignedUrls.first.objectKey,
+        'uploads/u1/a/original.jpeg',
+      );
+      expect(response.presignedUrls.first.headers['x-amz-meta-user'], 'mobile');
+      expect(response.presignedUrls.last.url, isNull);
+      expect(response.presignedUrls.last.requiresUpload, isFalse);
 
       final headers = mockHttp.requests.first.headers;
       expect(headers['Authorization'], 'Bearer token');
@@ -219,18 +235,9 @@ void main() {
 
     test('getUploadDetail parses nested files', () async {
       mockHttp.queueResponse('GET', '/api/uploads/upload-1', 200, {
-        'id': 'upload-1',
-        'status': 'ready',
-        'propertyId': 'prop-uuid',
-        'talhaoId': 'talhao-uuid',
-        'cropTypeId': 'crop-uuid',
-        'estadioId': null,
-        'source': 'phone',
-        'latitude': -22.9,
-        'longitude': -43.1,
-        'activityDate': '2026-06-30T12:00:00Z',
-        'createdAt': '2026-06-30T12:00:00Z',
-        'updatedAt': '2026-06-30T12:05:00Z',
+        ...uploadJson,
+        'estadioId': 'estadio-uuid',
+        'source': 'drone',
         'files': [
           {
             'id': 'file-1',
@@ -242,6 +249,16 @@ void main() {
             'contentType': 'image/jpeg',
             'sizeBytes': 1024000,
           },
+          {
+            'id': 'preview-1',
+            'imageId': 'image-1',
+            'latitude': -22.9,
+            'longitude': -43.1,
+            'variant': 'preview',
+            'objectKey': 'uploads/u1/0/preview.jpg',
+            'contentType': 'image/jpeg',
+            'sizeBytes': 256000,
+          },
         ],
       });
 
@@ -250,32 +267,108 @@ void main() {
         uploadId: 'upload-1',
       );
       expect(detail.status, 'ready');
-      expect(detail.files.length, 1);
+      expect(detail.estadioId, 'estadio-uuid');
+      expect(detail.source, 'drone');
+      expect(detail.fileCount, 1);
+      expect(detail.files.length, 2);
       expect(detail.files.first.contentType, 'image/jpeg');
+      expect(detail.files.first.latitude, -22.9);
+      expect(detail.files.first.longitude, -43.1);
+      expect(detail.files.first.variant, 'original');
+      expect(detail.files.first.sizeBytes, 1024000);
+      expect(detail.files.last.variant, 'preview');
     });
 
-    test('getPreviewUrl constructs correct path and parses response', () async {
-      mockHttp.queueResponse(
-        'GET',
-        '/api/uploads/upload-1/files/file-1/preview-url',
-        200,
-        {
-          'downloadUrl': 'https://storage.example.com/signed/preview-1',
-          'expiresAt': '2026-07-02T12:00:00Z',
-          'fileId': 'file-1',
-          'uploadId': 'upload-1',
-        },
-      );
+    for (final endpoint in ['preview-url', 'download-url']) {
+      test('$endpoint uses the file route and parses the signed URL', () async {
+        mockHttp.queueResponse(
+          'GET',
+          '/api/uploads/upload-1/files/file-1/$endpoint',
+          200,
+          {
+            'downloadUrl': 'https://storage.example.com/signed/file-1',
+            'expiresAt': '2026-07-02T12:00:00Z',
+            'fileId': 'file-1',
+            'uploadId': 'upload-1',
+          },
+        );
+        final fetch = endpoint == 'preview-url'
+            ? apiClient.getPreviewUrl
+            : apiClient.getDownloadUrl;
+        final result = await fetch(
+          accessToken: 'token',
+          uploadId: 'upload-1',
+          fileId: 'file-1',
+        );
+        expect(result.url, 'https://storage.example.com/signed/file-1');
+        expect(result.fileId, 'file-1');
+        expect(result.uploadId, 'upload-1');
+        expect(
+          mockHttp.requests.single.headers['Authorization'],
+          'Bearer token',
+        );
+      });
+    }
 
-      final result = await apiClient.getPreviewUrl(
-        accessToken: 'token',
-        uploadId: 'upload-1',
-        fileId: 'file-1',
-      );
+    test(
+      'listUploads parses summaries and sends pagination and filters',
+      () async {
+        mockHttp.queueResponse('GET', '/api/uploads', 200, {
+          'uploads': [
+            {
+              ...uploadJson,
+              'fileCount': 3,
+              'previewFileId': 'preview-1',
+              'previewCount': 3,
+              'files': null,
+            },
+            {...uploadJson, 'id': 'upload-2', 'source': 'drone', 'files': []},
+          ],
+        });
+        final queryParams = {'limit': '10', 'offset': '10', 'source': 'phone'};
+        final result = await apiClient.listUploads(
+          accessToken: 'token',
+          queryParams: queryParams,
+        );
 
-      expect(result.url, 'https://storage.example.com/signed/preview-1');
-      expect(result.fileId, 'file-1');
-      expect(result.uploadId, 'upload-1');
+        expect(result.map((upload) => upload.id), ['upload-1', 'upload-2']);
+        expect(result.first.fileCount, 3);
+        expect(result.first.previewFileId, 'preview-1');
+        expect(result.first.previewCount, 3);
+        expect(result.first.status, 'ready');
+        expect(result.first.source, 'phone');
+        expect(result.first.propertyId, 'prop-uuid');
+        expect(result.first.talhaoId, 'talhao-uuid');
+        expect(result.first.cropTypeId, 'crop-uuid');
+        expect(result.first.estadioId, isNull);
+        expect(result.first.createdAt, DateTime.parse(timestamp));
+        expect(result.first.files, isEmpty);
+        expect(result.last.files, isEmpty);
+        expect(result.last.source, 'drone');
+        expect(mockHttp.requests.single.url.queryParameters, queryParams);
+        expect(
+          mockHttp.requests.single.headers['Authorization'],
+          'Bearer token',
+        );
+      },
+    );
+
+    test(
+      'listUploads falls back to one preview when count is absent',
+      () async {
+        mockHttp.queueResponse('GET', '/api/uploads', 200, {
+          'uploads': [
+            {...uploadJson, 'previewFileId': 'preview-1'},
+          ],
+        });
+        final result = await apiClient.listUploads(accessToken: 'token');
+        expect(result.single.previewCount, 1);
+      },
+    );
+
+    test('listUploads returns an empty list when no uploads exist', () async {
+      mockHttp.queueResponse('GET', '/api/uploads', 200, {'uploads': []});
+      expect(await apiClient.listUploads(accessToken: 'token'), isEmpty);
     });
 
     test('deleteUpload sends DELETE with bearer token', () async {
@@ -330,7 +423,11 @@ void main() {
         longitude: -43.1,
       );
       expect(created.id, 'prop-1');
+      expect(created.name, 'Fazenda Santa Maria');
       expect(created.owner, 'João Silva');
+      expect(created.address, 'Rodovia SP-340');
+      expect(created.latitude, -22.9);
+      expect(created.longitude, -43.1);
 
       final updated = await apiClient.updateProperty(
         accessToken: 'token',
@@ -497,20 +594,57 @@ void main() {
     });
   });
 
-  group('ApiClient - error handling', () {
-    test('throws ApiException on 401', () async {
-      mockHttp.queueResponse('POST', '/api/auth/login', 401, {
-        'message': 'Invalid credentials',
-      });
+  group('ApiClient - profile', () {
+    test(
+      'updateProfile sends PATCH with fullName, phone, and bearer token',
+      () async {
+        mockHttp.queueResponse('PATCH', '/api/users/me', 200, {
+          'user': {
+            ...userJson,
+            'fullName': 'Updated Name',
+            'phone': '+5511999999999',
+          },
+        });
+        final response = await apiClient.updateProfile(
+          accessToken: 'token',
+          fullName: 'Updated Name',
+          phone: '+5511999999999',
+        );
+        expect(response.user.fullName, 'Updated Name');
+        expect(response.user.phone, '+5511999999999');
+        final request = mockHttp.requests.single;
+        expect(request.method, 'PATCH');
+        expect(request.headers['Authorization'], 'Bearer token');
+        expect(await extractJsonBody(request), {
+          'fullName': 'Updated Name',
+          'phone': '+5511999999999',
+        });
+      },
+    );
 
-      expect(
-        () => apiClient.login(email: 'a@b.com', password: 'wrong'),
-        throwsA(
-          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
-        ),
+    for (final phone in ['', '  ']) {
+      test(
+        'updateProfile clears a blank phone (${phone.length} characters)',
+        () async {
+          mockHttp.queueResponse('PATCH', '/api/users/me', 200, {
+            'user': userJson,
+          });
+          final response = await apiClient.updateProfile(
+            accessToken: 'token',
+            fullName: 'Test User',
+            phone: phone,
+          );
+          expect(response.user.phone, isNull);
+          expect(await extractJsonBody(mockHttp.requests.single), {
+            'fullName': 'Test User',
+            'phone': null,
+          });
+        },
       );
-    });
+    }
+  });
 
+  group('ApiClient - error handling', () {
     test('carries the disabled code and flag on suspension 401s', () async {
       mockHttp.queueResponse('POST', '/api/auth/login', 401, {
         'message': 'Account is disabled',
@@ -539,6 +673,7 @@ void main() {
         () => apiClient.login(email: 'a@b.com', password: 'wrong'),
         throwsA(
           isA<ApiException>()
+              .having((e) => e.statusCode, 'statusCode', 401)
               .having((e) => e.code, 'code', isNull)
               .having((e) => e.isAccountDisabled, 'isAccountDisabled', isFalse),
         ),

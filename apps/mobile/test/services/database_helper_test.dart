@@ -60,30 +60,32 @@ void main() {
     await sub.cancel();
   });
 
-  test('cleanupOrphanedImages removes unreferenced files', () async {
-    final activeFile = File('${tempDir.path}/active.jpg');
-    await activeFile.writeAsString('active');
+  for (final relativePath in ['active.jpg', './active.jpg']) {
+    test('cleanupOrphanedImages preserves referenced $relativePath', () async {
+      final activeFile = File('${tempDir.path}/active.jpg');
+      await activeFile.writeAsString('active');
 
-    final orphanFile = File('${tempDir.path}/orphan.jpg');
-    await orphanFile.writeAsString('orphan');
+      final orphanFile = File('${tempDir.path}/orphan.jpg');
+      await orphanFile.writeAsString('orphan');
 
-    final upload = PendingUpload(
-      id: 'active-upload',
-      paths: [activeFile.path],
-      latitude: 0,
-      longitude: 0,
-      createdAt: DateTime.now(),
-    );
-    await databaseHelper.insertPendingUpload(upload);
+      final upload = PendingUpload(
+        id: 'active-upload',
+        paths: ['${tempDir.path}/$relativePath'],
+        latitude: 0,
+        longitude: 0,
+        createdAt: DateTime.now(),
+      );
+      await databaseHelper.insertPendingUpload(upload);
 
-    final deleted = await databaseHelper.cleanupOrphanedImages(
-      imageStore: IoLocalImageStore(directory: () async => tempDir),
-    );
+      final deleted = await databaseHelper.cleanupOrphanedImages(
+        imageStore: IoLocalImageStore(directory: () async => tempDir),
+      );
 
-    expect(deleted, 1);
-    expect(await activeFile.exists(), isTrue);
-    expect(await orphanFile.exists(), isFalse);
-  });
+      expect(deleted, 1);
+      expect(await activeFile.exists(), isTrue);
+      expect(await orphanFile.exists(), isFalse);
+    });
+  }
 
   test('Drift queue persists image identities across reopening', () async {
     final path = '${tempDir.path}/queue.sqlite';
