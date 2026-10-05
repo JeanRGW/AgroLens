@@ -7,6 +7,7 @@ import {
   boxStyle,
   classColor,
   ContentRect,
+  fitImageScale,
   InferenceViewerPageComponent,
 } from './inference-viewer-page.component';
 import { InferenceService } from '../../core/services/inference.service';
@@ -124,9 +125,9 @@ describe('InferenceViewerPageComponent', () => {
   });
 
   describe('classColor', () => {
-    it('should produce a valid HSL color string', () => {
+    it('should produce a valid hex color string', () => {
       const color = classColor('weevil');
-      expect(color).toMatch(/^hsl\(\d{1,3}, 70%, 50%\)$/);
+      expect(color).toMatch(/^#[0-9a-f]{6}$/);
     });
 
     it('should be deterministic for same class name', () => {
@@ -164,6 +165,184 @@ describe('InferenceViewerPageComponent', () => {
     });
 
     afterEach(() => fixture.destroy());
+
+    function renderViewer(): HTMLImageElement {
+      fixture.detectChanges();
+      component.jobError.set('');
+      component.loadingJob.set(false);
+      component.selectedImageId.set('a');
+      component.imageResult.set({
+        ...image('a'),
+        imageUrl:
+          'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="640" height="480"/%3E',
+      });
+      fixture.detectChanges();
+      const img = fixture.nativeElement.querySelector('.image-plane img') as HTMLImageElement;
+      Object.defineProperties(img, { naturalWidth: { value: 640 }, naturalHeight: { value: 480 } });
+      component.onImageLoad();
+      fixture.detectChanges();
+      return img;
+    }
+
+    it('actually shrinks the rendered image from 100% to 75% and centers it', async () => {
+      const img = renderViewer();
+      const viewportElement = fixture.nativeElement.querySelector('.image-viewport') as HTMLElement;
+      viewportElement.style.width = '700px';
+      viewportElement.style.height = '500px';
+      viewportElement.style.flex = 'none';
+      component.zoomNative();
+      fixture.detectChanges();
+      expect(img.getBoundingClientRect().width).toBe(640);
+      expect(img.getBoundingClientRect().height).toBe(480);
+      component.zoomOut();
+      fixture.detectChanges();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(component.zoomPercent()).toBe(75);
+      expect(component.fitMode()).toBeFalse();
+      expect(img.getBoundingClientRect().width).toBe(480);
+      expect(img.getBoundingClientRect().height).toBe(360);
+      const viewport = viewportElement.getBoundingClientRect();
+      const bounds = img.getBoundingClientRect();
+      expect(
+        Math.abs(bounds.left + bounds.width / 2 - viewport.left - viewportElement.clientWidth / 2),
+      ).toBeLessThan(1);
+    });
+
+    it('keeps the image and detection overlay aligned below and above native size', () => {
+      renderViewer();
+      component.imageResult.set({
+        ...image('a'),
+        detections: [
+          {
+            classId: 0,
+            className: 'weed',
+            confidence: 0.9,
+            xCenter: 0.5,
+            yCenter: 0.5,
+            width: 0.4,
+            height: 0.3,
+          },
+        ],
+      });
+      component.enabledClasses.set(new Set(['weed']));
+      for (const zoom of [0.25, 0.75, 1, 2, 3]) {
+        component.fitMode.set(false);
+        component.zoom.set(zoom);
+        fixture.detectChanges();
+        const plane = fixture.nativeElement.querySelector('.image-plane').getBoundingClientRect();
+        const box = fixture.nativeElement.querySelector('.detection-box').getBoundingClientRect();
+        expect(Math.abs(box.width - plane.width * 0.4)).toBeLessThan(1);
+        expect(Math.abs(box.height - plane.height * 0.3)).toBeLessThan(1);
+        expect(Math.abs(box.left - plane.left - plane.width * 0.3)).toBeLessThan(1);
+      }
+    });
+
+    it('distinguishes fit from native size and recalculates fit on resize', () => {
+      component.naturalSize.set({ width: 1600, height: 900 });
+      component.viewportSize.set({ width: 800, height: 600 });
+      component.zoomReset();
+      expect(component.zoom()).toBe(0.5);
+      expect(component.fitMode()).toBeTrue();
+      component.viewportSize.set({ width: 400, height: 600 });
+      component['updateFit']();
+      expect(component.zoom()).toBe(0.25);
+      component.zoomNative();
+      component.viewportSize.set({ width: 800, height: 600 });
+      component['updateFit']();
+      expect(component.zoom()).toBe(1);
+      expect(component.fitMode()).toBeFalse();
+    });
+
+    it('clamps manual zoom at both limits and returns to fit on image changes', async () => {
+      component.zoomNative();
+      for (let i = 0; i < 20; i++) component.zoomOut();
+      expect(component.zoom()).toBe(0.25);
+      for (let i = 0; i < 20; i++) component.zoomIn();
+      expect(component.zoom()).toBe(3);
+      inference.getImage.and.resolveTo(image('b'));
+      await component.loadImage(job().images[1]);
+      expect(component.fitMode()).toBeTrue();
+    });
+
+    it('preserves unchecked classes when the selected image refreshes', async () => {
+      const result = {
+        ...image('a'),
+        detections: [
+          {
+            classId: 0,
+            className: 'weed',
+            confidence: 0.9,
+            xCenter: 0.5,
+            yCenter: 0.5,
+            width: 0.2,
+            height: 0.2,
+          },
+        ],
+      };
+      inference.getImage.and.resolveTo(result);
+      await component.loadImage(job().images[0]);
+      component.toggleClassFilter('weed', false);
+      await component.loadImage(job().images[0], true);
+      expect(component.visibleDetections()).toEqual([]);
+      component.resetFilters();
+      expect(component.visibleDetections().length).toBe(1);
+    });
+
+    it('leaves navigation buttons in place and disables them at boundaries', () => {
+      renderViewer();
+      const buttons = fixture.nativeElement.querySelectorAll('.image-nav button');
+      expect(buttons.length).toBe(2);
+      expect(buttons[0].disabled).toBeTrue();
+      expect(buttons[1].disabled).toBeFalse();
+      component.selectedImageId.set('b');
+      fixture.detectChanges();
+      expect(buttons[0].disabled).toBeFalse();
+      expect(buttons[1].disabled).toBeTrue();
+    });
+
+    it('does not retry a failed URL while fetching a fresh image result', async () => {
+      const failedImage = renderViewer();
+      failedImage.dispatchEvent(new Event('error'));
+      fixture.detectChanges();
+      expect(component.imageError()).not.toBe('');
+
+      const pending = deferred<InferenceJobImageResult>();
+      inference.getImage.and.returnValue(pending.promise);
+      const retryButton = fixture.nativeElement.querySelector(
+        '.viewer-state button',
+      ) as HTMLButtonElement;
+      retryButton.click();
+      fixture.detectChanges();
+
+      expect(inference.getImage).toHaveBeenCalledWith('job', 'a');
+      expect(component.loadingImage()).toBeTrue();
+      expect(component.imageResult()).toBeNull();
+      expect(component.imageDecoded()).toBeFalse();
+      expect(component.naturalSize()).toEqual({ width: 0, height: 0 });
+      const oldImage = fixture.nativeElement.querySelector(
+        '.image-plane img',
+      ) as HTMLImageElement | null;
+      expect(oldImage).toBeNull();
+      // A late failure must not reintroduce the error during the pending retry.
+      (oldImage ?? failedImage).dispatchEvent(new Event('error'));
+      expect(component.imageError()).toBe('');
+
+      const fresh = {
+        ...image('a'),
+        imageUrl:
+          'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="240"/%3E',
+      };
+      pending.resolve(fresh);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(component.imageError()).toBe('');
+      expect(component.loadingImage()).toBeFalse();
+      expect(component.imageResult()).toEqual(fresh);
+      expect(fixture.nativeElement.querySelector('.image-plane img')?.getAttribute('src')).toBe(
+        fresh.imageUrl,
+      );
+      expect(fixture.nativeElement.querySelector('.viewer-state')).toBeNull();
+    });
 
     it('ignores an older image response and its loading state', async () => {
       const first = deferred<InferenceJobImageResult>();
@@ -258,6 +437,17 @@ describe('InferenceViewerPageComponent', () => {
       const fixture = TestBed.createComponent(InferenceViewerPageComponent);
       expect(fixture.componentInstance).toBeTruthy();
       fixture.destroy();
+    });
+  });
+
+  describe('fitImageScale', () => {
+    it('fits landscape, portrait and square images without changing aspect ratio', () => {
+      expect(fitImageScale(1600, 900, 800, 600)).toBe(0.5);
+      expect(fitImageScale(900, 1600, 800, 600)).toBe(0.375);
+      expect(fitImageScale(1000, 1000, 800, 600)).toBe(0.6);
+    });
+    it('handles dimensions that are not yet available', () => {
+      expect(fitImageScale(0, 0, 800, 600)).toBe(1);
     });
   });
 });

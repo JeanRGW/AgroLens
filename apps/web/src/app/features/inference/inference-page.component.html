@@ -1,288 +1,490 @@
 <section class="inference-page">
   <app-page-header
     eyebrow="Inferência"
-    title="Inferência"
-    subtitle="Execute modelos de detecção sobre suas imagens."
+    title="Analise suas imagens"
+    subtitle="Escolha um modelo e as imagens para identificar objetos e visualizar as detecções."
   />
 
-  <mat-tab-group animationDuration="0ms" class="inference-tabs">
-    <!-- New inference tab -->
+  <mat-tab-group
+    animationDuration="0ms"
+    class="inference-tabs"
+    [mat-stretch-tabs]="false"
+    mat-align-tabs="start"
+    [selectedIndex]="selectedTab()"
+    (selectedIndexChange)="onTabChange($event)"
+  >
     <mat-tab label="Nova inferência">
-      <div class="tab-body">
-        @if (loadingModels()) {
-          <app-loading-state message="Carregando modelos..." />
-        } @else if (models().length === 0) {
-          <app-empty-state
-            icon="science"
-            title="Nenhum modelo disponível"
-            message="Nenhum modelo de inferência ativo foi encontrado."
-          />
-        } @else {
-          <mat-card class="section-card">
-            <div class="section-card__header">
-              <mat-icon>psychology</mat-icon>
-              <span>Configuração da inferência</span>
-            </div>
-            <div class="section-card__body">
-              <!-- Model selector -->
+      <div class="setup-layout">
+        <section class="panel model-panel" aria-labelledby="model-title">
+          <div class="panel-header">
+            <mat-icon>psychology</mat-icon>
+            <h2 id="model-title">Modelo</h2>
+          </div>
+          <div class="panel-body">
+            <p class="helper">Escolha o que deseja detectar nas imagens.</p>
+            @if (loadingModels()) {
+              <div
+                class="model-skeleton skeleton"
+                role="status"
+                aria-label="Carregando modelos"
+              ></div>
+            } @else if (modelsError()) {
+              <div class="error-notice" role="alert">{{ modelsError() }}</div>
+              <button mat-stroked-button (click)="retryModels()">Tentar novamente</button>
+            } @else if (!models().length) {
+              <div class="inline-empty">
+                <mat-icon>science</mat-icon><strong>Nenhum modelo disponível</strong>
+                <p>Um administrador precisa ativar um modelo para iniciar uma inferência.</p>
+              </div>
+              <button mat-stroked-button (click)="retryModels()">Verificar novamente</button>
+            } @else {
               <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Modelo</mat-label>
+                <mat-label>Modelo de detecção</mat-label>
                 <mat-select
                   [ngModel]="selectedModelId()"
                   (ngModelChange)="selectedModelId.set($event)"
                   name="model"
+                  [disabled]="submitting()"
                 >
-                  @for (m of models(); track m.id) {
-                    <mat-option [value]="m.id">
-                      {{ m.name }}
-                      @if (m.task) {
-                        <span class="model-task">({{ m.task }})</span>
-                      }
-                    </mat-option>
+                  @for (model of models(); track model.id) {
+                    <mat-option [value]="model.id">{{ model.name }}</mat-option>
                   }
                 </mat-select>
               </mat-form-field>
+              @if (selectedModel(); as model) {
+                <div class="model-detail">
+                  <div class="section-label">
+                    Classes detectadas
+                    <span class="count-chip">{{ model.classes?.length || 0 }}</span>
+                  </div>
+                  @if (model.classes?.length) {
+                    <div class="class-chips">
+                      @for (item of model.classes?.slice(0, 8); track item.id) {
+                        <span>{{ item.name }}</span>
+                      }
+                    </div>
+                    @if ((model.classes?.length || 0) > 8) {
+                      <details class="more-classes">
+                        <summary>Ver todas as {{ model.classes?.length }} classes</summary>
+                        <div class="class-chips">
+                          @for (item of model.classes?.slice(8); track item.id) {
+                            <span>{{ item.name }}</span>
+                          }
+                        </div>
+                      </details>
+                    }
+                  } @else {
+                    <p class="helper">Este modelo não informa as classes disponíveis.</p>
+                  }
+                </div>
+              } @else {
+                <p class="helper">
+                  As classes disponíveis aparecerão aqui após selecionar um modelo.
+                </p>
+              }
+            }
+          </div>
+        </section>
 
-              <!-- Source toggle -->
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Fonte das imagens</mat-label>
-                <mat-select
-                  [ngModel]="sourceType()"
-                  (ngModelChange)="sourceType.set($event)"
-                  name="sourceType"
+        <section class="panel images-panel" aria-labelledby="images-title">
+          <div class="panel-header">
+            <mat-icon>photo_library</mat-icon>
+            <h2 id="images-title">Imagens</h2>
+            @if (selectedImageCount()) {
+              <span class="count-chip">{{ selectedImageCount() }}</span>
+            }
+          </div>
+          <div class="panel-body">
+            <div class="source-switch" role="group" aria-label="Fonte das imagens">
+              <button
+                type="button"
+                [class.active]="sourceType() === 'temp'"
+                [attr.aria-pressed]="sourceType() === 'temp'"
+                [disabled]="submitting()"
+                (click)="changeSource('temp')"
+              >
+                <mat-icon>computer</mat-icon>Do computador
+              </button>
+              <button
+                type="button"
+                [class.active]="sourceType() === 'upload'"
+                [attr.aria-pressed]="sourceType() === 'upload'"
+                [disabled]="submitting()"
+                (click)="changeSource('upload')"
+              >
+                <mat-icon>cloud_done</mat-icon>De um upload
+              </button>
+            </div>
+
+            @if (sourceType() === 'temp') {
+              <input
+                type="file"
+                #fileInput
+                multiple
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                (change)="onTempFilesSelected($event)"
+                class="file-input-hidden"
+                [disabled]="submitting()"
+                aria-label="Selecionar imagens"
+              />
+              <div
+                class="dropzone"
+                [class.drag-active]="dragActive()"
+                [class.dropzone--compact]="tempFiles().length > 0"
+                [class.locked]="submitting()"
+                (dragover)="onDragOver($event)"
+                (dragleave)="onDragLeave($event)"
+                (drop)="onDrop($event)"
+              >
+                <div class="drop-icon"><mat-icon>add_photo_alternate</mat-icon></div>
+                <strong>{{
+                  tempFiles().length ? 'Adicione mais imagens' : 'Arraste suas imagens aqui'
+                }}</strong>
+                <span class="helper">ou escolha os arquivos no seu dispositivo</span>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  [disabled]="submitting() || tempFiles().length >= 20"
+                  (click)="fileInput.click()"
                 >
-                  <mat-option value="upload">Upload existente</mat-option>
-                  <mat-option value="temp">Imagens locais</mat-option>
-                </mat-select>
-              </mat-form-field>
-
-              <!-- Upload selector -->
-              @if (sourceType() === 'upload') {
+                  <mat-icon>add</mat-icon>Selecionar imagens
+                </button>
+                <span class="file-limits"
+                  >JPEG, PNG ou WebP · Até 20 imagens · 25 MB por arquivo</span
+                >
+              </div>
+              @if (selectionError()) {
+                <div class="error-notice" role="alert">{{ selectionError() }}</div>
+              }
+              @if (tempFiles().length) {
+                <div class="selection-heading">
+                  <span
+                    >{{ tempFiles().length }}
+                    {{ tempFiles().length === 1 ? 'imagem selecionada' : 'imagens selecionadas' }}
+                    <small>· {{ (totalFileSize() / (1024 * 1024)).toFixed(1) }} MB</small></span
+                  ><button mat-button [disabled]="submitting()" (click)="clearTempFiles()">
+                    Limpar seleção
+                  </button>
+                </div>
+                <div class="preview-grid">
+                  @for (file of tempFiles(); track file; let index = $index) {
+                    <div class="preview-card">
+                      <div class="preview-image">
+                        @if (previewUrls().get(file); as url) {
+                          <img [src]="url" alt="" loading="lazy" />
+                        }
+                        <button
+                          mat-icon-button
+                          type="button"
+                          [disabled]="submitting()"
+                          [attr.aria-label]="'Remover ' + file.name"
+                          matTooltip="Remover imagem"
+                          (click)="removeTempFile(index)"
+                        >
+                          <mat-icon>close</mat-icon>
+                        </button>
+                      </div>
+                      <div class="preview-info">
+                        <span [matTooltip]="file.name">{{ file.name }}</span
+                        ><small>{{ (file.size / (1024 * 1024)).toFixed(1) }} MB</small>
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            } @else {
+              <p class="helper">Use imagens que já foram enviadas ao AgroLens.</p>
+              @if (loadingUploads()) {
+                <div
+                  class="upload-skeleton skeleton"
+                  role="status"
+                  aria-label="Carregando uploads"
+                ></div>
+              } @else if (uploadsError()) {
+                <div class="error-notice" role="alert">{{ uploadsError() }}</div>
+                <button mat-stroked-button (click)="retryUploads()">Tentar novamente</button>
+              } @else if (!uploads().length) {
+                <div class="inline-empty">
+                  <mat-icon>cloud_off</mat-icon><strong>Nenhum upload pronto</strong>
+                  <p>Envie imagens pela página Novo upload ou escolha arquivos do computador.</p>
+                  <button mat-stroked-button (click)="retryUploads()">Atualizar uploads</button>
+                </div>
+              } @else {
                 <mat-form-field appearance="outline" class="full-width">
                   <mat-label>Upload</mat-label>
                   <mat-select
                     [ngModel]="selectedUploadId()"
                     (ngModelChange)="selectedUploadId.set($event)"
                     name="upload"
+                    [disabled]="submitting()"
                   >
-                    @for (u of uploads(); track u.id) {
-                      <mat-option [value]="u.id">
-                        {{ u.id }} — {{ u.propertyName || u.propertyId || '—' }} ({{ u.fileCount }}
-                        imagens)
-                      </mat-option>
+                    @for (upload of uploads(); track upload.id) {
+                      <mat-option [value]="upload.id"
+                        >{{ upload.propertyName || 'Upload ' + upload.id.slice(0, 8) }} ·
+                        {{ upload.activityDate | date: 'dd/MM/yyyy' }} ·
+                        {{ upload.fileCount }} imagens</mat-option
+                      >
                     }
                   </mat-select>
                 </mat-form-field>
-              }
-
-              <!-- Temp file input -->
-              @if (sourceType() === 'temp') {
-                <div class="temp-files-section">
-                  <input
-                    type="file"
-                    #fileInput
-                    multiple
-                    accept="image/jpeg,image/png,image/webp"
-                    (change)="onTempFilesSelected($event)"
-                    class="file-input-hidden"
-                  />
-                  <button
-                    mat-stroked-button
-                    type="button"
-                    (click)="fileInput.click()"
-                    class="btn-select-files"
-                  >
-                    <mat-icon>add_photo_alternate</mat-icon>
-                    Selecionar imagens
-                  </button>
-
-                  <div class="temp-info">
-                    <span>Máximo de 20 arquivos, 25 MB por arquivo</span>
-                    <span class="temp-count">
-                      {{ tempFiles().length }}
-                      {{
-                        tempFiles().length === 1 ? 'arquivo selecionado' : 'arquivos selecionados'
-                      }}
-                    </span>
-                  </div>
-
-                  @if (tempFiles().length > 0) {
-                    <div class="temp-file-list">
-                      @for (f of tempFiles(); track f.name; let i = $index) {
-                        <div class="temp-file-item">
-                          <mat-icon>image</mat-icon>
-                          <span class="temp-file-name">{{ f.name }}</span>
-                          <span class="temp-file-size"
-                            >{{ (f.size / (1024 * 1024)).toFixed(1) }} MB</span
-                          >
-                          <button
-                            mat-icon-button
-                            type="button"
-                            class="btn-remove-file"
-                            (click)="removeTempFile(i)"
-                          >
-                            <mat-icon>close</mat-icon>
-                          </button>
-                        </div>
+                @if (selectedUpload(); as upload) {
+                  <div class="upload-summary">
+                    <div class="preview-image upload-cover" [attr.aria-busy]="loadingUploadCover()">
+                      @if (uploadCoverUrl(); as coverUrl) {
+                        <img
+                          [src]="coverUrl"
+                          [alt]="'Capa do upload ' + (upload.propertyName || upload.id.slice(0, 8))"
+                          (load)="onUploadCoverLoad(coverUrl)"
+                          (error)="onUploadCoverError(coverUrl)"
+                        />
+                      } @else if (!loadingUploadCover()) {
+                        <mat-icon aria-label="Capa indisponível" role="img"
+                          >image_not_supported</mat-icon
+                        >
+                      }
+                      @if (loadingUploadCover()) {
+                        <div
+                          class="skeleton cover-loading"
+                          role="status"
+                          aria-label="Carregando capa do upload"
+                        ></div>
                       }
                     </div>
-                  }
-                </div>
+                    <div>
+                      <strong>{{
+                        upload.propertyName || 'Upload ' + upload.id.slice(0, 8)
+                      }}</strong>
+                      <p>
+                        {{ upload.talhaoName || 'Upload disponível' }}
+                        @if (upload.cropTypeName) {
+                          · {{ upload.cropTypeName }}
+                        }
+                      </p>
+                      <span
+                        >{{ selectedImageCount() }}
+                        {{
+                          selectedImageCount() === 1
+                            ? 'imagem será analisada'
+                            : 'imagens serão analisadas'
+                        }}
+                        @if (selectedImageCount() === 1 && upload.fileCount > 1) {
+                          · Imagem selecionada na página anterior
+                        }
+                      </span>
+                    </div>
+                  </div>
+                }
               }
+            }
+          </div>
 
-              <!-- Submit -->
-              <div class="submit-row">
-                <button
-                  mat-flat-button
-                  color="primary"
-                  (click)="submitInference()"
-                  [disabled]="submitting() || !canSubmit()"
-                >
-                  <mat-icon>{{ submitting() ? 'hourglass_empty' : 'play_arrow' }}</mat-icon>
-                  {{ submitting() ? 'Enviando...' : 'Executar inferência' }}
-                </button>
-              </div>
-
-              @if (error()) {
-                <div class="error-banner">{{ error() }}</div>
-              }
+          <div class="submit-footer">
+            <div class="submit-info" aria-live="polite">
+              <strong>{{
+                submitting()
+                  ? submissionStage()
+                  : selectedImageCount()
+                    ? selectedImageCount() +
+                      (selectedImageCount() === 1
+                        ? ' imagem para analisar'
+                        : ' imagens para analisar')
+                    : 'Escolha suas imagens'
+              }}</strong
+              ><span>{{
+                submitting() ? 'Aguarde nesta página até concluir o envio.' : submissionHint()
+              }}</span>
             </div>
-          </mat-card>
-        }
+            <button
+              mat-flat-button
+              (click)="submitInference()"
+              [disabled]="submitting() || !canSubmit()"
+            >
+              <mat-icon>{{ submitting() ? 'hourglass_empty' : 'play_arrow' }}</mat-icon
+              >{{ submitting() ? 'Enviando…' : 'Executar inferência' }}
+            </button>
+          </div>
+          @if (error()) {
+            <div class="submission-error error-notice" role="alert">{{ error() }}</div>
+          }
+        </section>
       </div>
     </mat-tab>
 
-    <!-- History tab -->
-    <mat-tab label="Histórico">
-      <div class="tab-body">
-        @if (loadingJobs()) {
-          <app-loading-state message="Carregando histórico..." />
-        } @else if (jobs().length === 0) {
-          <app-empty-state
-            icon="history"
-            title="Nenhuma execução encontrada"
-            message="Nenhuma execução de inferência foi encontrada."
-          />
-        } @else {
-          <mat-card class="table-card">
-            <div class="table-scroll">
-              <table mat-table [dataSource]="jobs()" class="jobs-table">
-                <!-- Status -->
-                <ng-container matColumnDef="status">
-                  <th mat-header-cell *matHeaderCellDef>Status</th>
-                  <td mat-cell *matCellDef="let row">
-                    <span class="cell-badge" [class]="statusBadgeClass(row.status)">
-                      {{ statusLabel(row.status) }}
-                    </span>
-                  </td>
-                </ng-container>
-
-                <!-- Source type -->
-                <ng-container matColumnDef="sourceType">
-                  <th mat-header-cell *matHeaderCellDef>Fonte</th>
-                  <td mat-cell *matCellDef="let row">
-                    <span class="cell-badge">
-                      {{ row.sourceType === 'upload' ? 'Upload' : 'Temporário' }}
-                    </span>
-                  </td>
-                </ng-container>
-
-                <!-- Progress -->
-                <ng-container matColumnDef="progress">
-                  <th mat-header-cell *matHeaderCellDef>Progresso</th>
-                  <td mat-cell *matCellDef="let row">
-                    <span>
-                      {{ row.completedCount }} / {{ row.imageCount }}
-                      @if (row.failedCount > 0) {
-                        ({{ row.failedCount }} falhas)
-                      }
-                    </span>
-                  </td>
-                </ng-container>
-
-                <!-- Created -->
-                <ng-container matColumnDef="createdAt">
-                  <th mat-header-cell *matHeaderCellDef>Criado</th>
-                  <td mat-cell *matCellDef="let row">
-                    <span class="cell-date">{{ row.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
-                  </td>
-                </ng-container>
-
-                <!-- Expires -->
-                <ng-container matColumnDef="expiresAt">
-                  <th mat-header-cell *matHeaderCellDef>Expira</th>
-                  <td mat-cell *matCellDef="let row">
-                    @if (row.expiresAt) {
-                      <span class="cell-date">{{ row.expiresAt | date: 'dd/MM/yyyy HH:mm' }}</span>
-                    } @else {
-                      <span class="cell-date">—</span>
-                    }
-                  </td>
-                </ng-container>
-
-                <!-- Actions -->
-                <ng-container matColumnDef="actions">
-                  <th mat-header-cell *matHeaderCellDef class="col-action"></th>
-                  <td mat-cell *matCellDef="let row" class="action-cell">
-                    <button
-                      mat-icon-button
-                      color="primary"
-                      (click)="openJob(row.id)"
-                      class="btn-action"
-                      title="Ver detalhes"
+    <mat-tab label="Histórico" [disabled]="submitting()">
+      <div class="history-body">
+        <div class="history-toolbar">
+          <div>
+            <h2>Execuções</h2>
+            <p>
+              {{ jobsTotal() }}
+              {{ jobsTotal() === 1 ? 'execução registrada' : 'execuções registradas' }}
+            </p>
+          </div>
+          <button mat-stroked-button (click)="refreshJobs()" [disabled]="loadingJobs()">
+            <mat-icon>refresh</mat-icon>{{ loadingJobs() ? 'Atualizando…' : 'Atualizar' }}
+          </button>
+        </div>
+        @if (jobsError()) {
+          <div class="error-notice" role="alert">
+            {{ jobsError() }} Tente atualizar o histórico.
+          </div>
+        }
+        @if (loadingJobs() && !jobs().length) {
+          <div
+            class="history-skeleton skeleton"
+            role="status"
+            aria-label="Carregando histórico"
+          ></div>
+        } @else if (!jobs().length && !jobsError()) {
+          <div class="panel history-empty">
+            <mat-icon>history</mat-icon>
+            <h3>Suas análises aparecerão aqui</h3>
+            <p>Execute uma inferência para acompanhar o processamento e acessar os resultados.</p>
+            <button mat-flat-button (click)="onTabChange(0)">
+              <mat-icon>add</mat-icon>Nova inferência
+            </button>
+          </div>
+        } @else if (jobs().length) {
+          <div class="panel history-table" [attr.aria-busy]="loadingJobs()">
+            <table mat-table [dataSource]="jobs()" class="jobs-table">
+              <ng-container matColumnDef="model"
+                ><th mat-header-cell *matHeaderCellDef>Modelo</th>
+                <td mat-cell *matCellDef="let row">
+                  <div class="job-identity">
+                    <strong>{{ row.modelSnapshot?.name || 'Modelo indisponível' }}</strong
+                    ><span
+                      >{{ row.sourceType === 'upload' ? 'Upload existente' : 'Do computador' }} ·
+                      <span [matTooltip]="row.id">{{ row.id.slice(0, 8) }}</span></span
                     >
-                      <mat-icon>visibility</mat-icon>
+                  </div>
+                </td></ng-container
+              >
+              <ng-container matColumnDef="status"
+                ><th mat-header-cell *matHeaderCellDef>Status</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="badge" [class]="statusBadgeClass(row.status)">{{
+                    statusLabel(row.status)
+                  }}</span>
+                </td></ng-container
+              >
+              <ng-container matColumnDef="progress"
+                ><th mat-header-cell *matHeaderCellDef>Imagens</th>
+                <td mat-cell *matCellDef="let row">
+                  <span>{{ row.completedCount }} de {{ row.imageCount }} concluídas</span>
+                  @if (row.failedCount) {
+                    <small class="failure-count">{{ row.failedCount }} falhas</small>
+                  }
+                </td></ng-container
+              >
+              <ng-container matColumnDef="createdAt"
+                ><th mat-header-cell *matHeaderCellDef>Data</th>
+                <td mat-cell *matCellDef="let row">
+                  <div class="job-date">
+                    <span>{{ row.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                    @if (row.expiresAt) {
+                      <small>Expira em {{ row.expiresAt | date: 'dd/MM/yyyy HH:mm' }}</small>
+                    }
+                  </div>
+                </td></ng-container
+              >
+              <ng-container matColumnDef="actions"
+                ><th mat-header-cell *matHeaderCellDef>
+                  <span class="visually-hidden">Ações</span>
+                </th>
+                <td mat-cell *matCellDef="let row">
+                  <div class="job-actions">
+                    <button
+                      mat-button
+                      (click)="openJob(row.id)"
+                      [attr.aria-label]="'Ver resultados da execução ' + row.id"
+                    >
+                      Ver resultados<mat-icon iconPositionEnd>arrow_forward</mat-icon>
                     </button>
                     @if (canDeleteJob(row)) {
                       <button
                         mat-icon-button
-                        color="warn"
+                        class="delete-job"
                         (click)="confirmDeleteJob(row)"
-                        class="btn-action"
-                        title="Excluir"
+                        [attr.aria-label]="'Excluir execução ' + row.id"
+                        matTooltip="Excluir execução"
                       >
-                        <mat-icon>delete</mat-icon>
+                        <mat-icon>delete_outline</mat-icon>
                       </button>
                     }
-                  </td>
-                </ng-container>
+                  </div>
+                </td></ng-container
+              >
+              <tr mat-header-row *matHeaderRowDef="jobColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: jobColumns"></tr>
+            </table>
+          </div>
 
-                <tr mat-header-row *matHeaderRowDef="jobColumns; sticky: true"></tr>
-                <tr mat-row *matRowDef="let row; columns: jobColumns"></tr>
-              </table>
+          <div class="mobile-jobs" [attr.aria-busy]="loadingJobs()">
+            @for (row of jobs(); track row.id) {
+              <article class="panel job-card">
+                <div class="job-card-heading">
+                  <h3>{{ row.modelSnapshot?.name || 'Modelo indisponível' }}</h3>
+                  <span class="badge" [class]="statusBadgeClass(row.status)">{{
+                    statusLabel(row.status)
+                  }}</span>
+                </div>
+                <p>
+                  {{ row.sourceType === 'upload' ? 'Upload existente' : 'Do computador' }} ·
+                  {{ row.completedCount }} de {{ row.imageCount }} concluídas
+                  @if (row.failedCount) {
+                    <span class="failure-count"> · {{ row.failedCount }} falhas</span>
+                  }
+                </p>
+                <div class="job-date">
+                  <span>{{ row.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                  @if (row.expiresAt) {
+                    <small>Expira em {{ row.expiresAt | date: 'dd/MM/yyyy HH:mm' }}</small>
+                  }
+                </div>
+                <div class="job-actions">
+                  <button
+                    mat-button
+                    (click)="openJob(row.id)"
+                    [attr.aria-label]="'Ver resultados da execução ' + row.id"
+                  >
+                    Ver resultados<mat-icon iconPositionEnd>arrow_forward</mat-icon>
+                  </button>
+                  @if (canDeleteJob(row)) {
+                    <button
+                      mat-icon-button
+                      class="delete-job"
+                      (click)="confirmDeleteJob(row)"
+                      [attr.aria-label]="'Excluir execução ' + row.id"
+                      matTooltip="Excluir execução"
+                    >
+                      <mat-icon>delete_outline</mat-icon>
+                    </button>
+                  }
+                </div>
+              </article>
+            }
+          </div>
+
+          <div class="pagination">
+            <span
+              >{{ jobsOffset() + 1 }}–{{ Math.min(jobsOffset() + jobs().length, jobsTotal()) }} de
+              {{ jobsTotal() }} execuções</span
+            >
+            <div>
+              <button
+                mat-stroked-button
+                (click)="prevJobsPage()"
+                [disabled]="loadingJobs() || jobsOffset() <= 0"
+              >
+                <mat-icon>chevron_left</mat-icon>Anterior</button
+              ><button
+                mat-stroked-button
+                (click)="nextJobsPage()"
+                [disabled]="loadingJobs() || jobsOffset() + pageSize >= jobsTotal()"
+              >
+                Próxima<mat-icon iconPositionEnd>chevron_right</mat-icon>
+              </button>
             </div>
-          </mat-card>
-
-          <!-- Pagination -->
-          <div class="pagination-wrap">
-            <button
-              mat-flat-button
-              color="primary"
-              (click)="prevJobsPage()"
-              [disabled]="jobsOffset() <= 0"
-              class="btn-page"
-            >
-              <mat-icon>arrow_back</mat-icon>
-              Anterior
-            </button>
-
-            <span class="pagination-info">
-              Mostrando {{ jobsOffset() + 1 }}-{{
-                Math.min(jobsOffset() + jobs().length, jobsTotal())
-              }}
-              de {{ jobsTotal() }}
-            </span>
-
-            <button
-              mat-flat-button
-              color="primary"
-              (click)="nextJobsPage()"
-              [disabled]="jobsOffset() + pageSize >= jobsTotal()"
-              class="btn-page"
-            >
-              Próximo
-              <mat-icon>arrow_forward</mat-icon>
-            </button>
           </div>
         }
       </div>
