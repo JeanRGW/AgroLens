@@ -17,6 +17,8 @@ import 'package:agrolens/services/local_image_store_web.dart';
 import 'package:agrolens/services/token_storage.dart';
 import 'package:agrolens/utils/upload_validation.dart';
 import 'package:agrolens/utils/image_naming.dart';
+import 'package:agrolens/utils/storage_guard_web.dart';
+import 'package:agrolens/utils/offline_shell_web.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_secure_storage_web/flutter_secure_storage_web.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
@@ -75,8 +77,10 @@ class _QueueDatabase extends AppDatabase {
         ),
       );
   final rows = <String, Map<String, dynamic>>{};
+  Future<void> Function()? beforeSave;
   @override
   Future<int> saveRow(String table, Map<String, Object?> row) async {
+    await beforeSave?.call();
     rows[row['id'] as String] = Map<String, dynamic>.from(row);
     return 1;
   }
@@ -112,6 +116,139 @@ Future<web.HTMLIFrameElement> _peerDocument() async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   FlutterSecureStorageWeb.registerWith(webPluginRegistrar);
+
+  for (final scope in ['/', '/m/', '/custom/mobile/']) {
+    test('offline readiness uses the registered scope $scope', () async {
+      final serviceWorker = web.window.navigator.serviceWorker;
+      final cache = web.window.caches;
+      final originalRegistration = serviceWorker.getProperty<JSFunction>(
+        'getRegistration'.toJS,
+      );
+      final originalMatch = cache.getProperty<JSFunction>('match'.toJS);
+      final registration = JSObject()
+        ..setProperty('scope'.toJS, '${web.window.location.origin}$scope'.toJS)
+        ..setProperty('active'.toJS, JSObject());
+      String? requestedUrl;
+      bool hasMarker = true;
+      serviceWorker.setProperty(
+        'getRegistration'.toJS,
+        (() => Future<JSObject>.value(registration).toJS).toJS,
+      );
+      cache.setProperty(
+        'match'.toJS,
+        ((JSAny request) {
+          requestedUrl = (request as JSString).toDart;
+          return Future<web.Response?>.value(
+            hasMarker ? web.Response('{}'.toJS) : null,
+          ).toJS;
+        }).toJS,
+      );
+      try {
+        expect(await isOfflineShellReady(), isTrue);
+        expect(
+          requestedUrl,
+          '${web.window.location.origin}${scope}offline-ready.json',
+        );
+        hasMarker = false;
+        expect(await isOfflineShellReady(), isFalse);
+        registration.setProperty('active'.toJS, null);
+        requestedUrl = null;
+        expect(await isOfflineShellReady(), isFalse);
+        expect(requestedUrl, isNull);
+      } finally {
+        serviceWorker.setProperty('getRegistration'.toJS, originalRegistration);
+        cache.setProperty('match'.toJS, originalMatch);
+      }
+    });
+  }
+
+  test(
+    'a second PWA database instance is blocked until the first closes',
+    () async {
+      final first = StorageGuard();
+      final second = StorageGuard();
+      await first.acquire();
+      await expectLater(second.acquire(), throwsStateError);
+      first.release();
+      final reopened = StorageGuard();
+      await reopened.acquire();
+      reopened.release();
+    },
+  );
+
+  test(
+    'concurrent auth coordinators rotate a shared refresh token only once',
+    () async {
+      final storage = TokenStorage();
+      final oldAccess = _token('a');
+      final newAccess = '${_token('a')}new';
+      final user = {
+        'id': 'a',
+        'email': 'a@test',
+        'fullName': 'a',
+        'role': 'user',
+        'createdAt': '2026-01-01T00:00:00Z',
+        'updatedAt': '2026-01-01T00:00:00Z',
+      };
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var refreshes = 0;
+      ApiClient api() => ApiClient(
+        env: const EnvConfig(apiBaseUrl: 'https://test.invalid/api'),
+        httpClient: MockClient((request) async {
+          if (request.url.path.endsWith('/refresh')) {
+            refreshes++;
+            if (!started.isCompleted) started.complete();
+            await release.future;
+            return http.Response(
+              jsonEncode({'accessToken': newAccess, 'refreshToken': 'rotated'}),
+              200,
+            );
+          }
+          if (request.url.path.endsWith('/login')) {
+            return http.Response(
+              jsonEncode({
+                'accessToken': oldAccess,
+                'refreshToken': 'original',
+                'user': user,
+              }),
+              200,
+            );
+          }
+          if (request.url.path.endsWith('/users/me') &&
+              request.headers['Authorization'] == 'Bearer $oldAccess') {
+            return http.Response('{"message":"expired"}', 401);
+          }
+          return http.Response(jsonEncode({'user': user}), 200);
+        }),
+      );
+      final apiA = api();
+      final authA = AuthService(apiClient: apiA, tokenStorage: storage);
+      await authA.login(email: 'a@test', password: 'password');
+      final apiB = api();
+      final authB = AuthService(apiClient: apiB, tokenStorage: storage);
+      await authB.tryRestoreSession();
+      try {
+        final a = authA.updateProfile(fullName: 'a');
+        await started.future;
+        final b = authB.updateProfile(fullName: 'a');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        release.complete();
+        await Future.wait([a, b]);
+        expect(refreshes, 1);
+        expect(authA.currentUser?.id, 'a');
+        expect(authB.currentUser?.id, 'a');
+        expect(await storage.getRefreshToken(), 'rotated');
+      } finally {
+        if (!release.isCompleted) release.complete();
+        authA.dispose();
+        authB.dispose();
+        apiA.dispose();
+        apiB.dispose();
+        await storage.clearAll();
+      }
+    },
+  );
 
   test(
     'picker-style blob URL originals validate and persist without renaming',
@@ -258,6 +395,81 @@ void main() {
       await auth.logout();
       auth.dispose();
       api.dispose();
+    },
+  );
+
+  test(
+    'draft removal keeps the image-queue lock through commit and cleanup',
+    () async {
+      final api = _api('a');
+      final auth = AuthService(apiClient: api, tokenStorage: TokenStorage());
+      await auth.login(email: 'a@test', password: 'password');
+      final db = _QueueDatabase();
+      final helper = DatabaseHelper(appDatabase: db, authService: auth);
+      final store = WebLocalImageStore();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      Future<PendingUpload>? saving;
+      Future<JSAny?>? peerLock;
+      try {
+        final draft = await helper.saveUploadImages(
+          files: [
+            XFile.fromData(
+              Uint8List.fromList([0xff, 0xd8, 0xff]),
+              name: 'removed.jpg',
+            ),
+          ],
+          imageStore: store,
+          createUpload: (paths) => PendingUpload(
+            id: 'removed-draft',
+            ownerId: 'a',
+            createdAt: DateTime.utc(2026),
+            status: PendingUploadStatus.draft,
+            paths: paths,
+          ),
+        );
+        db.beforeSave = () async {
+          started.complete();
+          await release.future;
+        };
+        saving = helper.saveUploadImages(
+          files: [],
+          imageStore: store,
+          createUpload: (_) => draft.copyWith(images: []),
+        );
+        await started.future;
+        final peer = await _peerDocument();
+        var peerAcquired = false;
+        var peerSawCleanup = false;
+        peerLock = peer.contentWindow!.navigator.locks
+            .request(
+              'agrolens-image-queue',
+              ((web.Lock? _) => (() async {
+                peerAcquired = true;
+                peerSawCleanup = !await store.exists(draft.paths.single);
+              })().toJS).toJS,
+            )
+            .toDart;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(peerAcquired, isFalse);
+        expect(await store.exists(draft.paths.single), isTrue);
+        expect((await helper.getUploadById(draft.id))!.paths, draft.paths);
+        release.complete();
+        await saving;
+        await peerLock;
+        expect(peerSawCleanup, isTrue);
+        db.beforeSave = null;
+        await helper.discardDraft(draft.id, imageStore: store);
+      } finally {
+        if (!release.isCompleted) release.complete();
+        await saving;
+        await peerLock;
+        db.beforeSave = null;
+        await helper.close();
+        await auth.logout();
+        auth.dispose();
+        api.dispose();
+      }
     },
   );
 

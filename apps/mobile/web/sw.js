@@ -12,7 +12,7 @@
 // stale-while-revalidate, so a fresh bundle is picked up within one reload.
 
 const CACHE_PREFIX = "agrolens-m-";
-const CACHE_NAME = `${CACHE_PREFIX}v3`;
+const CACHE_NAME = `${CACHE_PREFIX}v4`;
 
 // Boot-critical files: the app must start without a network round trip.
 const REQUIRED_SHELL = [
@@ -64,6 +64,12 @@ self.addEventListener("install", (event) => {
         await cache.addAll(REQUIRED_SHELL);
         await Promise.all(
           OPTIONAL_SHELL.map((url) => cache.add(url).catch(() => {})),
+        );
+        await cache.put(
+          "offline-ready.json",
+          new Response("{}", {
+            headers: { "Content-Type": "application/json" },
+          }),
         );
       })
       .then(() => self.skipWaiting()),

@@ -318,42 +318,52 @@ class AuthService {
 
   Future<String?> _executeRefresh() async {
     final generation = _sessionGeneration;
-    final user = _currentUser ?? await _tokenStorage.getCachedUser();
-    if (user != null) {
-      _ensureTokenOwner(await _tokenStorage.getAccessToken(), user);
-    }
-    final refreshToken = await _tokenStorage.getRefreshToken();
-    _ensureSession(generation);
-    if (refreshToken == null) return null;
+    final observedRefresh = await _tokenStorage.getRefreshToken();
     try {
-      final refreshed = await _apiClient.refresh(refreshToken: refreshToken);
-      if (generation != _sessionGeneration) return null;
-      _ensureSession(generation);
-      if (user != null) _ensureTokenOwner(refreshed.accessToken, user);
-      await _writeForSession(
-        generation,
-        () => _tokenStorage.saveTokens(
-          accessToken: refreshed.accessToken,
-          refreshToken: refreshed.refreshToken,
-        ),
-      );
-      if (generation != _sessionGeneration) return null;
-      return refreshed.accessToken;
-    } on ApiException catch (error) {
-      if (generation != _sessionGeneration) return null;
-      if (error.statusCode == 401) {
-        await _writeForSession(
-          generation,
-          _tokenStorage.clearAll,
-          notifyChange: true,
-        );
+      // Separate from commit locking so logout can invalidate a slow request.
+      return await withBrowserLock('agrolens-mobile-refresh', () async {
         _ensureSession(generation);
-        _sessionGeneration++;
-        _apiClient.invalidateAuthRequests();
-        _currentUser = null;
-        _authStateController.add(null);
-        return null;
-      }
+        final user = _currentUser ?? await _tokenStorage.getCachedUser();
+        final storedAccess = await _tokenStorage.getAccessToken();
+        if (user != null) _ensureTokenOwner(storedAccess, user);
+        final refreshToken = await _tokenStorage.getRefreshToken();
+        _ensureSession(generation);
+        if (refreshToken == null) return null;
+        if (refreshToken != observedRefresh) {
+          return storedAccess;
+        }
+        try {
+          final refreshed = await _apiClient.refresh(
+            refreshToken: refreshToken,
+          );
+          _ensureSession(generation);
+          if (user != null) _ensureTokenOwner(refreshed.accessToken, user);
+          await _writeForSession(
+            generation,
+            () => _tokenStorage.saveTokens(
+              accessToken: refreshed.accessToken,
+              refreshToken: refreshed.refreshToken,
+            ),
+          );
+          return refreshed.accessToken;
+        } on ApiException catch (error) {
+          _ensureSession(generation);
+          if (error.statusCode != 401) rethrow;
+          await _writeForSession(
+            generation,
+            _tokenStorage.clearAll,
+            notifyChange: true,
+          );
+          _ensureSession(generation);
+          _sessionGeneration++;
+          _apiClient.invalidateAuthRequests();
+          _currentUser = null;
+          _authStateController.add(null);
+          return null;
+        }
+      });
+    } on ApiException {
+      if (generation != _sessionGeneration) return null;
       rethrow;
     }
   }

@@ -96,7 +96,7 @@ class _QueueScreenState extends State<QueueScreen> {
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Sem conexão. Os uploads serão enviados quando a conexão for restabelecida.',
+                'Sem conexão. Mantenha o app aberto para sincronizar quando a conexão voltar.',
               ),
             ),
           ],
@@ -937,6 +937,12 @@ class _QueueScreenState extends State<QueueScreen> {
 
   _QueueStatusInfo _statusInfo(PendingUploadStatus status) {
     switch (status) {
+      case PendingUploadStatus.draft:
+        return const _QueueStatusInfo(
+          'Rascunho',
+          Icons.edit_outlined,
+          Colors.grey,
+        );
       case PendingUploadStatus.pending:
         return const _QueueStatusInfo('Pendente', Icons.schedule, Colors.grey);
       case PendingUploadStatus.uploading:

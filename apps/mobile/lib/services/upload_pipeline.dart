@@ -47,6 +47,12 @@ class UploadPipeline {
     int session = 0,
     int Function()? getSession,
   }) async {
+    if (upload.status == PendingUploadStatus.draft) {
+      throw const ApiException(
+        409,
+        'Finalize o rascunho antes de sincronizar.',
+      );
+    }
     final generation = authService.sessionGeneration;
     void ensureSession() =>
         _ensureSession(upload, generation, session, getSession);

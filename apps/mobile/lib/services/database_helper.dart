@@ -41,12 +41,16 @@ class DatabaseHelper {
   AppDatabase get database => appDatabase;
 
   /// Protect the interval between committing originals and their queue row.
-  Future<void> saveUploadImages({
+  Future<PendingUpload> saveUploadImages({
     required List<XFile> files,
     required LocalImageStore imageStore,
     required PendingUpload Function(List<String> paths) createUpload,
   }) => withBrowserLock('agrolens-image-queue', () async {
+    final ownerId = _ownerId();
+    final generation = authService.sessionGeneration;
     final paths = <String>[];
+    late PendingUpload upload;
+    List<String> removedPaths = [];
     try {
       for (final file in files) {
         final extension = await imageExtension(file);
@@ -57,7 +61,22 @@ class DatabaseHelper {
           ),
         );
       }
-      await insertPendingUpload(createUpload(paths));
+      upload = createUpload(paths);
+      final previous = await getUploadById(upload.id);
+      if (authService.currentUser?.id != ownerId ||
+          authService.sessionGeneration != generation) {
+        throw StateError('Session changed');
+      }
+      final retainedPaths = upload.paths.map(imageStore.comparisonKey).toSet();
+      removedPaths =
+          previous?.paths
+              .where(
+                (path) =>
+                    !retainedPaths.contains(imageStore.comparisonKey(path)),
+              )
+              .toList() ??
+          [];
+      await insertPendingUpload(upload);
     } catch (_) {
       for (final path in paths) {
         try {
@@ -68,7 +87,28 @@ class DatabaseHelper {
       }
       rethrow;
     }
+    // Cleanup failure must not roll back originals referenced by a committed row.
+    await _deleteUnreferencedImages(imageStore, removedPaths);
+    return upload;
   });
+
+  Future<void> discardDraft(String id, {required LocalImageStore imageStore}) =>
+      withBrowserLock('agrolens-image-queue', () async {
+        final ownerId = _ownerId();
+        final generation = authService.sessionGeneration;
+        final draft = await getUploadById(id);
+        if (draft == null) return;
+        if (authService.currentUser?.id != ownerId ||
+            authService.sessionGeneration != generation) {
+          throw StateError('Session changed');
+        }
+        if (draft.status != PendingUploadStatus.draft) {
+          throw StateError('Only drafts can be discarded');
+        }
+        if (await deleteUpload(id) > 0) {
+          await _deleteUnreferencedImages(imageStore, draft.paths);
+        }
+      });
 
   /// Insert a new pending upload.
   Future<int> insertPendingUpload(PendingUpload upload) async {
@@ -105,8 +145,16 @@ class DatabaseHelper {
     final ownerId = _ownerId();
     final db = database;
     final rows = await db.readRows(
-      'SELECT * FROM $_tablePendingUploads WHERE owner_id = ? ORDER BY created_at DESC',
-      [ownerId],
+      'SELECT * FROM $_tablePendingUploads WHERE owner_id = ? AND status != ? ORDER BY created_at DESC',
+      [ownerId, PendingUploadStatus.draft.name],
+    );
+    return rows.map(PendingUpload.fromSqliteRow).toList();
+  }
+
+  Future<List<PendingUpload>> getDrafts() async {
+    final rows = await database.readRows(
+      'SELECT * FROM $_tablePendingUploads WHERE owner_id = ? AND status = ? ORDER BY created_at DESC',
+      [_ownerId(), PendingUploadStatus.draft.name],
     );
     return rows.map(PendingUpload.fromSqliteRow).toList();
   }
@@ -179,36 +227,48 @@ class DatabaseHelper {
 
   /// Deletes local images in [imageStore] that are no longer
   /// referenced by any upload across the entire database.
-  Future<int> cleanupOrphanedImages({
-    required LocalImageStore imageStore,
-  }) => withBrowserLock('agrolens-image-queue', () async {
-    final db = database;
-    final rows = await db.readRows(
-      'SELECT images_json FROM $_tablePendingUploads',
-    );
-    final activePaths = <String>{};
-    for (final row in rows) {
-      final raw = row['images_json'] as String?;
-      if (raw != null) {
+  Future<int> cleanupOrphanedImages({required LocalImageStore imageStore}) =>
+      withBrowserLock('agrolens-image-queue', () async {
         try {
-          final images = (jsonDecode(raw) as List<dynamic>)
-              .cast<Map<String, dynamic>>();
-          activePaths.addAll(
-            images.map(
-              (image) => imageStore.comparisonKey(image['path'] as String),
-            ),
+          return await _deleteUnreferencedImages(
+            imageStore,
+            await imageStore.listPaths(),
           );
         } catch (_) {
-          // A corrupt queue row must not cause cleanup to delete another batch's images.
           return 0;
         }
-      }
-    }
+      });
 
-    int deleted = 0;
+  Future<int> _deleteUnreferencedImages(
+    LocalImageStore imageStore,
+    List<String> paths,
+  ) async {
+    if (paths.isEmpty) return 0;
     try {
-      final storedPaths = await imageStore.listPaths();
-      for (final path in storedPaths) {
+      final rows = await database.readRows(
+        'SELECT images_json FROM $_tablePendingUploads',
+      );
+      final activePaths = <String>{};
+      for (final row in rows) {
+        final raw = row['images_json'] as String?;
+        if (raw != null) {
+          try {
+            final images = (jsonDecode(raw) as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+            activePaths.addAll(
+              images.map(
+                (image) => imageStore.comparisonKey(image['path'] as String),
+              ),
+            );
+          } catch (_) {
+            // A corrupt queue row must not cause cleanup to delete another batch's images.
+            return 0;
+          }
+        }
+      }
+
+      int deleted = 0;
+      for (final path in paths) {
         if (!activePaths.contains(imageStore.comparisonKey(path))) {
           try {
             await imageStore.deleteImage(path);
@@ -216,9 +276,11 @@ class DatabaseHelper {
           } catch (_) {}
         }
       }
-    } catch (_) {}
-    return deleted;
-  });
+      return deleted;
+    } catch (_) {
+      return 0;
+    }
+  }
 
   Future<void> close() async {
     if (!_changesController.isClosed) {

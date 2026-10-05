@@ -4,12 +4,14 @@ import 'package:uuid/uuid.dart';
 /// Local pending upload statuses matching the backend flow.
 ///
 /// Status flow:
+/// - draft          → locally saved, not eligible for synchronization
 /// - pending        → waiting to call /uploads/init or upload originals
 /// - uploading      → uploading originals to object storage
 /// - pendingMetadataSync → waiting to call /uploads/:id/complete
 /// - completed      → backend returned finalized ready upload
 /// - failed         → retryable failure
 enum PendingUploadStatus {
+  draft,
   pending,
   uploading,
   pendingMetadataSync,

@@ -174,6 +174,12 @@ class SyncService {
   }
 
   Future<PendingUpload> _syncOne(PendingUpload upload) async {
+    if (upload.status == PendingUploadStatus.draft) {
+      throw const ApiException(
+        409,
+        'Finalize o rascunho antes de sincronizar.',
+      );
+    }
     final session = _sessionGeneration;
     final authGeneration = _authService.sessionGeneration;
     PendingUpload current = upload;
@@ -419,6 +425,11 @@ class SyncService {
   }
 
   Future<PendingUpload> retryUpload(PendingUpload upload) {
+    if (upload.status == PendingUploadStatus.draft) {
+      return Future.error(
+        const ApiException(409, 'Finalize o rascunho antes de sincronizar.'),
+      );
+    }
     return _runOnce(upload.id, () async {
       final session = _sessionGeneration;
       final authGeneration = _authService.sessionGeneration;

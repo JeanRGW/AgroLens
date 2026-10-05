@@ -2,6 +2,5 @@ import 'storage_persist_io.dart'
     if (dart.library.js_interop) 'storage_persist_web.dart'
     as platform;
 
-/// Best-effort request for persistent local storage so browsers (and iOS
-/// PWAs) do not evict the offline queue and cached images.
-Future<void> requestPersistentStorage() => platform.requestPersistentStorage();
+/// True when protection is granted, false when denied, null when unavailable.
+Future<bool?> requestPersistentStorage() => platform.requestPersistentStorage();

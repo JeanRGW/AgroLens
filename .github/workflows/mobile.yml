@@ -24,7 +24,7 @@ jobs:
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           channel: stable
-          flutter-version: '3.47.0'
+          flutter-version: "3.47.0"
           cache: true
 
       - name: Set up Java
@@ -37,6 +37,11 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
       - name: Format check
         run: dart format --set-exit-if-changed .
 
@@ -45,6 +50,15 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Test browser storage
+        run: flutter test --platform chrome test/web/storage_browser_test.dart
+
+      - name: Test PWA assets
+        run: node --test test/web/pwa_assets_test.mjs
+
+      - name: Build release PWA
+        run: flutter build web --release --base-href /m/ --no-web-resources-cdn
 
       - name: Build debug APK
         run: flutter build apk --debug --no-pub

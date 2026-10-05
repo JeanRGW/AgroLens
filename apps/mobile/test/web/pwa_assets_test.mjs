@@ -82,11 +82,12 @@ test("Flutter activation removes only old Flutter caches", async () => {
   const keys = [
     "agrolens-m-v2",
     "agrolens-m-v3",
+    "agrolens-m-v4",
     "ngsw:/:db:control",
     "unrelated",
   ];
   const result = await activate(worker, keys);
-  assert.deepEqual(result.deleted, ["agrolens-m-v2"]);
+  assert.deepEqual(result.deleted, ["agrolens-m-v2", "agrolens-m-v3"]);
 });
 
 test("Flutter does not cache API or Angular resources", async () => {
@@ -112,4 +113,44 @@ test("registration is external for strict script-src CSP", async () => {
   assert.doesNotMatch(html, /<script\s*>/);
   const worker = await readFile(new URL("sw.js", web), "utf8");
   assert.match(worker, /["']register-sw\.js["']/);
+});
+
+test("offline readiness is recorded only after the required shell is cached", async () => {
+  const script = await readFile(new URL("sw.js", web), "utf8");
+  for (const fail of [false, true]) {
+    const listeners = new Map();
+    const stored = [];
+    const context = vm.createContext({
+      URL,
+      Promise,
+      Response,
+      caches: {
+        open: async () => ({
+          addAll: async () => {
+            if (fail) throw new Error("Missing required asset");
+          },
+          add: async () => {},
+          put: async (key) => stored.push(key),
+        }),
+      },
+      self: {
+        addEventListener: (name, callback) => listeners.set(name, callback),
+        skipWaiting: async () => {},
+      },
+    });
+    vm.runInContext(script, context);
+    let pending;
+    listeners.get("install")({
+      waitUntil: (promise) => {
+        pending = promise;
+      },
+    });
+    if (fail) {
+      await assert.rejects(pending, /Missing required asset/);
+      assert.deepEqual(stored, []);
+    } else {
+      await pending;
+      assert.deepEqual(stored, ["offline-ready.json"]);
+    }
+  }
 });

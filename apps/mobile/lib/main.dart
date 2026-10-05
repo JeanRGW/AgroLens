@@ -14,14 +14,10 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
 import 'utils/app_logger.dart';
-import 'utils/storage_persist.dart';
 import 'widgets/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Keep offline queue data (web/iOS PWA storage eviction protection).
-  unawaited(requestPersistentStorage());
 
   // Surface framework and uncaught async errors to the logger so field
   // failures reach the console/DevTools even without a crash SDK.

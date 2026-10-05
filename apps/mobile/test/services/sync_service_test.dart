@@ -155,6 +155,38 @@ void main() {
     await appDb.close();
   });
 
+  test(
+    'drafts cannot enter automatic, manual, or init synchronization',
+    () async {
+      final draft = PendingUpload(
+        id: 'local-draft',
+        ownerId: 'user-1',
+        createdAt: DateTime.utc(2026),
+        status: PendingUploadStatus.draft,
+      );
+      await databaseHelper.insertPendingUpload(draft);
+      mockHttp.clearRequests();
+      expect((await syncService.syncAll()).totalAttempted, 0);
+      await expectLater(
+        syncService.syncOne(draft),
+        throwsA(isA<ApiException>()),
+      );
+      await expectLater(
+        syncService.retryUpload(draft),
+        throwsA(isA<ApiException>()),
+      );
+      await expectLater(
+        syncService.stepInit(draft),
+        throwsA(isA<ApiException>()),
+      );
+      expect(mockHttp.requests, isEmpty);
+      expect(
+        (await databaseHelper.getDrafts()).single.status,
+        PendingUploadStatus.draft,
+      );
+    },
+  );
+
   for (final step in ['originals', 'complete', 'poll']) {
     test('stopping during $step rejects the late response', () async {
       final dir = await Directory.systemTemp.createTemp('sync-session-');

@@ -69,15 +69,33 @@ Web-specific behavior (parity with mobile otherwise):
   verifies the access token's account identity, including after refresh.
 - Pending originals are blobs in IndexedDB (`agrolens-image-blobs`) instead of files,
   and Drift uses `sqlite3.wasm` + `drift_worker.js` (OPFS or IndexedDB-backed).
-- Browser Web Locks coordinate token commits and image saves/orphan cleanup
+- Browser Web Locks coordinate token rotation and image saves/orphan cleanup
   across tabs; the PWA requires a browser supporting Web Locks in a secure context.
 - Camera capture goes through the system camera (file input); `retrieveLostData`
   recovery is Android-only. Signed downloads open in a browser tab.
-- iOS home-screen PWAs can have their storage evicted after ~7 days of disuse; the app
-  requests persistent storage on startup, but field users should open it periodically.
+- Only one PWA instance may access the local database at a time. Memory-only
+  storage is rejected; close other AgroLens tabs if local storage is unavailable.
+- The app requests persistent storage and warns when protection or offline
+  preparation is unavailable. Browser storage can still be lost through device
+  failure, storage pressure, clearing site data, or removing the app. iOS home-screen
+  apps are not subject to a blanket seven-day Safari-tab deletion rule.
 - Camera/GPS require HTTPS (the secure context is guaranteed on the production host).
 
+Before a field release, manually check an installed iPhone PWA and Android Chrome:
+online preparation followed by airplane-mode cold startup, restoring a draft after
+closing the app, interrupted upload recovery, camera return, and denied GPS access.
+Desktop browser tests do not replace these device checks.
+
 ## Offline data and retries
+
+Photos are autosaved as account-owned local drafts as soon as the picker returns.
+Metadata changes are saved progressively. Reopen the app and choose
+"Continuar coleta não finalizada" to restore a draft. Only finalizing the batch makes
+it eligible for synchronization; leaving or logging out retains it unless you
+explicitly discard it. The saved indicator appears only after local commits finish.
+Camera handoff interruption before the photo returns and browser data deletion
+cannot be recovered. Keep original photos until server confirmation, and keep the
+app open during synchronization.
 
 This test branch starts with a fresh Drift schema (version 1). There are no sqflite migrations or historical API response aliases. Synchronize old queues and clear app/site storage manually before switching; backend Drizzle migrations remain unchanged.
 

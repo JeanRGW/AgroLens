@@ -1,21 +1,47 @@
+import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import '../utils/storage_guard.dart';
 
 part 'app_database.g.dart';
 
 @DriftDatabase(include: {'app_database.drift'})
 class AppDatabase extends _$AppDatabase {
-  AppDatabase({QueryExecutor? executor})
+  AppDatabase({QueryExecutor? executor}) : this._(executor, StorageGuard());
+
+  AppDatabase._(QueryExecutor? executor, this._guard)
     : super(
         executor ??
-            driftDatabase(
-              name: 'agrolens',
-              web: DriftWebOptions(
-                sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-                driftWorker: Uri.parse('drift_worker.js'),
-              ),
-            ),
+            LazyDatabase(() async {
+              await _guard.acquire();
+              return driftDatabase(
+                name: 'agrolens',
+                web: DriftWebOptions(
+                  sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+                  driftWorker: Uri.parse('drift_worker.js'),
+                  onResult: (result) {
+                    try {
+                      requireDurableStorage(result.chosenImplementation.name);
+                    } catch (_) {
+                      unawaited(result.resolvedExecutor.close());
+                      rethrow;
+                    }
+                  },
+                ),
+              );
+            }),
       );
+
+  final StorageGuard _guard;
+
+  @override
+  Future<void> close() async {
+    try {
+      await super.close();
+    } finally {
+      _guard.release();
+    }
+  }
 
   @override
   int get schemaVersion => 1;
