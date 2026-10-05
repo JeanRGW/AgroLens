@@ -206,8 +206,12 @@ test.describe('Real-backend critical flows', () => {
     // Save button visible
     await expect(page.getByRole('button', { name: /Salvar/ }).first()).toBeVisible();
 
-    // Class palette visible (default class "objeto" present)
-    await expect(page.getByText('objeto')).toBeVisible();
+    // Class palette visible (default class "objeto" present).
+    // Scoped to the palette: saved annotations render "objeto" in the canvas
+    // and label list too, which makes a bare getByText ambiguous.
+    await expect(
+      page.locator('app-class-palette').getByRole('button', { name: 'objeto' }),
+    ).toBeVisible();
 
     // The upload sidebar should show the provisioned upload
     await expect(page.locator('.upload-item-title').first()).toContainText(uploadIdPrefix);
