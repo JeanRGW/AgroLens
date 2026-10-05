@@ -1,7 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
+import { ApiService } from '../../core/services/api.service';
+import { SessionService } from '../../core/services/session.service';
 import { AuthService } from '../../core/services/auth.service';
 import { CatalogsService } from '../../core/services/catalogs.service';
 import { UploadCreateService } from '../../core/services/upload-create.service';
@@ -14,6 +17,9 @@ describe('UploadCreatePageComponent online uploads', () => {
   let catalogs: jasmine.SpyObj<CatalogsService>;
   let uploads: jasmine.SpyObj<UploadCreateService>;
   let online: jasmine.Spy;
+  let auth: AuthService;
+  let api: jasmine.SpyObj<ApiService>;
+  const user = { id: 'u', email: 'u@test', fullName: 'User', role: 'user' };
 
   beforeEach(async () => {
     online = spyOnProperty(navigator, 'onLine', 'get').and.returnValue(true);
@@ -43,17 +49,24 @@ describe('UploadCreatePageComponent online uploads', () => {
       { id: 'e', name: 'Stage', cropTypeId: 'c', userId: 'u', createdAt: '' },
     ]);
     uploads = jasmine.createSpyObj('UploadCreateService', ['createUpload']);
+    api = jasmine.createSpyObj('ApiService', ['get', 'post']);
+    api.post.and.returnValue(of({ accessToken: 'token', user }));
+    api.get.and.returnValue(of({ user }));
     uploads.createUpload.and.resolveTo({ id: 'server-1', status: 'ready' } as UploadDetail);
     await TestBed.configureTestingModule({
       imports: [UploadCreatePageComponent],
       providers: [
-        { provide: AuthService, useValue: { user: () => ({ id: 'u' }), assertIdentity: () => {} } },
+        AuthService,
+        SessionService,
+        { provide: ApiService, useValue: api },
         { provide: CatalogsService, useValue: catalogs },
         { provide: UploadCreateService, useValue: uploads },
         { provide: MatSnackBar, useValue: { open: () => undefined } },
         provideRouter([]),
       ],
     }).compileComponents();
+    auth = TestBed.inject(AuthService);
+    await auth.login('u@test', 'password');
     fixture = TestBed.createComponent(UploadCreatePageComponent);
     component = fixture.componentInstance;
     await component.ngOnInit();
@@ -109,6 +122,25 @@ describe('UploadCreatePageComponent online uploads', () => {
     expect(uploads.createUpload.calls.mostRecent().args[0].clientUploadId).not.toBe(
       first.clientUploadId,
     );
+  });
+
+  it('retries the same upload after a transient authentication refresh failure', async () => {
+    api.post.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    uploads.createUpload.and.callFake(async (_request, _files, _progress, options) => {
+      options?.assertIdentity();
+      await auth.refreshSession(options?.userId);
+      return { id: 'server-1', status: 'ready' } as UploadDetail;
+    });
+    const files = component.files();
+    await component.onSubmit();
+    const request = uploads.createUpload.calls.mostRecent().args[0];
+    expect(component.files()).toBe(files);
+    expect(auth.user()?.id).toBe('u');
+    api.post.and.returnValue(of({ accessToken: 'fresh' }));
+    await component.onSubmit();
+    expect(uploads.createUpload.calls.mostRecent().args[0]).toBe(request);
+    expect(component.completedUploadId()).toBe('server-1');
+    expect(component.files()).toEqual([]);
   });
 
   it('replaces retry identity when an image changes', async () => {

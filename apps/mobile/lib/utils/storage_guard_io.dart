@@ -1,4 +1,4 @@
 class StorageGuard {
   Future<void> acquire() async {}
-  void release() {}
+  Future<void> release() async {}
 }

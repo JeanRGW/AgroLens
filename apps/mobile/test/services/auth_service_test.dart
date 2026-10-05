@@ -97,6 +97,7 @@ void main() {
   group('password changes', () {
     test('successful changes clear tokens and require a new login', () async {
       await loginAs('user-1');
+      mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
       mockHttp.queueResponse('POST', '/api/auth/change-password', 200, {
         'message': 'Password changed',
       });
@@ -113,6 +114,7 @@ void main() {
 
     test('failed changes keep the current session', () async {
       await loginAs('user-1');
+      mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
       mockHttp.queueResponse('POST', '/api/auth/change-password', 401, {
         'message': 'Invalid current password',
       });
@@ -125,7 +127,11 @@ void main() {
       );
       expect(authService.currentUser?.id, 'user-1');
       expect(await tokenStorage.getRefreshToken(), 'refresh-user-1');
-      expect(mockHttp.requests, hasLength(2));
+      expect(mockHttp.requests, hasLength(3));
+      expect(
+        mockHttp.requests.where((r) => r.url.path == '/api/auth/refresh'),
+        isEmpty,
+      );
     });
 
     test('unauthenticated users cannot change passwords', () async {
@@ -141,6 +147,7 @@ void main() {
 
     test('a delayed change cannot sign out a replacement session', () async {
       await loginAs('user-1');
+      mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
       final started = Completer<void>();
       final release = Completer<void>();
       mockHttp.beforeResponse = (request) async {
@@ -168,6 +175,90 @@ void main() {
         isEmpty,
       );
     });
+
+    for (final correctPassword in [true, false]) {
+      test(
+        'expired credentials refresh before password submission ($correctPassword)',
+        () async {
+          await loginAs('user-1');
+          final fresh = '${_jwt('user-1')}fresh';
+          mockHttp.queueResponse('GET', '/api/auth/me', 401, {
+            'message': 'Expired',
+          });
+          mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
+            'accessToken': fresh,
+            'refreshToken': 'rotated',
+          });
+          mockHttp.queueResponse('GET', '/api/auth/me', 200, {
+            'user': userJson,
+          });
+          mockHttp.queueResponse(
+            'POST',
+            '/api/auth/change-password',
+            correctPassword ? 200 : 401,
+            {
+              'message': correctPassword
+                  ? 'Password changed'
+                  : 'Invalid current password',
+            },
+          );
+          mockHttp.queueRawResponse('POST', '/api/auth/logout', 204, '');
+          final change = authService.changePassword(
+            currentPassword: 'password',
+            newPassword: 'new-password',
+          );
+          if (correctPassword) {
+            await change;
+            expect(authService.currentUser, isNull);
+          } else {
+            await expectLater(change, throwsA(isA<ApiException>()));
+            expect(authService.currentUser?.id, 'user-1');
+            expect(await tokenStorage.getRefreshToken(), 'rotated');
+          }
+          final requests = mockHttp.requests
+              .where((r) => r.url.path == '/api/auth/change-password')
+              .toList();
+          expect(requests, hasLength(1));
+          expect(requests.single.headers['Authorization'], 'Bearer $fresh');
+          expect(
+            mockHttp.requests.where((r) => r.url.path == '/api/auth/refresh'),
+            hasLength(1),
+          );
+        },
+      );
+    }
+
+    test(
+      'a replacement session during preflight prevents password submission',
+      () async {
+        await loginAs('user-1');
+        final started = Completer<void>();
+        final release = Completer<void>();
+        mockHttp.beforeResponse = (request) async {
+          if (request.url.path == '/api/auth/me') {
+            started.complete();
+            await release.future;
+          }
+        };
+        mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
+        final change = authService.changePassword(
+          currentPassword: 'password',
+          newPassword: 'new-password',
+        );
+        final rejected = expectLater(change, throwsA(isA<ApiException>()));
+        await started.future;
+        await loginAs('user-2');
+        release.complete();
+        await rejected;
+        expect(authService.currentUser?.id, 'user-2');
+        expect(
+          mockHttp.requests.where(
+            (r) => r.url.path == '/api/auth/change-password',
+          ),
+          isEmpty,
+        );
+      },
+    );
   });
 
   group('cross-tab queue ownership', () {

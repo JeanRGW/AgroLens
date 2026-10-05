@@ -1,7 +1,7 @@
 import { HttpContext, HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { firstValueFrom, timeout } from 'rxjs';
+import { firstValueFrom, timeout, TimeoutError } from 'rxjs';
 
 import { AuthResponse, MeResponse, UserPublic } from '@agrolens/contracts';
 import { isUserRole } from '../../shared/labels';
@@ -194,6 +194,13 @@ export class AuthService {
       return res.accessToken;
     } catch (error) {
       if (revision !== this.identityRevision) throw new SessionIdentityError();
+      // Keep the validated in-memory identity so a later 401 can refresh again.
+      if (
+        error instanceof TimeoutError ||
+        (error instanceof HttpErrorResponse && (error.status === 0 || error.status >= 500))
+      ) {
+        throw error;
+      }
       this.session.clear();
       this.clearUser();
       if (this.isExpectedUnauthenticatedError(error)) {

@@ -169,12 +169,20 @@ void main() {
       final second = StorageGuard();
       await first.acquire();
       await expectLater(second.acquire(), throwsStateError);
-      first.release();
+      await second.release();
+      await first.release();
+      await first.release();
       final reopened = StorageGuard();
       await reopened.acquire();
-      reopened.release();
+      await reopened.release();
     },
   );
+
+  test('releasing an unopened database guard completes', () async {
+    final guard = StorageGuard();
+    await guard.release();
+    await guard.release();
+  });
 
   test(
     'concurrent auth coordinators rotate a shared refresh token only once',

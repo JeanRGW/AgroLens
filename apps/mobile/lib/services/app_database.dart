@@ -39,7 +39,7 @@ class AppDatabase extends _$AppDatabase {
     try {
       await super.close();
     } finally {
-      _guard.release();
+      await _guard.release();
     }
   }
 

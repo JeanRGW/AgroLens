@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { of, throwError, Subject, TimeoutError } from 'rxjs';
 import { SessionIdentityError } from '../interceptors/auth-context';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
@@ -111,6 +111,53 @@ describe('AuthService online sessions', () => {
     api.post.and.returnValue(of({ accessToken: 'other' }));
     api.get.and.returnValue(of({ user: { ...user, id: 'other' } }));
     await expectAsync(service.refreshSession('u')).toBeRejectedWithError(SessionIdentityError);
+    expect(service.user()).toBeNull();
+    expect(session.token).toBeNull();
+  });
+
+  for (const endpoint of ['refresh', 'me']) {
+    for (const error of [
+      new HttpErrorResponse({ status: 0 }),
+      new HttpErrorResponse({ status: 500 }),
+      new TimeoutError(),
+    ]) {
+      it(`preserves an active session after transient ${endpoint} failure ${error.name} ${error instanceof HttpErrorResponse ? error.status : ''}`, async () => {
+        await login();
+        api.post.and.returnValue(
+          endpoint === 'refresh' ? throwError(() => error) : of({ accessToken: 'unverified' }),
+        );
+        api.get.and.returnValue(throwError(() => error));
+        await expectAsync(service.refreshSession('u')).toBeRejectedWith(error);
+        expect(service.user()?.id).toBe('u');
+        expect(session.token).toBe('token');
+        expect(session.getRefreshPromise()).toBeNull();
+        expect(() => service.assertIdentity('u')).not.toThrow();
+        api.post.and.returnValue(of({ accessToken: 'fresh' }));
+        api.get.and.returnValue(of({ user }));
+        expect(await service.refreshSession('u')).toBe('fresh');
+        expect(session.token).toBe('fresh');
+      });
+    }
+  }
+
+  it('a late transient failure cannot restore a logged-out session', async () => {
+    await login();
+    const pending = new Subject<{ accessToken: string }>();
+    let started!: () => void;
+    const requestStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    api.post.and.callFake(() => {
+      started();
+      return pending as never;
+    });
+    const refresh = service.refreshSession('u');
+    const rejected = expectAsync(refresh).toBeRejectedWithError(SessionIdentityError);
+    await requestStarted;
+    api.post.and.returnValue(of({}));
+    await service.logout();
+    pending.error(new HttpErrorResponse({ status: 500 }));
+    await rejected;
     expect(service.user()).toBeNull();
     expect(session.token).toBeNull();
   });

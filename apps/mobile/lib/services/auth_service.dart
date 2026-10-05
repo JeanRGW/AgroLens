@@ -253,9 +253,16 @@ class AuthService {
     required String newPassword,
   }) async {
     final generation = _sessionGeneration;
-    final token = await getValidAccessToken();
+    var token = await getValidAccessToken();
     if (token == null) throw const ApiException(401, 'Not authenticated');
     _ensureSession(generation);
+    // Refresh through an unambiguous auth endpoint, not a password-error 401.
+    final verified = await _apiClient.me(accessToken: token);
+    _ensureSession(generation);
+    token = await getValidAccessToken();
+    if (token == null) throw const ApiException(401, 'Not authenticated');
+    _ensureSession(generation);
+    _ensureTokenOwner(token, verified.user);
     await _apiClient.changePassword(
       accessToken: token,
       currentPassword: currentPassword,
