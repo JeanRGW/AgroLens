@@ -12,6 +12,7 @@ import '../services/local_image_store.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_scaffold.dart';
 import 'about_screen.dart';
+import 'inference_screen.dart';
 import 'profile_screen.dart';
 import 'create_upload_screen.dart';
 import 'crop_type_catalog_screen.dart';
@@ -414,6 +415,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const [Color(0xff0b5d9a), Color(0xff1481b8)],
+            ),
+            const SizedBox(height: 12),
+            _card(
+              context,
+              Icons.manage_search_outlined,
+              'Inferência',
+              'Analisar imagens e visualizar detecções',
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      InferenceScreen(service: widget.syncService.inference),
+                ),
+              ),
+              const [Color(0xff245d38), Color(0xff398455)],
             ),
             const SizedBox(height: 12),
             _card(

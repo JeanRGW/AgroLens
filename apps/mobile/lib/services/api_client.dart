@@ -6,6 +6,7 @@ import '../models/catalog.dart';
 import '../models/auth_response.dart';
 import '../models/download_url_response.dart';
 import '../models/upload_response.dart';
+import '../models/inference.dart';
 
 /// Typed API client for the backend.
 ///
@@ -243,6 +244,46 @@ class ApiClient {
   }
 
   // ── Profile update endpoint ───────────────────────────────────────
+
+  Future<List<InferenceModel>> inferenceModels(String token) {
+    return _sendWithAuthRetry(
+      (headers) =>
+          _httpClient.get(_env.uri('/inference/models'), headers: headers),
+      (response) {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          return _handleResponse(response, (_) => <InferenceModel>[]);
+        }
+        return (jsonDecode(response.body) as List)
+            .map((e) => InferenceModel.fromJson(e as Json))
+            .toList();
+      },
+      accessToken: token,
+    );
+  }
+
+  Future<Json> inferenceJobs(String token, int offset) =>
+      _get('/inference/jobs?limit=20&offset=$offset', token, (json) => json);
+  Future<InferenceJob> inferenceJob(String token, String id) =>
+      _get('/inference/jobs/$id', token, InferenceJob.fromJson);
+  Future<InferenceResult> inferenceImage(
+    String token,
+    String jobId,
+    String imageId,
+  ) => _get(
+    '/inference/jobs/$jobId/images/$imageId',
+    token,
+    InferenceResult.fromJson,
+  );
+  Future<Json> createInference(String token, Json body) =>
+      _post('/inference/jobs', body, (json) => json, accessToken: token);
+  Future<void> completeInference(String token, String id) => _post<void>(
+    '/inference/jobs/$id/complete',
+    null,
+    (_) {},
+    accessToken: token,
+  );
+  Future<void> deleteInference(String token, String id) =>
+      _delete('/inference/jobs/$id', accessToken: token);
 
   Future<MeResponse> updateProfile({
     required String accessToken,
