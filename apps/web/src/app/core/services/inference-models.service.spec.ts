@@ -25,26 +25,36 @@ describe('InferenceModelsService', () => {
 
   describe('initModel', () => {
     it('should POST /admin/inference-models/init', async () => {
-      const mockResponse = { id: 'm1', uploadUrl: 'https://example.com/presigned', headers: {} };
+      const mockResponse = {
+        id: 'm1',
+        uploadUrl: 'https://example.com/presigned',
+        headers: {},
+        objectKey: 'models/m1/best.pt',
+        expiresAt: '2026-01-01T00:00:00Z',
+      };
       api.post.and.returnValue(of(mockResponse));
 
-      const result = await service.initModel('TestModel', '1.0', 'A test model');
+      const result = await service.initModel('TestModel', 'A test model');
       expect(result).toEqual(mockResponse);
       expect(api.post).toHaveBeenCalledWith('/admin/inference-models/init', {
         name: 'TestModel',
-        version: '1.0',
         description: 'A test model',
       });
     });
 
     it('should omit description when not provided', async () => {
-      const mockResponse = { id: 'm1', uploadUrl: 'https://example.com/presigned', headers: {} };
+      const mockResponse = {
+        id: 'm1',
+        uploadUrl: 'https://example.com/presigned',
+        headers: {},
+        objectKey: 'models/m1/best.pt',
+        expiresAt: '2026-01-01T00:00:00Z',
+      };
       api.post.and.returnValue(of(mockResponse));
 
-      await service.initModel('TestModel', '1.0');
+      await service.initModel('TestModel');
       expect(api.post).toHaveBeenCalledWith('/admin/inference-models/init', {
         name: 'TestModel',
-        version: '1.0',
         description: undefined,
       });
     });
@@ -55,7 +65,6 @@ describe('InferenceModelsService', () => {
       const mockModel = {
         id: 'm1',
         name: 'Model',
-        version: '1',
         task: null,
         classes: [],
         description: null,
@@ -81,7 +90,6 @@ describe('InferenceModelsService', () => {
         {
           id: 'm1',
           name: 'Model',
-          version: '1',
           task: null,
           classes: [],
           description: null,
@@ -107,7 +115,6 @@ describe('InferenceModelsService', () => {
       const mockModel = {
         id: 'm1',
         name: 'Updated',
-        version: '1',
         task: null,
         classes: [],
         description: null,
@@ -130,7 +137,6 @@ describe('InferenceModelsService', () => {
       const mockModel = {
         id: 'm1',
         name: 'Updated',
-        version: '1',
         task: null,
         classes: [],
         description: null,
@@ -158,7 +164,6 @@ describe('InferenceModelsService', () => {
       const mockModel = {
         id: 'm1',
         name: 'Model',
-        version: '1',
         task: null,
         classes: [],
         description: null,

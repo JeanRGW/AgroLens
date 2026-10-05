@@ -34,7 +34,7 @@
                 >
                   @for (m of models(); track m.id) {
                     <mat-option [value]="m.id">
-                      {{ m.name }} v{{ m.version }}
+                      {{ m.name }}
                       @if (m.task) {
                         <span class="model-task">({{ m.task }})</span>
                       }
@@ -67,9 +67,7 @@
                   >
                     @for (u of uploads(); track u.id) {
                       <mat-option [value]="u.id">
-                        {{ u.id }} — {{ u.propertyName || u.propertyId || '—' }} ({{
-                          u.fileCount
-                        }}
+                        {{ u.id }} — {{ u.propertyName || u.propertyId || '—' }} ({{ u.fileCount }}
                         imagens)
                       </mat-option>
                     }
@@ -102,7 +100,9 @@
                     <span>Máximo de 20 arquivos, 25 MB por arquivo</span>
                     <span class="temp-count">
                       {{ tempFiles().length }}
-                      {{ tempFiles().length === 1 ? 'arquivo selecionado' : 'arquivos selecionados' }}
+                      {{
+                        tempFiles().length === 1 ? 'arquivo selecionado' : 'arquivos selecionados'
+                      }}
                     </span>
                   </div>
 

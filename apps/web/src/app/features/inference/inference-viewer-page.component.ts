@@ -971,7 +971,7 @@ export class InferenceViewerPageComponent implements OnInit {
       // Cache detections
       this.allDetectionsCache.update((map) => {
         const next = new Map(map);
-        next.set(img.id, result.detections);
+        next.set(img.id, result.detections ?? []);
         return next;
       });
 
@@ -981,11 +981,11 @@ export class InferenceViewerPageComponent implements OnInit {
       this.updateImageNav();
 
       // Update class counts for current image
-      this.updateCurrentImageClassCounts(result.detections);
+      this.updateCurrentImageClassCounts(result.detections ?? []);
 
       // Update class filters (all enabled initially)
       if (!sameImage || !this.classFilterList().length) {
-        this.updateClassFilters(result.detections);
+        this.updateClassFilters(result.detections ?? []);
       }
     } catch (err: unknown) {
       if (request !== this.imageRequest || this.destroyRef.destroyed) return;
@@ -1131,7 +1131,7 @@ export class InferenceViewerPageComponent implements OnInit {
       for (const img of jobDetail.images) {
         const { detections } = await this.inferenceService.getImage(jobDetail.id, img.id);
 
-        for (const det of detections) {
+        for (const det of detections ?? []) {
           rows.push({
             image_index: img.imageIndex,
             file_name: img.fileName,

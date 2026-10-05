@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import { InferenceRepository, MAX_VALIDATION_ATTEMPTS } from '../database/repositories';
+import {
+  InferenceRepository,
+  InferenceModelsRepository,
+  MAX_VALIDATION_ATTEMPTS,
+} from '../database/repositories';
 import { StorageService } from '../storage/storage.service';
 import { InferenceClient, InferenceHttpError } from '../inference/inference-client';
 import { sanitizeError } from '../common/sanitize-error';
@@ -19,6 +23,7 @@ export class InferenceService {
   constructor(
     private readonly configService: ConfigService,
     private readonly inferenceRepository: InferenceRepository,
+    private readonly modelsRepository: InferenceModelsRepository,
     private readonly storageService: StorageService,
     private readonly inferenceClient: InferenceClient,
   ) {
@@ -47,7 +52,7 @@ export class InferenceService {
     const pollId = randomUUID();
     const startedAt = performance.now();
     // Claim failures must reach the runtime's polling backoff, not count as work.
-    const model = await this.inferenceRepository.claimValidation();
+    const model = await this.modelsRepository.claimValidation();
     if (!model) return false;
     try {
       this.logger.log(
@@ -81,7 +86,7 @@ export class InferenceService {
             error: sanitizeError(msg),
           }),
         );
-        await this.inferenceRepository.completeValidation(model.id, model.validationAttempts, {
+        await this.modelsRepository.completeValidation(model.id, model.validationAttempts, {
           status: 'invalid',
           errorMessage: msg,
         });
@@ -89,7 +94,7 @@ export class InferenceService {
       }
 
       // Success — mark ready
-      const completed = await this.inferenceRepository.completeValidation(
+      const completed = await this.modelsRepository.completeValidation(
         model.id,
         model.validationAttempts,
         {
@@ -129,7 +134,7 @@ export class InferenceService {
 
       // validationAttempts was already incremented by claimValidation.
       if (model.validationAttempts >= MAX_VALIDATION_ATTEMPTS) {
-        const failed = await this.inferenceRepository.completeValidation(
+        const failed = await this.modelsRepository.completeValidation(
           model.id,
           model.validationAttempts,
           {
@@ -195,7 +200,7 @@ export class InferenceService {
         throw new Error(`Job ${jobId} not found`);
       }
 
-      const model = await this.inferenceRepository.findModelById(job.modelId);
+      const model = await this.modelsRepository.findModelById(job.modelId);
       if (!model || model.status !== 'ready') {
         throw new Error(`Model ${job.modelId} is not ready (status=${model?.status ?? 'deleted'})`);
       }
@@ -336,10 +341,10 @@ export class InferenceService {
       }
 
       // ── Abandoned model uploads ───────────────────────────────────
-      const abandonedModels = await this.inferenceRepository.findAbandonedModelUploads(10);
+      const abandonedModels = await this.modelsRepository.findAbandonedModelUploads(10);
       for (const model of abandonedModels) {
         try {
-          const deleted = await this.inferenceRepository.softDeleteModel(model.id);
+          const deleted = await this.modelsRepository.softDeleteModel(model.id);
           if (!deleted) continue;
           this.logger.log(
             JSON.stringify({ event: 'cleanup_completed', type: 'model_upload', jobId: model.id }),

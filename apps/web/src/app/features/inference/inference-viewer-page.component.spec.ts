@@ -43,7 +43,8 @@ function job(status = 'completed'): InferenceJobDetail {
   return {
     id: 'job',
     modelId: 'model',
-    modelSnapshot: { id: 'model', name: 'model', version: '1', task: null, classes: [] },
+    modelSnapshot: { id: 'model', name: 'model', task: null, classes: [] },
+    uploadId: null,
     sourceType: 'upload',
     status,
     imageCount: 2,
@@ -51,6 +52,9 @@ function job(status = 'completed'): InferenceJobDetail {
     failedCount: 0,
     errorMessage: null,
     createdAt: '',
+    updatedAt: '',
+    startedAt: null,
+    completedAt: null,
     expiresAt: null,
     images: ['a', 'b'].map((id, imageIndex) => ({
       id,

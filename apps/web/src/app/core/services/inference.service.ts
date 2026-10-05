@@ -6,7 +6,6 @@ import {
   CreateJobResponse,
   InferenceJobDetail,
   InferenceJobImageResult,
-  InferenceJobListItem,
   InferenceJobListResponse,
   InferenceModelSummary,
 } from '@agrolens/contracts';

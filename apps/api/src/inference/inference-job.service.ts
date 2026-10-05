@@ -9,9 +9,17 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import {
   InferenceRepository,
+  InferenceModelsRepository,
   type InferenceModel,
-  type ModelSnapshot,
 } from '../database/repositories';
+import type {
+  CreateJobResponse,
+  Detection,
+  InferenceJobDetail,
+  InferenceJobImageResult,
+  InferenceJobListResponse,
+  InferenceModelSnapshot,
+} from '@agrolens/contracts';
 import { StorageService } from '../storage/storage.service';
 import { resolveRetentionDays } from '../config/env.schema';
 import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
@@ -25,106 +33,6 @@ import {
   type AllowedContentType,
 } from '../image-processing/image-processing.service';
 
-// ── Response types ───────────────────────────────────────────────────
-
-export interface ModelResponse {
-  id: string;
-  name: string;
-  version: string;
-  description: string | null;
-  task: string | null;
-  classes: unknown;
-  status: string;
-  active: boolean;
-  sha256: string | null;
-  sizeBytes: number;
-  errorMessage: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface ModelInitResponse {
-  id: string;
-  uploadUrl: string;
-  headers: Record<string, string>;
-  objectKey: string;
-  expiresAt: Date;
-}
-
-export interface JobCreateResponse {
-  id: string;
-  status: string;
-  imageCount?: number;
-  files?: Array<{
-    imageIndex: number;
-    uploadUrl: string;
-    objectKey: string;
-    headers: Record<string, string>;
-    expiresAt: Date;
-  }>;
-}
-
-export interface JobImageSummary {
-  id: string;
-  imageIndex: number;
-  fileName: string;
-  status: string;
-  detectionCount: number;
-  inferenceMs: number | null;
-}
-
-export interface JobDetailResponse {
-  id: string;
-  modelId: string;
-  modelSnapshot: ModelSnapshot;
-  sourceType: string;
-  uploadId: string | null;
-  status: string;
-  imageCount: number;
-  completedCount: number;
-  failedCount: number;
-  errorMessage: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  startedAt: Date | null;
-  completedAt: Date | null;
-  expiresAt: Date | null;
-  images: JobImageSummary[];
-}
-
-export interface ImageResultResponse {
-  id: string;
-  imageIndex: number;
-  uploadImageId: string | null;
-  fileName: string;
-  status: string;
-  detections: unknown;
-  inferenceMs: number | null;
-  width: number | null;
-  height: number | null;
-  imageUrl: string;
-  errorMessage: string | null;
-}
-
-export interface JobListResponse {
-  jobs: Array<{
-    id: string;
-    status: string;
-    sourceType: string;
-    imageCount: number;
-    completedCount: number;
-    failedCount: number;
-    modelSnapshot: ModelSnapshot | null;
-    createdAt: Date;
-    updatedAt: Date;
-    completedAt: Date | null;
-    expiresAt: Date | null;
-  }>;
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 @Injectable()
 export class InferenceJobService {
   private readonly tempMaxFiles: number;
@@ -136,6 +44,7 @@ export class InferenceJobService {
   constructor(
     private readonly configService: ConfigService,
     private readonly inferenceRepository: InferenceRepository,
+    private readonly modelsRepository: InferenceModelsRepository,
     private readonly uploadsRepository: UploadsRepository,
     private readonly accessRepository: AccessRepository,
     private readonly storageService: StorageService,
@@ -160,17 +69,16 @@ export class InferenceJobService {
   //  Job creation
   // ═══════════════════════════════════════════════════════════════════
 
-  async createJob(dto: CreateJobDto, currentUser: AuthenticatedUser): Promise<JobCreateResponse> {
-    const model = await this.inferenceRepository.findModelById(dto.modelId);
+  async createJob(dto: CreateJobDto, currentUser: AuthenticatedUser): Promise<CreateJobResponse> {
+    const model = await this.modelsRepository.findModelById(dto.modelId);
     if (!model) throw new NotFoundException('Model not found');
     if (model.status !== 'ready' || !model.active) {
       throw new BadRequestException('Model is not available for inference');
     }
 
-    const modelSnapshot: ModelSnapshot = {
+    const modelSnapshot: InferenceModelSnapshot = {
       id: model.id,
       name: model.name,
-      version: model.version,
       task: model.task,
       classes: model.classes,
     };
@@ -190,9 +98,9 @@ export class InferenceJobService {
     uploadId: string,
     imageIds: string[] | undefined,
     model: InferenceModel,
-    modelSnapshot: ModelSnapshot,
+    modelSnapshot: InferenceModelSnapshot,
     currentUser: AuthenticatedUser,
-  ): Promise<JobCreateResponse> {
+  ): Promise<CreateJobResponse> {
     await assertCanAccessUpload(
       this.uploadsRepository,
       this.accessRepository,
@@ -288,9 +196,9 @@ export class InferenceJobService {
   private async createTemporaryJob(
     files: { fileName: string; contentType: string; sizeBytes: number }[],
     model: InferenceModel,
-    modelSnapshot: ModelSnapshot,
+    modelSnapshot: InferenceModelSnapshot,
     currentUser: AuthenticatedUser,
-  ): Promise<JobCreateResponse> {
+  ): Promise<CreateJobResponse> {
     if (files.length > this.tempMaxFiles) {
       throw new BadRequestException(
         `Too many files. Maximum is ${this.tempMaxFiles}, got ${files.length}`,
@@ -313,7 +221,7 @@ export class InferenceJobService {
     const jobId = randomUUID();
     const expiresAt = new Date(Date.now() + this.jobRetentionDays * 24 * 60 * 60 * 1000);
 
-    const presignedUrls: JobCreateResponse['files'] = [];
+    const presignedUrls: CreateJobResponse['files'] = [];
     const imageData: Array<{
       imageIndex: number;
       fileName: string;
@@ -448,24 +356,25 @@ export class InferenceJobService {
   //  Job listing & detail
   // ═══════════════════════════════════════════════════════════════════
 
-  async listJobs(dto: ListJobsQueryDto, currentUser: AuthenticatedUser): Promise<JobListResponse> {
-    const jobs = await this.inferenceRepository.listJobsByUserId(currentUser.sub);
-
-    const now = new Date();
-    const nonExpired = jobs.filter((j) => !j.expiresAt || j.expiresAt >= now);
-
-    const total = nonExpired.length;
-    const paged = nonExpired.slice(dto.offset, dto.offset + dto.limit);
+  async listJobs(
+    dto: ListJobsQueryDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<InferenceJobListResponse> {
+    const { jobs, total } = await this.inferenceRepository.listJobsByUserId(
+      currentUser.sub,
+      dto.limit,
+      dto.offset,
+    );
 
     return {
-      jobs: paged.map((j) => ({
+      jobs: jobs.map((j) => ({
         id: j.id,
         status: j.status,
         sourceType: j.sourceType,
         imageCount: j.imageCount,
         completedCount: j.completedCount,
         failedCount: j.failedCount,
-        modelSnapshot: (j.modelSnapshot as ModelSnapshot) ?? null,
+        modelSnapshot: (j.modelSnapshot as InferenceModelSnapshot) ?? null,
         createdAt: j.createdAt,
         updatedAt: j.updatedAt,
         completedAt: j.completedAt,
@@ -477,7 +386,7 @@ export class InferenceJobService {
     };
   }
 
-  async getJobDetail(jobId: string, currentUser: AuthenticatedUser): Promise<JobDetailResponse> {
+  async getJobDetail(jobId: string, currentUser: AuthenticatedUser): Promise<InferenceJobDetail> {
     const job = await this.inferenceRepository.findJobById(jobId);
     if (!job) throw new NotFoundException('Job not found');
 
@@ -503,7 +412,7 @@ export class InferenceJobService {
     return {
       id: job.id,
       modelId: job.modelId,
-      modelSnapshot: job.modelSnapshot as ModelSnapshot,
+      modelSnapshot: job.modelSnapshot as InferenceModelSnapshot,
       sourceType: job.sourceType,
       uploadId: job.uploadId ?? null,
       status: job.status,
@@ -532,7 +441,7 @@ export class InferenceJobService {
     jobId: string,
     imageId: string,
     currentUser: AuthenticatedUser,
-  ): Promise<ImageResultResponse> {
+  ): Promise<InferenceJobImageResult> {
     const job = await this.inferenceRepository.findJobById(jobId);
     if (!job) throw new NotFoundException('Job not found');
 
@@ -553,8 +462,7 @@ export class InferenceJobService {
       );
     }
 
-    const images = await this.inferenceRepository.listImagesByJobId(jobId);
-    const image = images.find((img) => img.id === imageId);
+    const image = await this.inferenceRepository.findImageById(jobId, imageId);
     if (!image) throw new NotFoundException('Image not found in this job');
 
     const { url } = await this.storageService.getPresignedGetUrl(
@@ -568,7 +476,7 @@ export class InferenceJobService {
       uploadImageId: image.uploadImageId,
       fileName: image.fileName,
       status: image.status,
-      detections: image.detections,
+      detections: image.detections as Detection[] | null,
       inferenceMs: image.inferenceMs,
       width: image.width,
       height: image.height,

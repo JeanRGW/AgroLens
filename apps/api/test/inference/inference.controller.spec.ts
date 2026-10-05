@@ -63,7 +63,7 @@ describe('InferenceController', () => {
 
   describe('listActiveModels', () => {
     it('should delegate to service', async () => {
-      const expected = [{ id: 'm1', name: 'Model', version: 'v1', task: 'detect', classes: [] }];
+      const expected = [{ id: 'm1', name: 'Model', task: 'detect', classes: [] }];
       mockInferenceModelService.listActiveModels.mockResolvedValue(expected);
 
       const result = await controller.listActiveModels();

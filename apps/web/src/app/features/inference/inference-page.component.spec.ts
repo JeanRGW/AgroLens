@@ -23,7 +23,7 @@ describe('InferencePageComponent', () => {
       'deleteJob',
     ]);
     inferenceSpy.listActiveModels.and.resolveTo([]);
-    inferenceSpy.listJobs.and.resolveTo({ jobs: [], total: 0 });
+    inferenceSpy.listJobs.and.resolveTo({ jobs: [], total: 0, limit: 20, offset: 0 });
 
     const uploadsSpy = jasmine.createSpyObj<UploadsService>('UploadsService', [
       'listUploads',
@@ -109,7 +109,7 @@ describe('InferencePageComponent', () => {
   });
 
   it('does not create duplicate jobs while submitting', async () => {
-    let finish!: (value: { id: string; status: string }) => void;
+    let finish!: (value: { id: string; status: string; imageCount: number }) => void;
     inferenceService.createUploadJob.and.returnValue(
       new Promise((resolve) => {
         finish = resolve;
@@ -119,7 +119,7 @@ describe('InferencePageComponent', () => {
     const first = component.submitInference();
     await component.submitInference();
     expect(inferenceService.createUploadJob).toHaveBeenCalledTimes(1);
-    finish({ id: 'job-1', status: 'queued' });
+    finish({ id: 'job-1', status: 'queued', imageCount: 1 });
     await first;
   });
 
@@ -151,7 +151,11 @@ describe('InferencePageComponent', () => {
   });
 
   it('should submit the image selected by the navigation query', async () => {
-    inferenceService.createUploadJob.and.resolveTo({ id: 'job-1', status: 'queued' });
+    inferenceService.createUploadJob.and.resolveTo({
+      id: 'job-1',
+      status: 'queued',
+      imageCount: 1,
+    });
     component.selectedModelId.set('model-1');
 
     await component.submitInference();
@@ -162,7 +166,11 @@ describe('InferencePageComponent', () => {
   });
 
   it('should not reuse the query image ID after changing uploads', async () => {
-    inferenceService.createUploadJob.and.resolveTo({ id: 'job-1', status: 'queued' });
+    inferenceService.createUploadJob.and.resolveTo({
+      id: 'job-1',
+      status: 'queued',
+      imageCount: 1,
+    });
     component.selectedModelId.set('model-1');
     component.selectedUploadId.set('upload-2');
 

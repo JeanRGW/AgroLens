@@ -8,6 +8,13 @@
       "when": 1790566446498,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791211679100,
+      "tag": "0001_simplify_inference_models",
+      "breakpoints": true
     }
   ]
 }

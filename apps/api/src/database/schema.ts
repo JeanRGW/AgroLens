@@ -426,7 +426,6 @@ export const inferenceModels = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
-    version: text('version').notNull(),
     description: text('description'),
     objectKey: text('object_key').notNull().unique(),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
@@ -445,9 +444,9 @@ export const inferenceModels = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex('inference_models_name_version_non_deleted_idx')
-      .on(table.name, table.version)
-      // Allow names and versions from soft-deleted models to be reused.
+    uniqueIndex('inference_models_name_non_deleted_idx')
+      .on(table.name)
+      // Allow names from soft-deleted models to be reused.
       .where(sql`${table.deletedAt} IS NULL`),
     check(
       'inference_models_status_check',

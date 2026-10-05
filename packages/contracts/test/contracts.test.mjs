@@ -14,11 +14,24 @@ import {
   listGrantsQuerySchema,
   listAuditQuerySchema,
   createJobSchema,
+  initModelSchema,
   createUserSchema,
   listUsersQuerySchema,
 } from "../dist/index.js";
 
 describe("Contracts Schema Validation", () => {
+  test("model initialization needs only a name, with optional description", () => {
+    assert.deepEqual(initModelSchema.parse({ name: "Weeds — October 2026" }), {
+      name: "Weeds — October 2026",
+    });
+    assert.deepEqual(
+      initModelSchema.parse({ name: "Weeds v2", description: "Field model" }),
+      { name: "Weeds v2", description: "Field model" },
+    );
+    assert.throws(() => initModelSchema.parse({ name: "" }));
+    assert.throws(() => initModelSchema.parse({ name: "x".repeat(256) }));
+  });
+
   test("pageParamsSchema applies defaults and validates limits", () => {
     const defaults = pageParamsSchema.parse({});
     assert.equal(defaults.limit, 20);

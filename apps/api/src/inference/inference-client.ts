@@ -1,20 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-/** Normalized detection returned by the inference service. */
-export interface InferDetection {
-  classId: number;
-  className: string;
-  confidence: number;
-  xCenter: number;
-  yCenter: number;
-  width: number;
-  height: number;
-}
+import type { Detection } from '@agrolens/contracts';
 
 /** Result of a prediction call — detections plus image metadata. */
 export interface PredictResult {
-  detections: InferDetection[];
+  detections: Detection[];
   width: number;
   height: number;
   inferenceMs: number;

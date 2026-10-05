@@ -58,7 +58,7 @@ describe('InferenceAdminController', () => {
 
   describe('initModel', () => {
     it('should delegate to service', async () => {
-      const dto = { name: 'My Model', version: 'v1', description: 'test' };
+      const dto = { name: 'My Model', description: 'test' };
       const expected = {
         modelId: 'm1',
         status: 'uploading',

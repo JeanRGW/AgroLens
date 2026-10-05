@@ -7,13 +7,18 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { InferenceRepository, type InferenceModel } from '../database/repositories';
+import { InferenceModelsRepository, type InferenceModel } from '../database/repositories';
 import { StorageService } from '../storage/storage.service';
 import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
 import type { InitModelDto } from './dto/init-model.dto';
 import type { UpdateModelDto } from './dto/update-model.dto';
 import type { SetActiveModelDto } from './dto/set-active-model.dto';
-import type { ModelResponse, ModelInitResponse } from './inference-job.service';
+import type {
+  InferenceModelAdmin,
+  InferenceModelClass,
+  InferenceModelInitResponse,
+  InferenceModelSummary,
+} from '@agrolens/contracts';
 
 @Injectable()
 export class InferenceModelService {
@@ -22,7 +27,7 @@ export class InferenceModelService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly inferenceRepository: InferenceRepository,
+    private readonly inferenceRepository: InferenceModelsRepository,
     private readonly storageService: StorageService,
   ) {
     this.modelMaxSizeBytes = this.configService.get<number>(
@@ -37,7 +42,10 @@ export class InferenceModelService {
   //  Model management (admin)
   // ═══════════════════════════════════════════════════════════════════
 
-  async initModel(dto: InitModelDto, currentUser: AuthenticatedUser): Promise<ModelInitResponse> {
+  async initModel(
+    dto: InitModelDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<InferenceModelInitResponse> {
     this.assertAdmin(currentUser);
 
     const modelId = randomUUID();
@@ -46,14 +54,13 @@ export class InferenceModelService {
     const model = await this.inferenceRepository.createModel(
       {
         name: dto.name,
-        version: dto.version,
         description: dto.description ?? null,
         objectKey,
         sizeBytes: 0,
         status: 'uploading',
         createdByUserId: currentUser.sub,
       },
-      { actorUserId: currentUser.sub, metadata: { name: dto.name, version: dto.version } },
+      { actorUserId: currentUser.sub, metadata: { name: dto.name } },
     );
 
     const { url, headers, expiresAt } = await this.storageService.getPresignedPutUrl(
@@ -65,7 +72,10 @@ export class InferenceModelService {
     return { id: model.id, uploadUrl: url, headers, objectKey, expiresAt };
   }
 
-  async completeModel(modelId: string, currentUser: AuthenticatedUser): Promise<ModelResponse> {
+  async completeModel(
+    modelId: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<InferenceModelAdmin> {
     this.assertAdmin(currentUser);
 
     const model = await this.inferenceRepository.findModelById(modelId);
@@ -102,7 +112,7 @@ export class InferenceModelService {
     return this.toModelResponse(updated);
   }
 
-  async listModels(currentUser: AuthenticatedUser): Promise<ModelResponse[]> {
+  async listModels(currentUser: AuthenticatedUser): Promise<InferenceModelAdmin[]> {
     this.assertAdmin(currentUser);
     const models = await this.inferenceRepository.listAllModels();
     return models.map((m) => this.toModelResponse(m));
@@ -112,7 +122,7 @@ export class InferenceModelService {
     modelId: string,
     dto: UpdateModelDto,
     currentUser: AuthenticatedUser,
-  ): Promise<ModelResponse> {
+  ): Promise<InferenceModelAdmin> {
     this.assertAdmin(currentUser);
 
     const model = await this.inferenceRepository.findModelById(modelId);
@@ -140,7 +150,7 @@ export class InferenceModelService {
     modelId: string,
     dto: SetActiveModelDto,
     currentUser: AuthenticatedUser,
-  ): Promise<ModelResponse> {
+  ): Promise<InferenceModelAdmin> {
     this.assertAdmin(currentUser);
 
     const model = await this.inferenceRepository.findModelById(modelId);
@@ -165,7 +175,7 @@ export class InferenceModelService {
     return this.toModelResponse(updated);
   }
 
-  async deleteModel(modelId: string, currentUser: AuthenticatedUser): Promise<ModelResponse> {
+  async deleteModel(modelId: string, currentUser: AuthenticatedUser): Promise<InferenceModelAdmin> {
     this.assertAdmin(currentUser);
 
     const model = await this.inferenceRepository.findModelById(modelId);
@@ -193,16 +203,13 @@ export class InferenceModelService {
   //  Model listing (user)
   // ═══════════════════════════════════════════════════════════════════
 
-  async listActiveModels(): Promise<
-    Array<{ id: string; name: string; version: string; task: string | null; classes: unknown }>
-  > {
+  async listActiveModels(): Promise<InferenceModelSummary[]> {
     const models = await this.inferenceRepository.listActiveModels();
     return models.map((m) => ({
       id: m.id,
       name: m.name,
-      version: m.version,
       task: m.task,
-      classes: m.classes,
+      classes: m.classes as InferenceModelClass[] | null,
     }));
   }
 
@@ -210,14 +217,13 @@ export class InferenceModelService {
     if (currentUser.role !== 'admin') throw new ForbiddenException('Admin access required');
   }
 
-  private toModelResponse(model: InferenceModel): ModelResponse {
+  private toModelResponse(model: InferenceModel): InferenceModelAdmin {
     return {
       id: model.id,
       name: model.name,
-      version: model.version,
       description: model.description,
       task: model.task,
-      classes: model.classes,
+      classes: model.classes as InferenceModelClass[] | null,
       status: model.status,
       active: model.active,
       sha256: model.sha256,

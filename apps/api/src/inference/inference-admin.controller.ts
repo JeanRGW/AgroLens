@@ -95,8 +95,7 @@ export class InferenceAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Update model name and/or description',
-    description:
-      'Edits name and/or description. Version is immutable after upload complete. Admin only.',
+    description: 'Edits name and/or description. Use the name to label model versions. Admin only.',
   })
   @ApiParam({ name: 'id', description: 'Model ID' })
   @ApiBody({ type: Object })

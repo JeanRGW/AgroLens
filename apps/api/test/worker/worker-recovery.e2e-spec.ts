@@ -8,6 +8,7 @@ import type { DatabaseConnection } from '../../src/database/database.constants';
 import * as schema from '../../src/database/schema';
 import { JobsRepository } from '../../src/database/repositories/jobs.repository';
 import { InferenceRepository } from '../../src/database/repositories/inference.repository';
+import { InferenceModelsRepository } from '../../src/database/repositories/inference-models.repository';
 import { UploadsRepository } from '../../src/database/repositories/uploads.repository';
 import { RetentionRepository } from '../../src/database/repositories/retention.repository';
 import { UsersRepository } from '../../src/database/repositories/users.repository';
@@ -27,6 +28,7 @@ describe('Worker recovery (PostgreSQL)', () => {
   let db: DatabaseConnection;
   let jobs: JobsRepository;
   let inference: InferenceRepository;
+  let models: InferenceModelsRepository;
   let reaperPid: number;
   let userId: string;
   let storage: StorageService;
@@ -46,6 +48,7 @@ describe('Worker recovery (PostgreSQL)', () => {
     const reaperDb = drizzle(reaperClient, { schema });
     jobs = new JobsRepository(reaperDb);
     inference = new InferenceRepository(db, new ConfigService());
+    models = new InferenceModelsRepository(db, new ConfigService());
     const [row] = await reaperDb.execute(sql`SELECT pg_backend_pid() AS pid`);
     reaperPid = Number(row.pid);
     storage = new StorageService(config);
@@ -217,7 +220,6 @@ describe('Worker recovery (PostgreSQL)', () => {
       .insert(schema.inferenceModels)
       .values({
         name: randomUUID(),
-        version: '1',
         objectKey: `models/${randomUUID()}/best.pt`,
         sizeBytes: 1,
         createdByUserId: userId,
@@ -301,7 +303,7 @@ describe('Worker recovery (PostgreSQL)', () => {
       {
         userId,
         modelId: model.id,
-        modelSnapshot: { id: model.id, name: model.name, version: model.version },
+        modelSnapshot: { id: model.id, name: model.name },
         sourceType: 'temporary',
         status: 'running',
         imageCount: 1,
@@ -389,7 +391,7 @@ describe('Worker recovery (PostgreSQL)', () => {
       let creating: Promise<unknown> | undefined;
       try {
         await db.transaction(async (tx) => {
-          const deleting = new InferenceRepository(tx, new ConfigService());
+          const deleting = new InferenceModelsRepository(tx, new ConfigService());
           await deleting.updateModel(model.id, { active: false });
           expect(await deleting.softDeleteModel(model.id)).toBeDefined();
           creating = (
@@ -409,7 +411,10 @@ describe('Worker recovery (PostgreSQL)', () => {
 
   it('rejects model deletion when a concurrent job commits first', async () => {
     const model = await modelFixture({ status: 'ready', active: true });
-    const deleter = new InferenceRepository(drizzle(reaperClient, { schema }), new ConfigService());
+    const deleter = new InferenceModelsRepository(
+      drizzle(reaperClient, { schema }),
+      new ConfigService(),
+    );
     let deleting: Promise<unknown> | undefined;
     try {
       await db.transaction(async (tx) => {
@@ -418,7 +423,9 @@ describe('Worker recovery (PostgreSQL)', () => {
           { userId, modelId: model.id, modelSnapshot: {}, sourceType: 'temporary' },
           [],
         );
-        await creator.updateModel(model.id, { active: false });
+        await new InferenceModelsRepository(tx, new ConfigService()).updateModel(model.id, {
+          active: false,
+        });
         deleting = deleter.softDeleteModel(model.id).catch((error: unknown) => error);
         await waitUntilReaperBlocksOnUpload();
       });
@@ -428,7 +435,7 @@ describe('Worker recovery (PostgreSQL)', () => {
     expect(await deleting).toMatchObject({
       message: 'Cannot delete a model with active (non-terminal) jobs',
     });
-    expect(await inference.findModelById(model.id)).toBeDefined();
+    expect(await models.findModelById(model.id)).toBeDefined();
     expect(await db.select().from(schema.objectDeletionJobs)).toEqual([]);
   });
 
@@ -641,21 +648,21 @@ describe('Worker recovery (PostgreSQL)', () => {
 
   it('recovers a model after a crash on the final validation attempt and rejects late results', async () => {
     const model = await modelFixture({ validationAttempts: 2 });
-    const claimed = await inference.claimValidation();
+    const claimed = await models.claimValidation();
     expect(claimed).toMatchObject({ id: model.id, validationAttempts: 3, status: 'validating' });
     await db
       .update(schema.inferenceModels)
       .set({ updatedAt: staleAt() })
       .where(eq(schema.inferenceModels.id, model.id));
-    await expect(inference.claimValidation()).resolves.toBeUndefined();
-    expect(await inference.findModelById(model.id)).toMatchObject({
+    await expect(models.claimValidation()).resolves.toBeUndefined();
+    expect(await models.findModelById(model.id)).toMatchObject({
       status: 'invalid',
       errorMessage: 'validation lease expired at max attempts',
     });
     await expect(
-      inference.completeValidation(model.id, 3, { status: 'ready', errorMessage: null }),
+      models.completeValidation(model.id, 3, { status: 'ready', errorMessage: null }),
     ).resolves.toBeUndefined();
-    expect((await inference.findModelById(model.id))!.status).toBe('invalid');
+    expect((await models.findModelById(model.id))!.status).toBe('invalid');
   });
 
   it('preserves fresh, ready and deleted models while reclaiming retryable validation', async () => {
@@ -663,7 +670,7 @@ describe('Worker recovery (PostgreSQL)', () => {
     const ready = await modelFixture({ status: 'ready' });
     const deleted = await modelFixture({ deletedAt: new Date() });
     const retryable = await modelFixture({ validationAttempts: 1 });
-    expect(await inference.claimValidation()).toMatchObject({
+    expect(await models.claimValidation()).toMatchObject({
       id: retryable.id,
       validationAttempts: 2,
     });
@@ -672,14 +679,14 @@ describe('Worker recovery (PostgreSQL)', () => {
     expect(rows.find((row) => row.id === ready.id)!.status).toBe('ready');
     expect(rows.find((row) => row.id === deleted.id)!.status).toBe('validating');
     await expect(
-      inference.completeValidation(retryable.id, 1, {
+      models.completeValidation(retryable.id, 1, {
         status: 'invalid',
         errorMessage: 'stale error',
       }),
     ).resolves.toBeUndefined();
     expect(
-      await inference.completeValidation(retryable.id, 2, { status: 'ready', errorMessage: null }),
+      await models.completeValidation(retryable.id, 2, { status: 'ready', errorMessage: null }),
     ).toMatchObject({ status: 'ready' });
-    await expect(inference.claimValidation()).resolves.toBeUndefined();
+    await expect(models.claimValidation()).resolves.toBeUndefined();
   });
 });

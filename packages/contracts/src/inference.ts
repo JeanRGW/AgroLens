@@ -24,7 +24,6 @@ export const INFERENCE_JOB_STATUSES = [
 
 export const initModelSchema = z.object({
   name: z.string().min(1).max(255),
-  version: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
 });
 
@@ -49,6 +48,8 @@ export type ListJobsQueryDto = z.infer<typeof listJobsQuerySchema>;
 export interface InferenceJobListResponse {
   jobs: InferenceJobListItem[];
   total: number;
+  limit: number;
+  offset: number;
 }
 
 const jobFileDescriptorSchema = z.object({
@@ -90,9 +91,8 @@ export interface InferenceModelClass {
 export interface InferenceModelSummary {
   id: string;
   name: string;
-  version: string;
   task: string | null;
-  classes: InferenceModelClass[];
+  classes: InferenceModelClass[] | null;
 }
 
 export interface InferenceModelAdmin extends InferenceModelSummary {
@@ -104,6 +104,21 @@ export interface InferenceModelAdmin extends InferenceModelSummary {
   errorMessage: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+}
+
+export interface InferenceModelInitResponse {
+  id: string;
+  uploadUrl: string;
+  headers: Record<string, string>;
+  objectKey: string;
+  expiresAt: Date | string;
+}
+
+export interface InferenceModelSnapshot {
+  id: string;
+  name: string;
+  task: string | null;
+  classes: unknown;
 }
 
 export interface InferenceJobImageSummary {
@@ -119,13 +134,8 @@ export interface InferenceJobImageSummary {
 export interface InferenceJobDetail {
   id: string;
   modelId: string;
-  modelSnapshot: {
-    id: string;
-    name: string;
-    version: string;
-    task: string | null;
-    classes: unknown;
-  };
+  modelSnapshot: InferenceModelSnapshot;
+  uploadId: string | null;
   sourceType: "upload" | "temporary" | string;
   status: (typeof INFERENCE_JOB_STATUSES)[number] | string;
   imageCount: number;
@@ -133,6 +143,9 @@ export interface InferenceJobDetail {
   failedCount: number;
   errorMessage: string | null;
   createdAt: Date | string;
+  updatedAt: Date | string;
+  startedAt: Date | string | null;
+  completedAt: Date | string | null;
   expiresAt: Date | string | null;
   images: InferenceJobImageSummary[];
 }
@@ -144,7 +157,10 @@ export interface InferenceJobListItem {
   imageCount: number;
   completedCount: number;
   failedCount: number;
+  modelSnapshot: InferenceModelSnapshot | null;
   createdAt: Date | string;
+  updatedAt: Date | string;
+  completedAt: Date | string | null;
   expiresAt: Date | string | null;
 }
 
@@ -156,7 +172,7 @@ export interface InferenceJobImageResult {
   width: number | null;
   height: number | null;
   status: string;
-  detections: Detection[];
+  detections: Detection[] | null;
   inferenceMs: number | null;
   imageUrl: string;
   errorMessage: string | null;
@@ -165,11 +181,12 @@ export interface InferenceJobImageResult {
 export interface CreateJobResponse {
   id: string;
   status: string;
+  imageCount: number;
   files?: {
     imageIndex: number;
     uploadUrl: string;
     objectKey: string;
     headers: Record<string, string>;
-    expiresAt: string;
+    expiresAt: Date | string;
   }[];
 }

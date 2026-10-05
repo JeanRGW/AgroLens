@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { InferenceService } from '../../src/worker/inference.service';
-import { InferenceRepository } from '../../src/database/repositories';
+import { InferenceRepository, InferenceModelsRepository } from '../../src/database/repositories';
 import type { InferenceModel, InferenceJobImage } from '../../src/database/repositories';
 import { StorageService } from '../../src/storage/storage.service';
 import { InferenceClient, InferenceHttpError } from '../../src/inference/inference-client';
@@ -12,7 +12,6 @@ function makeModel(overrides: Partial<InferenceModel> = {}): InferenceModel {
   return {
     id: 'model-uuid-1',
     name: 'Test Model',
-    version: 'v1',
     description: null,
     objectKey: 'models/model-uuid-1/best.pt',
     sizeBytes: 1024,
@@ -59,7 +58,7 @@ function makeJob(overrides: Record<string, unknown> = {}) {
     id: 'job-uuid-1',
     userId: 'user-uuid-1',
     modelId: 'model-uuid-1',
-    modelSnapshot: { id: 'model-uuid-1', name: 'Test', version: 'v1', task: 'detect', classes: [] },
+    modelSnapshot: { id: 'model-uuid-1', name: 'Test', task: 'detect', classes: [] },
     sourceType: 'upload',
     uploadId: 'upload-uuid-1',
     status: 'queued',
@@ -132,6 +131,7 @@ describe('InferenceService (worker)', () => {
         InferenceService,
         { provide: ConfigService, useValue: mockConfigService },
         { provide: InferenceRepository, useValue: mockInferenceRepository },
+        { provide: InferenceModelsRepository, useValue: mockInferenceRepository },
         { provide: StorageService, useValue: mockStorageService },
         { provide: InferenceClient, useValue: mockInferenceClient },
       ],
