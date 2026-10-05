@@ -1,4 +1,6 @@
-import 'dart:io';
+import 'dart:async';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/pending_upload.dart';
@@ -6,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/database_helper.dart';
 import '../services/sync_service.dart';
 import '../services/catalog_repository.dart';
+import '../services/local_image_store.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_scaffold.dart';
 import 'about_screen.dart';
@@ -15,12 +18,15 @@ import 'crop_type_catalog_screen.dart';
 import 'property_catalog_screen.dart';
 import 'queue_screen.dart';
 import '../utils/app_logger.dart';
+import '../utils/storage_persist.dart';
+import '../utils/offline_shell.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
   final DatabaseHelper databaseHelper;
   final CatalogRepository catalogRepository;
   final SyncService syncService;
+  final LocalImageStore? imageStore;
 
   const HomeScreen({
     super.key,
@@ -28,6 +34,7 @@ class HomeScreen extends StatefulWidget {
     required this.databaseHelper,
     required this.catalogRepository,
     required this.syncService,
+    this.imageStore,
   });
 
   @override
@@ -35,18 +42,60 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  late final LocalImageStore _imageStore =
+      widget.imageStore ?? createLocalImageStore();
   bool _loading = true;
   int _pendingCount = 0;
+  List<PendingUpload> _drafts = [];
+  String? _storageError;
+  bool? _persistentStorage;
+  bool _offlineReady = false;
+  Timer? _offlineCheck;
+  StreamSubscription<void>? _changes;
 
   @override
   void initState() {
     super.initState();
     _loadUploads();
     _recoverPickerResult();
+    _changes = widget.databaseHelper.changes.listen(
+      (_) => unawaited(_loadUploads()),
+    );
+    if (kIsWeb) unawaited(_checkOfflineStorage());
+  }
+
+  @override
+  void dispose() {
+    _changes?.cancel();
+    _offlineCheck?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkOfflineStorage() async {
+    final persistent = await requestPersistentStorage();
+    if (!mounted) return;
+    setState(() => _persistentStorage = persistent);
+    await _checkOfflineShell();
+  }
+
+  Future<void> _checkOfflineShell() async {
+    final ready = await isOfflineShellReady();
+    if (!mounted) return;
+    setState(() {
+      _offlineReady = ready;
+    });
+    if (!ready) {
+      _offlineCheck?.cancel();
+      _offlineCheck = Timer(
+        const Duration(seconds: 3),
+        () => unawaited(_checkOfflineShell()),
+      );
+    }
   }
 
   Future<void> _recoverPickerResult() async {
-    if (!Platform.isAndroid) return;
+    // retrieveLostData is Android-only; a no-op elsewhere.
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
       final result = await ImagePicker().retrieveLostData();
       if (!mounted || result.isEmpty) return;
@@ -69,7 +118,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _createUpload({List<XFile> initialImages = const []}) async {
+  Future<void> _createUpload({
+    List<XFile> initialImages = const [],
+    PendingUpload? draft,
+  }) async {
+    if (_storageError != null) return;
     final created = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -78,10 +131,16 @@ class _HomeScreenState extends State<HomeScreen> {
           databaseHelper: widget.databaseHelper,
           catalogRepository: widget.catalogRepository,
           initialImages: initialImages,
+          imageStore: _imageStore,
+          draft: draft,
         ),
       ),
     );
-    if (created != true || !mounted) return;
+    if (!mounted) return;
+    if (created != true) {
+      await _loadUploads();
+      return;
+    }
     try {
       await widget.syncService.syncPendingCatalogsAndUploads();
     } catch (error, stack) {
@@ -94,16 +153,23 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _loading = true);
     try {
       final uploads = await widget.databaseHelper.getAllUploads();
+      final drafts = await widget.databaseHelper.getDrafts();
       if (!mounted) return;
       setState(() {
         _pendingCount = uploads
-            .where(
-              (upload) =>
-                  upload.status == PendingUploadStatus.pending ||
-                  upload.status == PendingUploadStatus.failed,
-            )
+            .where((upload) => upload.status != PendingUploadStatus.completed)
             .length;
+        _drafts = drafts;
+        _storageError = null;
       });
+    } catch (error, stack) {
+      AppLogger.warning('Local storage unavailable', error, stack);
+      if (mounted) {
+        setState(
+          () => _storageError =
+              'Armazenamento indisponível. Feche outras abas do AgroLens e reabra. Se persistir, tente usar outro navegador.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -303,6 +369,26 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 18),
+            if (_storageError != null) Text(_storageError!),
+            if (kIsWeb && !_offlineReady)
+              const Text(
+                'Preparação offline incompleta. Mantenha a conexão e abra novamente antes de ir a campo.',
+              ),
+            if (kIsWeb && _persistentStorage != true)
+              const Text(
+                'Proteção de armazenamento não concedida ou indisponível. O navegador pode remover dados locais. Sincronize assim que possível.',
+              ),
+            for (final draft in _drafts)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Continuar coleta não finalizada'),
+                subtitle: Text(
+                  '${draft.images.length} fotos · ${draft.createdAt.toLocal()}',
+                ),
+                onTap: _storageError == null
+                    ? () => _createUpload(draft: draft)
+                    : null,
+              ),
             const Text(
               'Navegação rápida',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -323,6 +409,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     authService: widget.authService,
                     syncService: widget.syncService,
                     catalogRepository: widget.catalogRepository,
+                    imageStore: _imageStore,
                   ),
                 ),
               ),
@@ -334,7 +421,11 @@ class _HomeScreenState extends State<HomeScreen> {
               Icons.add_a_photo_outlined,
               'Novo upload',
               'Criar e preparar um novo envio de imagens',
-              _createUpload,
+              () {
+                if (_storageError == null && !_loading) {
+                  unawaited(_createUpload());
+                }
+              },
               const [Color(0xff6a4e1a), Color(0xffb17a22)],
             ),
             const SizedBox(height: 12),

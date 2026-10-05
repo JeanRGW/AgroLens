@@ -21,7 +21,7 @@ sequenceDiagram
     participant A as API
     participant S as Garage
     participant W as Worker
-    C->>C: Save offline batch and stable client ID
+    C->>C: Prepare stable client ID (Flutter persists offline batch)
     C->>A: POST /uploads/init
     A-->>C: Draft ID and signed PUT instructions
     C->>S: PUT original bytes into staging
@@ -53,17 +53,19 @@ Upload deletion is soft deletion with delayed object cleanup. Catalog deletion m
 
 ## Client responsibilities
 
-| Capability                             | Web / PWA                                          | Flutter                                                      |
-| -------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------ |
-| Offline capture, GPS, queued originals | IndexedDB and service worker                       | SQLite and local files                                       |
-| Offline catalogs                       | Per-user snapshot of existing catalogs             | Cached catalogs plus queued local creation and ID resolution |
-| Sync                                   | Foreground/reconnect, retains original batch owner | Connectivity-aware queue with account/session coordination   |
-| Review, annotation, YOLO export        | Primary operator interface                         | Field capture and upload review                              |
-| User/access/model administration       | Primary administration interface                   | Field-oriented catalog management                            |
+| Capability                             | Angular (online)                             | Flutter native / PWA                                                    |
+| -------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------- |
+| Offline capture, GPS, queued originals | No offline queue; online uploads with GPS    | SQLite and local files (io) / SQLite wasm and IndexedDB blobs (web PWA) |
+| Offline catalogs                       | None                                         | Cached catalogs plus queued local creation and ID resolution            |
+| Sync                                   | Direct online upload; in-memory retries only | Connectivity-aware queue with account/session coordination              |
+| Review, annotation, YOLO export        | Primary operator interface                   | Field capture and upload review                                         |
+| User/access/model administration       | Primary administration interface             | Field-oriented catalog management                                       |
 
-Both clients currently support offline collection. Whether both should receive every future capture feature is an open product decision. Specify the target client when adding a feature; this matrix records current scope, not a promise of full parity.
+Flutter is the only offline collection client on this branch. Angular remains the online operator and administration interface, without a manifest, offline session, or local upload queue.
 
-The embedded web bundle and backend are released together; web response types use the current API's exact envelopes. Flutter is distributed independently and still accepts historical response aliases. Removing those aliases requires a defined supported mobile/backend version window; none is currently specified. Do not add new compatibility branches without a supported version that needs them.
+The Flutter app is also built as a web PWA served from the API origin under `/m/` (installed from Safari onto iOS home screens without App Store distribution). Its features are the Flutter column unchanged; only the storage and camera layers differ per platform.
+
+Both clients on this test branch use the current API envelopes only. Flutter storage uses a fresh Drift schema, without sqflite upgrade migrations or historical response aliases. Testers synchronize and clear old client data and Angular service workers themselves; backend Drizzle migration history is preserved.
 
 ## Network boundaries
 

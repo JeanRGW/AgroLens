@@ -1,9 +1,9 @@
 import { HttpContext, HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { firstValueFrom, timeout } from 'rxjs';
+import { firstValueFrom, timeout, TimeoutError } from 'rxjs';
 
-import { AuthResponse, UserPublic, UserRole } from '@agrolens/contracts';
+import { AuthResponse, MeResponse, UserPublic } from '@agrolens/contracts';
 import { isUserRole } from '../../shared/labels';
 import {
   isAccountDisabledError,
@@ -15,29 +15,11 @@ import { SessionService } from './session.service';
 import { AUTH_TOKEN_OVERRIDE, SessionIdentityError } from '../interceptors/auth-context';
 import { withBrowserLock } from '../../shared/utils/browser-lock';
 
-interface MeResponse {
-  // Tolerates both the enveloped { user } shape and legacy flat user payloads.
-  user?: {
-    id: string;
-    email: string;
-    fullName: string;
-    role: string;
-    phone?: string;
-    createdAt: string;
-  };
-  id: string;
-  email: string;
-  fullName: string;
-  role: string;
-  phone?: string;
-  createdAt: string;
-}
-
 @Injectable({
   providedIn: 'root',
 })
 export class AuthService {
-  private static readonly offlineUserKey = 'agrolens:offline-user';
+  private static readonly sessionChangeKey = 'agrolens:session-change';
   private readonly api = inject(ApiService);
   private readonly session = inject(SessionService);
   private readonly router = inject(Router);
@@ -47,19 +29,11 @@ export class AuthService {
 
   private readonly loadingState = signal(true);
   readonly loading = this.loadingState.asReadonly();
-  private readonly offlineSessionState = signal(false);
-  readonly offlineSession = this.offlineSessionState.asReadonly();
-  readonly reauthenticationRequired = signal(false);
-  /**
-   * Set when the backend reports the account suspended (`account_disabled`).
-   * Unlike an expired session, a disabled account must not linger offline:
-   * the local identity is cleared and the user is sent to login.
-   */
+  /** Set when the backend reports the account suspended (`account_disabled`). */
   readonly accountDisabled = signal(false);
-  readonly identitySaved = signal(true);
 
   readonly isAuthenticated = computed(() => this.user() !== null);
-  readonly isAdmin = computed(() => !this.offlineSession() && this.user()?.role === 'admin');
+  readonly isAdmin = computed(() => this.user()?.role === 'admin');
 
   private initialized = false;
   private initializePromise: Promise<UserPublic | null> | null = null;
@@ -67,12 +41,12 @@ export class AuthService {
 
   constructor() {
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== null && event.key !== AuthService.offlineUserKey) return;
+      if (event.key !== null && event.key !== AuthService.sessionChangeKey) return;
       this.identityRevision++;
       this.session.clear();
-      this.userState.set(this.cachedUser());
-      this.offlineSessionState.set(this.user() !== null);
-      this.reauthenticationRequired.set(false);
+      this.userState.set(null);
+      this.initialized = false;
+      void this.router.navigate(['/login']);
     };
     window.addEventListener('storage', onStorage);
     inject(DestroyRef).onDestroy(() => window.removeEventListener('storage', onStorage));
@@ -97,31 +71,15 @@ export class AuthService {
 
   private async doInitialize(): Promise<UserPublic | null> {
     const revision = this.identityRevision;
-    const cachedUser = this.cachedUser();
-    if (cachedUser) {
-      this.userState.set(cachedUser);
-      this.offlineSessionState.set(true);
-    }
-    if (!navigator.onLine) {
-      this.initialized = true;
-      this.loadingState.set(false);
-      return cachedUser;
-    }
-
     try {
       const refreshed = await this.refreshSession();
       this.initialized = true;
       this.loadingState.set(false);
-      return refreshed ? this.user() : cachedUser;
+      return refreshed ? this.user() : null;
     } catch (error) {
       this.initialized = true;
       this.loadingState.set(false);
       if (revision !== this.identityRevision) return this.user();
-      if (cachedUser) {
-        this.userState.set(cachedUser);
-        this.offlineSessionState.set(true);
-        return cachedUser;
-      }
       if (!this.isExpectedUnauthenticatedError(error)) {
         throw error;
       }
@@ -152,6 +110,7 @@ export class AuthService {
       createdAt: res.user.createdAt,
     };
     this.setUser(user);
+    this.notifySessionChange();
     this.loadingState.set(false);
     return user;
   }
@@ -183,6 +142,7 @@ export class AuthService {
       createdAt: res.user.createdAt,
     };
     this.setUser(user);
+    this.notifySessionChange();
     this.loadingState.set(false);
     return user;
   }
@@ -211,7 +171,7 @@ export class AuthService {
   }
 
   async ensureSession(userId: string): Promise<string | null> {
-    if (this.session.token && !this.offlineSession()) {
+    if (this.session.token) {
       this.assertIdentity(userId);
       return this.session.token;
     }
@@ -234,22 +194,21 @@ export class AuthService {
       return res.accessToken;
     } catch (error) {
       if (revision !== this.identityRevision) throw new SessionIdentityError();
-      this.session.setToken(null);
-      // Preserve pre-existing behavior for every refresh failure: keep the
-      // cached identity flagged as an offline session. Only a suspension
-      // below opts out via terminateDisabledSession().
-      this.offlineSessionState.set(this.user() !== null);
+      // Keep the validated in-memory identity so a later 401 can refresh again.
+      if (
+        error instanceof TimeoutError ||
+        (error instanceof HttpErrorResponse && (error.status === 0 || error.status >= 500))
+      ) {
+        throw error;
+      }
+      this.session.clear();
+      this.clearUser();
       if (this.isExpectedUnauthenticatedError(error)) {
-        // A suspended account is terminal: end the local session instead of
-        // dropping into offline mode with a stale identity.
         if (isAccountDisabledError(error)) {
           this.terminateDisabledSession();
-        } else {
-          this.reauthenticationRequired.set(true);
         }
         return null;
       }
-      if (error instanceof SessionIdentityError) this.reauthenticationRequired.set(true);
       throw error;
     }
   }
@@ -269,7 +228,7 @@ export class AuthService {
         : this.api.get<MeResponse>('/auth/me');
       const response = await firstValueFrom(request.pipe(timeout(10000)));
       if (revision !== this.identityRevision) throw new SessionIdentityError();
-      const me = response.user ?? response;
+      const me = response.user;
       if (me && isUserRole(me.role)) {
         if (expectedUserId && me.id !== expectedUserId) throw new SessionIdentityError();
         const user: UserPublic = {
@@ -287,9 +246,8 @@ export class AuthService {
     } catch (error) {
       if (revision !== this.identityRevision) throw new SessionIdentityError();
       if (error instanceof SessionIdentityError) {
-        this.session.setToken(null);
-        this.offlineSessionState.set(this.user() !== null);
-        this.reauthenticationRequired.set(true);
+        this.session.clear();
+        this.clearUser();
       }
       if (!this.isExpectedUnauthenticatedError(error)) {
         throw error;
@@ -298,8 +256,7 @@ export class AuthService {
         this.terminateDisabledSession();
       } else {
         this.session.clear();
-        this.offlineSessionState.set(this.user() !== null);
-        this.reauthenticationRequired.set(true);
+        this.clearUser();
       }
     }
     return null;
@@ -309,6 +266,7 @@ export class AuthService {
     this.identityRevision++;
     this.session.clear();
     this.clearUser();
+    this.notifySessionChange();
     try {
       await firstValueFrom(
         this.api.post<void>('/auth/logout', { clientType: 'web' }).pipe(timeout(5000)),
@@ -319,19 +277,10 @@ export class AuthService {
     this.router.navigate(['/login']);
   }
 
-  /**
-   * Ends the local session because the backend reported a suspended account.
-   *
-   * Clears the cached identity (so guards redirect and no tokenless request
-   * goes out looking authenticated) and sends the user to login with the
-   * suspension reason. Never drops into offline mode: a disabled account
-   * must not keep browsing field data as if authenticated.
-   */
+  /** Ends the local session and displays the suspension reason on login. */
   private terminateDisabledSession(): void {
     this.session.clear();
     this.clearUser();
-    this.offlineSessionState.set(false);
-    this.reauthenticationRequired.set(true);
     this.accountDisabled.set(true);
     const currentUrl: unknown = this.router.url;
     if (typeof currentUrl !== 'string' || !currentUrl.startsWith('/login')) {
@@ -356,52 +305,26 @@ export class AuthService {
 
   private setUser(user: UserPublic): void {
     this.userState.set(user);
-    this.offlineSessionState.set(false);
-    this.reauthenticationRequired.set(false);
     this.accountDisabled.set(false);
-    try {
-      localStorage.setItem(AuthService.offlineUserKey, JSON.stringify(user));
-      this.identitySaved.set(true);
-    } catch {
-      this.identitySaved.set(false);
-    }
   }
 
   assertIdentity(userId: string): void {
-    if (this.user()?.id !== userId || !this.session.token || this.offlineSession()) {
+    if (this.user()?.id !== userId || !this.session.token) {
       throw new SessionIdentityError();
     }
   }
 
   private clearUser(): void {
-    const userId = this.userState()?.id;
     this.userState.set(null);
-    this.offlineSessionState.set(false);
-    this.reauthenticationRequired.set(false);
     this.accountDisabled.set(false);
-    try {
-      localStorage.removeItem(AuthService.offlineUserKey);
-      if (userId) localStorage.removeItem(`agrolens:offline-catalogs:${userId}`);
-    } catch {
-      this.identitySaved.set(false);
-    }
   }
 
-  private cachedUser(): UserPublic | null {
+  private notifySessionChange(): void {
     try {
-      const cached = JSON.parse(
-        localStorage.getItem(AuthService.offlineUserKey) ?? 'null',
-      ) as UserPublic | null;
-      return cached &&
-        typeof cached.id === 'string' &&
-        cached.id.length > 0 &&
-        typeof cached.fullName === 'string' &&
-        typeof cached.email === 'string' &&
-        isUserRole(cached.role)
-        ? cached
-        : null;
+      // Notify other Angular tabs without persisting identity or tokens.
+      localStorage.setItem(AuthService.sessionChangeKey, crypto.randomUUID());
     } catch {
-      return null;
+      // Storage may be disabled; server-side identity checks still apply.
     }
   }
 }

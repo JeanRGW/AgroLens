@@ -1,16 +1,15 @@
-import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/pending_upload.dart';
 import '../models/catalog.dart';
 import '../services/auth_service.dart';
 import '../services/database_helper.dart';
 import '../services/catalog_repository.dart';
+import '../services/local_image_store.dart';
 import '../services/location_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/upload_validation.dart';
@@ -18,14 +17,22 @@ import 'location_picker_screen.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_scaffold.dart';
+import '../widgets/local_image_view.dart';
 
 class _SelectedImage {
-  final XFile file;
+  final XFile? file;
   final String origin;
+  final String imageId;
+  String? savedPath;
   LatLng? location;
   bool gpsPending = false;
 
-  _SelectedImage(this.file, {required this.origin});
+  _SelectedImage(
+    this.file, {
+    required this.origin,
+    String? imageId,
+    this.savedPath,
+  }) : imageId = imageId ?? const Uuid().v4();
 }
 
 /// Upload creation screen: select images, capture GPS (with manual fallback),
@@ -40,6 +47,8 @@ class CreateUploadScreen extends StatefulWidget {
   final List<XFile> initialImages;
   final ImagePicker? imagePicker;
   final LocationService locationService;
+  final LocalImageStore? imageStore;
+  final PendingUpload? draft;
 
   const CreateUploadScreen({
     super.key,
@@ -49,6 +58,8 @@ class CreateUploadScreen extends StatefulWidget {
     this.initialImages = const [],
     this.imagePicker,
     this.locationService = const LocationService(),
+    this.imageStore,
+    this.draft,
   });
 
   @override
@@ -59,6 +70,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   final _formKey = GlobalKey<FormState>();
   final _uuid = const Uuid();
   late final ImagePicker _picker;
+  late final LocalImageStore _imageStore =
+      widget.imageStore ?? createLocalImageStore();
 
   // Image selection
   final List<_SelectedImage> _selectedImages = [];
@@ -109,6 +122,22 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   bool _saving = false;
   bool _confirmingExit = false;
   String? _error;
+  late final String _draftId = widget.draft?.id ?? _uuid.v4();
+  late final DateTime _draftCreatedAt =
+      widget.draft?.createdAt ?? DateTime.now();
+  late final String? _draftOwner;
+  late final int _draftGeneration;
+  Future<bool> _draftWrites = Future.value(true);
+  int _draftRevision = 0;
+  int _savedRevision = 0;
+  String? _draftError;
+  bool _leaving = false;
+  bool _draftTouched = false;
+  bool get _hasDraftWork =>
+      widget.draft != null ||
+      _selectedImages.isNotEmpty ||
+      _draftRevision > 0 ||
+      _draftTouched;
   int get _missingLocationCount => _selectedImages
       .where(
         (image) => image.location == null && (!_useGps || !image.gpsPending),
@@ -118,16 +147,152 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   @override
   void initState() {
     super.initState();
+    _draftOwner = widget.authService.currentUser?.id;
+    _draftGeneration = widget.authService.sessionGeneration;
     _picker = widget.imagePicker ?? ImagePicker();
+    final draft = widget.draft;
+    if (draft != null) {
+      if (draft.ownerId != _draftOwner ||
+          draft.status != PendingUploadStatus.draft) {
+        throw StateError('Rascunho de outra sessão');
+      }
+      _source = draft.source ?? 'phone';
+      _propertyIdController.text = draft.propertyId ?? '';
+      _talhaoIdController.text = draft.talhaoId ?? '';
+      _cropTypeIdController.text = draft.cropTypeId ?? '';
+      _estadioIdController.text = draft.estadioId ?? '';
+      _selectedImages.addAll(
+        draft.images.map(
+          (image) =>
+              _SelectedImage(
+                  null,
+                  origin: image.origin,
+                  imageId: image.imageId,
+                  savedPath: image.path,
+                )
+                ..location = image.latitude != null && image.longitude != null
+                    ? LatLng(image.latitude!, image.longitude!)
+                    : null,
+        ),
+      );
+      _draftRevision = _savedRevision = 1;
+    }
     _selectedImages.addAll(
       widget.initialImages.map(
         (file) => _SelectedImage(file, origin: 'gallery'),
       ),
     );
-    _loadCatalogs();
-    if (_selectedImages.isNotEmpty) {
-      _attemptGps(images: List.of(_selectedImages));
+    for (final controller in [
+      _propertyIdController,
+      _talhaoIdController,
+      _cropTypeIdController,
+      _estadioIdController,
+    ]) {
+      controller.addListener(_metadataChanged);
     }
+    _loadCatalogs();
+    if (widget.initialImages.isNotEmpty) {
+      unawaited(_saveInitialImages());
+    }
+  }
+
+  Future<void> _saveInitialImages() async {
+    await _persistDraft();
+    if (mounted) await _attemptGps(images: List.of(_selectedImages));
+  }
+
+  void _autosaveDraft() {
+    if (!_saving && !_leaving && mounted) unawaited(_persistDraft());
+  }
+
+  void _metadataChanged() {
+    _draftTouched = true;
+    _autosaveDraft();
+  }
+
+  Future<bool> _persistDraft() {
+    if (_selectedImages.isEmpty && _draftRevision == 0 && !_draftTouched) {
+      return Future.value(true);
+    }
+    final revision = ++_draftRevision;
+    final images = List<_SelectedImage>.of(_selectedImages);
+    final locations = images.map((image) => image.location).toList();
+    final propertyId = _resolvePropertyId();
+    final talhaoId = _resolveTalhaoId();
+    final cropTypeId = _resolveCropTypeId();
+    final estadioId = _resolveEstadioId();
+    final source = _source;
+    final previous = _draftWrites;
+    final pending = previous.then((_) async {
+      try {
+        final unsaved = images
+            .where((image) => image.savedPath == null)
+            .toList();
+        final files = unsaved.map((image) => image.file!).toList();
+        if (files.isNotEmpty) {
+          final error = await validateUploadFiles(files);
+          if (error != null) throw StateError(error);
+        }
+        void ensureOwner() {
+          if (widget.authService.currentUser?.id != _draftOwner ||
+              widget.authService.sessionGeneration != _draftGeneration) {
+            throw StateError('Sessão alterada');
+          }
+        }
+
+        ensureOwner();
+        final saved = await widget.databaseHelper.saveUploadImages(
+          files: files,
+          imageStore: _imageStore,
+          createUpload: (paths) {
+            ensureOwner();
+            final newPaths = <String, String>{
+              for (var i = 0; i < unsaved.length; i++)
+                unsaved[i].imageId: paths[i],
+            };
+            return PendingUpload(
+              id: _draftId,
+              ownerId: _draftOwner,
+              createdAt: _draftCreatedAt,
+              status: PendingUploadStatus.draft,
+              propertyId: propertyId,
+              talhaoId: talhaoId,
+              cropTypeId: cropTypeId,
+              estadioId: estadioId,
+              source: source,
+              images: [
+                for (var i = 0; i < images.length; i++)
+                  PendingImage(
+                    imageId: images[i].imageId,
+                    path: images[i].savedPath ?? newPaths[images[i].imageId]!,
+                    origin: images[i].origin,
+                    latitude: locations[i]?.latitude,
+                    longitude: locations[i]?.longitude,
+                  ),
+              ],
+            );
+          },
+        );
+        for (var i = 0; i < images.length; i++) {
+          images[i].savedPath = saved.images[i].path;
+        }
+        _savedRevision = revision;
+        if (mounted) setState(() => _draftError = null);
+        return true;
+      } catch (error, stack) {
+        AppLogger.warning('Draft save failed', error, stack);
+        if (mounted) {
+          setState(
+            () => _draftError =
+                'Rascunho não salvo. As alterações e fotos novas não estão protegidas. Tente salvar novamente.',
+          );
+        }
+        return false;
+      }
+    });
+    _draftWrites = pending;
+    if (mounted) setState(() {});
+    return pending;
   }
 
   @override
@@ -204,8 +369,32 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           _selectedEstadio ??= syncedMatchingEstadios.isNotEmpty
               ? syncedMatchingEstadios.first
               : (matchingEstadios.isNotEmpty ? matchingEstadios.first : null);
+          if (widget.draft != null) {
+            _selectedProperty = properties
+                .where((p) => p.id == _propertyIdController.text)
+                .firstOrNull;
+            _selectedTalhao = talhoes
+                .where((t) => t.id == _talhaoIdController.text)
+                .firstOrNull;
+            _selectedCropType = cropTypes
+                .where((c) => c.id == _cropTypeIdController.text)
+                .firstOrNull;
+            _selectedEstadio = estadios
+                .where((e) => e.id == _estadioIdController.text)
+                .firstOrNull;
+            _catalogLoadFailed =
+                (_propertyIdController.text.isNotEmpty &&
+                    _selectedProperty == null) ||
+                (_talhaoIdController.text.isNotEmpty &&
+                    _selectedTalhao == null) ||
+                (_cropTypeIdController.text.isNotEmpty &&
+                    _selectedCropType == null) ||
+                (_estadioIdController.text.isNotEmpty &&
+                    _selectedEstadio == null);
+          }
           _loadingCatalogs = false;
         });
+        _autosaveDraft();
       }
     } catch (e) {
       if (mounted) {
@@ -216,6 +405,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               'Não foi possível carregar os catálogos. Use os IDs manualmente.';
         });
       }
+      _autosaveDraft();
     }
   }
 
@@ -264,6 +454,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           }
         });
       }
+      _autosaveDraft();
     }
   }
 
@@ -294,6 +485,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         }
       }
     });
+    _autosaveDraft();
   }
 
   Future<void> _pickImages() async {
@@ -314,6 +506,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
             .map((file) => _SelectedImage(file, origin: 'gallery'))
             .toList();
         setState(() => _selectedImages.addAll(images));
+        await _persistDraft();
         await _attemptGps(images: images);
       }
     } on PlatformException catch (error) {
@@ -342,6 +535,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           _selectedImages.add(image);
           if (_useGps) _gpsError = null;
         });
+        await _persistDraft();
         if (!_useGps) return;
         try {
           final point = await widget.locationService.getCurrentPosition();
@@ -361,6 +555,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           }
         } finally {
           if (mounted) setState(() => image.gpsPending = false);
+          _autosaveDraft();
         }
       }
     } on PlatformException catch (error) {
@@ -386,60 +581,102 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   void _removeImage(int index) {
     if (_saving) return;
     setState(() => _selectedImages.removeAt(index));
+    _autosaveDraft();
   }
 
   Future<void> _requestExit() async {
     if (_saving || _confirmingExit) return;
-    if (_selectedImages.isEmpty) {
+    if (!_hasDraftWork) {
       Navigator.of(context).pop();
       return;
     }
 
     _confirmingExit = true;
     try {
-      final discard = await showDialog<bool>(
+      final action = await showDialog<String>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Descartar upload?'),
           content: const Text(
-            'As imagens selecionadas ainda não foram salvas. Deseja sair sem salvar?',
+            'Você pode manter o rascunho para continuar depois ou descartar este lote.',
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(context, 'keep'),
+              child: const Text('Manter rascunho e sair'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
               child: const Text('Continuar edição'),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(context, 'discard'),
               child: const Text('Descartar e sair'),
             ),
           ],
         ),
       );
-      if (discard == true && mounted && !_saving) Navigator.of(context).pop();
+      if (action == null || !mounted || _saving) return;
+      setState(() {
+        _leaving = true;
+        _saving = true;
+      });
+      if (action == 'discard') {
+        await _draftWrites;
+        await widget.databaseHelper.discardDraft(
+          _draftId,
+          imageStore: _imageStore,
+        );
+      } else if (!await _persistDraft()) {
+        if (mounted) {
+          setState(() {
+            _leaving = false;
+            _saving = false;
+          });
+        }
+        return;
+      }
+      if (mounted) Navigator.of(context).pop();
+    } catch (error, stack) {
+      AppLogger.warning('Draft exit failed', error, stack);
+      if (mounted) {
+        setState(() {
+          _leaving = false;
+          _saving = false;
+          _error = 'Não foi possível fechar o rascunho. Tente novamente.';
+        });
+      }
     } finally {
       _confirmingExit = false;
     }
   }
 
-  /// Resolve the final catalog IDs from dropdown selections or manual inputs.
+  /// Keep restored IDs until catalog selections have been initialized.
   String _resolvePropertyId() {
-    if (_selectedProperty != null) return _selectedProperty!.id;
+    if (!_loadingCatalogs && !_catalogLoadFailed) {
+      return _selectedProperty?.id ?? '';
+    }
     return _propertyIdController.text.trim();
   }
 
   String _resolveTalhaoId() {
-    if (_selectedTalhao != null) return _selectedTalhao!.id;
+    if (!_loadingCatalogs && !_catalogLoadFailed) {
+      return _selectedTalhao?.id ?? '';
+    }
     return _talhaoIdController.text.trim();
   }
 
   String _resolveCropTypeId() {
-    if (_selectedCropType != null) return _selectedCropType!.id;
+    if (!_loadingCatalogs && !_catalogLoadFailed) {
+      return _selectedCropType?.id ?? '';
+    }
     return _cropTypeIdController.text.trim();
   }
 
   String? _resolveEstadioId() {
-    if (_selectedEstadio != null) return _selectedEstadio!.id;
+    if (!_loadingCatalogs && !_catalogLoadFailed) {
+      return _selectedEstadio?.id;
+    }
     final manual = _estadioIdController.text.trim();
     return manual.isNotEmpty ? manual : null;
   }
@@ -472,7 +709,6 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       _error = null;
     });
 
-    final savedPaths = <String>[];
     final images = List<_SelectedImage>.of(_selectedImages);
     final propertyId = _resolvePropertyId();
     final talhaoId = _resolveTalhaoId();
@@ -481,16 +717,28 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     final source = _source;
     final ownerId = widget.authService.currentUser?.id;
     final generation = widget.authService.sessionGeneration;
-    var persistenceSucceeded = false;
 
     try {
-      final validationError = await validateUploadFiles(
-        images.map((image) => image.file.path).toList(),
-      );
-      if (!mounted) return;
-      if (validationError != null) {
-        setState(() => _error = validationError);
+      if (images.length > maxUploadFiles) {
+        setState(
+          () =>
+              _error = 'Selecione no máximo $maxUploadFiles imagens por lote.',
+        );
         return;
+      }
+      for (final image in images) {
+        final file = image.savedPath == null
+            ? image.file!
+            : XFile.fromData(
+                await _imageStore.readBytes(image.savedPath!),
+                name: image.savedPath!.split('/').last,
+              );
+        final validationError = await validateUploadFiles([file]);
+        if (!mounted) return;
+        if (validationError != null) {
+          setState(() => _error = validationError);
+          return;
+        }
       }
       final missing = images.where((image) => image.location == null).length;
       if (missing > 0) {
@@ -516,66 +764,29 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         if (confirmed != true || !mounted) return;
       }
 
-      // Copy originals to app-controlled directory
-      final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory('${appDir.path}/pending_images');
-      if (!await imagesDir.exists()) {
-        await imagesDir.create(recursive: true);
-      }
-
-      for (final image in images) {
-        final ext = p.extension(image.file.path).toLowerCase();
-        final fileName = '${_uuid.v4()}$ext';
-        final destPath = '${imagesDir.path}/$fileName';
-        final srcFile = File(image.file.path);
-        await srcFile.copy(destPath);
-        savedPaths.add(destPath);
-      }
-
+      if (!await _persistDraft()) return;
       if (widget.authService.currentUser?.id != ownerId ||
           widget.authService.sessionGeneration != generation) {
         throw StateError('Session changed');
       }
-
-      // Create pending upload record
-      final upload = PendingUpload(
-        id: _uuid.v4(),
-        ownerId: ownerId,
-        images: [
-          for (var i = 0; i < images.length; i++)
-            PendingImage(
-              path: savedPaths[i],
-              latitude: images[i].location?.latitude,
-              longitude: images[i].location?.longitude,
-              origin: images[i].origin,
-            ),
-        ],
-        createdAt: DateTime.now(),
-        activityDate: DateTime.now(),
-        status: PendingUploadStatus.pending,
-        propertyId: propertyId,
-        talhaoId: talhaoId,
-        cropTypeId: cropTypeId,
-        estadioId: estadioId,
-        source: source,
+      final draft = await widget.databaseHelper.getUploadById(_draftId);
+      if (draft == null) throw StateError('Rascunho indisponível');
+      await widget.databaseHelper.updateUpload(
+        draft.copyWith(
+          status: PendingUploadStatus.pending,
+          propertyId: propertyId,
+          talhaoId: talhaoId,
+          cropTypeId: cropTypeId,
+          estadioId: estadioId,
+          source: source,
+        ),
       );
-
-      await widget.databaseHelper.insertPendingUpload(upload);
-      persistenceSucceeded = true;
+      _leaving = true;
 
       if (mounted) {
         Navigator.of(context).pop(true); // return success
       }
     } catch (e) {
-      if (!persistenceSucceeded) {
-        for (final path in savedPaths) {
-          try {
-            await File(path).delete();
-          } catch (_) {
-            // Cleanup is best effort; preserve the original save error.
-          }
-        }
-      }
       if (mounted) {
         setState(() => _error = 'Não foi possível salvar o lote: $e');
       }
@@ -620,6 +831,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       onChanged: (v) {
         onChanged(v);
         setState(() {});
+        _metadataChanged();
       },
       validator: required ? (v) => (v == null) ? 'Obrigatório' : null : null,
     );
@@ -660,7 +872,24 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  if (_draftRevision > 0) ...[
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _draftError ??
+                            (_savedRevision == _draftRevision
+                                ? 'Rascunho salvo neste dispositivo. Finalize o lote para sincronizar.'
+                                : 'Salvando rascunho. As fotos novas ainda não estão protegidas.'),
+                      ),
+                    ),
+                    if (_draftError != null)
+                      TextButton(
+                        onPressed: _autosaveDraft,
+                        child: const Text('Tentar salvar rascunho'),
+                      ),
+                    const SizedBox(height: 12),
+                  ],
 
                   // ── Catalog-backed dropdowns (with manual fallback) ──
                   if (_catalogLoadFailed) ...[
@@ -800,6 +1029,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     ],
                     onChanged: (v) {
                       if (v != null) setState(() => _source = v);
+                      _metadataChanged();
                     },
                   ),
                   const SizedBox(height: 16),
@@ -917,13 +1147,22 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: Image.file(
-                                File(_selectedImages[index].file.path),
-                                width: 120,
-                                height: 120,
-                                fit: BoxFit.cover,
-                                cacheWidth: 360,
-                              ),
+                              child: _selectedImages[index].savedPath != null
+                                  ? storedImageView(
+                                      _imageStore,
+                                      _selectedImages[index].savedPath!,
+                                      width: 120,
+                                      height: 120,
+                                      fit: BoxFit.cover,
+                                      cacheWidth: 360,
+                                    )
+                                  : pickedImageView(
+                                      _selectedImages[index].file!,
+                                      width: 120,
+                                      height: 120,
+                                      fit: BoxFit.cover,
+                                      cacheWidth: 360,
+                                    ),
                             ),
                             Positioned(
                               bottom: 2,
@@ -1015,7 +1254,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
             ),
     );
     return PopScope(
-      canPop: !_saving && _selectedImages.isEmpty,
+      canPop: !_saving && !_hasDraftWork,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _requestExit();
       },

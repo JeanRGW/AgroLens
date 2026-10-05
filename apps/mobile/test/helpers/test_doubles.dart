@@ -1,24 +1,30 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:agrolens/models/user.dart';
 import 'package:agrolens/services/app_database.dart';
 import 'package:agrolens/services/auth_service.dart';
 
+String testAccessToken(String userId, {String session = 'test'}) =>
+    'eyJhbGciOiJIUzI1NiJ9.${base64Url.encode(utf8.encode(jsonEncode({'sub': userId, 'session': session})))}.signature';
+
 /// Helper to create an isolated in-memory [AppDatabase] for unit tests.
 AppDatabase createTestAppDatabase({String? path}) {
   return AppDatabase(
-    factory: databaseFactoryFfi,
-    path: path ?? inMemoryDatabasePath,
+    executor: path == null
+        ? NativeDatabase.memory()
+        : NativeDatabase(File(path)),
   );
 }
 
 /// Fake in-memory implementation of [FlutterSecureStorage] for unit tests.
 class FakeFlutterSecureStorage extends FlutterSecureStorage {
   final Map<String, String> _store = {};
+  Future<void> Function(String key)? beforeWrite;
 
   @override
   Future<void> write({
@@ -32,6 +38,7 @@ class FakeFlutterSecureStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
     WindowsOptions? wOptionsWindows,
   }) async {
+    await beforeWrite?.call(key);
     if (value != null) _store[key] = value;
   }
 
@@ -131,6 +138,8 @@ class MockHttpClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     _requests.add(request);
+    // Consume uploads like a real client so file handles close and read errors surface.
+    await request.finalize().drain<void>();
     await beforeResponse?.call(request);
     final key = '${request.method} ${request.url.path}';
 

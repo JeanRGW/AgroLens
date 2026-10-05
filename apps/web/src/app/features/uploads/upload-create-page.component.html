@@ -2,8 +2,8 @@
   <!-- Page header -->
   <app-page-header
     eyebrow="Upload"
-    [title]="editing() ? 'Corrigir lote local' : 'Novo upload'"
-    subtitle="Salve imagens, metadados e localização para sincronizar quando houver conexão."
+    title="Novo upload"
+    subtitle="Envie imagens, metadados e localização com conexão à internet. Para coleta offline, use o aplicativo de campo."
   />
 
   <!-- Loading catalogs -->
@@ -370,7 +370,7 @@
 
     <!-- Actions -->
     <div class="upload-create__actions">
-      <a mat-stroked-button routerLink="/uploads/queue">
+      <a mat-stroked-button routerLink="/uploads">
         <mat-icon>arrow_back</mat-icon>
         Cancelar
       </a>
@@ -380,6 +380,7 @@
         type="button"
         [disabled]="
           submitting() ||
+          !online() ||
           gpsPending() ||
           files().length === 0 ||
           !selectedPropertyId ||
@@ -388,18 +389,8 @@
         "
         (click)="onSubmit()"
       >
-        <mat-icon>{{
-          submitting() ? 'hourglass_empty' : online() ? 'cloud_upload' : 'save'
-        }}</mat-icon>
-        {{
-          submitting()
-            ? online()
-              ? 'Enviando...'
-              : 'Salvando...'
-            : online()
-              ? 'Criar Upload'
-              : 'Salvar na fila'
-        }}
+        <mat-icon>{{ submitting() ? 'hourglass_empty' : 'cloud_upload' }}</mat-icon>
+        {{ submitting() ? 'Enviando...' : 'Criar Upload' }}
       </button>
     </div>
   }

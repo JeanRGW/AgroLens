@@ -13,9 +13,8 @@
 - `packages/contracts` (`@agrolens/contracts`) is the single source of truth for
   API shapes: Zod schemas + inferred types. Backend validates with it; web imports
   types from it. Never hand-write a DTO mirror in `apps/web` — import from contracts.
-- Mobile is Dart and cannot consume the TS package; its envelope-tolerant
-  `extractItems` helper (`apps/mobile/lib/services/api_client.dart`) is the one
-  accepted duplication.
+- Mobile is Dart and cannot consume the TS package; its parsers follow the
+  current API envelopes without historical aliases on this test branch.
 
 ## Commands
 
@@ -25,13 +24,17 @@
 - API focused: `cd apps/api && pnpm test -- <file.spec.ts>`; e2e:
   `pnpm test:e2e -- <file.e2e-spec.ts>` (config `test/jest-e2e.json`, needs live
   postgres + garage). Drift check: `pnpm config:drift`.
-- Web focused: `cd apps/web && pnpm test -- --include='src/**/file.spec.ts'`
+- Web focused: `pnpm --filter @agrolens/web test --include='src/**/file.spec.ts'`
   (needs Chrome/Chromium); typecheck: `pnpm typecheck`; e2e: `pnpm e2e`
   (needs full local stack + seeded admin). Raise throttle limits for e2e runs
   (the browser suite logs in repeatedly and trips the dev defaults):
   `THROTTLE_DEFAULT_LIMIT=1000 THROTTLE_AUTH_LIMIT=1000 docker compose ... up -d`.
 - Contracts: `pnpm --filter @agrolens/contracts test` (`node --test`).
 - Mobile: `cd apps/mobile && dart format --set-exit-if-changed . && flutter analyze && flutter test`.
+  Drift schema: `lib/services/app_database.drift`; generate with `dart run build_runner build`.
+  Refresh web storage runtime after dependency updates: `bash tool/setup_web_sqlite.sh`.
+  Web PWA build: `flutter build web --release --base-href /m/ --no-web-resources-cdn`
+  (served by the API under `/m/`; SQLite wasm assets are committed under `apps/mobile/web/`).
 - Inference: `cd services/inference && pip install -r test-requirements.txt && python -m pytest tests/ -v`.
 
 ## Local services

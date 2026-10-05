@@ -25,7 +25,6 @@ export class UploadProcessingError extends Error {
 export interface UploadCreateOptions {
   userId: string;
   assertIdentity: () => void;
-  onInitialized: (uploadId: string) => Promise<void>;
 }
 
 export interface UploadCreateProgress {
@@ -54,7 +53,7 @@ export class UploadCreateService {
   private readonly uploadsService = inject(UploadsService);
   private readonly presignedUpload = inject(PresignedUploadService);
 
-  // Include request latency in the budget so polling cannot monopolize a local batch's lock.
+  // Include request latency in the budget so polling remains bounded.
   static readonly POLL_BUDGET_MS = 30000;
   static readonly POLL_REQUEST_TIMEOUT_MS = 5000;
 
@@ -83,7 +82,6 @@ export class UploadCreateService {
       ? this.uploadsService.initUpload(request, context)
       : this.uploadsService.initUpload(request));
     options?.assertIdentity();
-    await options?.onInitialized(initResult.uploadId);
 
     const fileInstructions = initResult.files;
     if (!Array.isArray(fileInstructions) || fileInstructions.length !== files.length) {
@@ -260,7 +258,7 @@ export class UploadCreateService {
     }
 
     throw new Error(
-      'O servidor ainda está processando o lote. Ele continua salvo para uma nova tentativa.',
+      'O servidor ainda está processando o lote. Consulte a lista de uploads ou tente novamente sem fechar esta página.',
     );
   }
 

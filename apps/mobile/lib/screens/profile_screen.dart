@@ -17,6 +17,10 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _passwordFormKey = GlobalKey<FormState>();
+  final _currentPassword = TextEditingController();
+  final _newPassword = TextEditingController();
+  final _confirmPassword = TextEditingController();
   late final TextEditingController _name;
   late final TextEditingController _phone;
   late final TextEditingController _email;
@@ -25,6 +29,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     filter: {'#': RegExp(r'[0-9]')},
   );
   bool _saving = false;
+  bool _changingPassword = false;
+  String? _passwordError;
 
   @override
   void initState() {
@@ -41,10 +47,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _name.dispose();
     _phone.dispose();
     _email.dispose();
+    _currentPassword.dispose();
+    _newPassword.dispose();
+    _confirmPassword.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
+    if (_saving || _changingPassword) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
     try {
@@ -68,20 +78,137 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _changePassword() async {
+    if (_saving || _changingPassword) return;
+    if (!(_passwordFormKey.currentState?.validate() ?? false)) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _changingPassword = true;
+      _passwordError = null;
+    });
+    try {
+      await widget.authService.changePassword(
+        currentPassword: _currentPassword.text,
+        newPassword: _newPassword.text,
+      );
+      if (mounted) {
+        _currentPassword.clear();
+        _newPassword.clear();
+        _confirmPassword.clear();
+      }
+      if (messenger.mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Senha alterada. Entre novamente com a nova senha.'),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _passwordError =
+              'Não foi possível alterar a senha. Verifique a senha atual e tente novamente.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _changingPassword = false);
+    }
+  }
+
+  Widget _passwordSection() => Form(
+    key: _passwordFormKey,
+    child: Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Alterar senha',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Use de 8 a 128 caracteres. Após a alteração, entre novamente com a nova senha.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 20),
+          CustomTextField(
+            label: 'Senha atual',
+            controller: _currentPassword,
+            keyboardType: TextInputType.visiblePassword,
+            obscureText: true,
+            readOnly: _changingPassword,
+            prefixIcon: const Icon(Icons.lock_outline),
+            validator: (value) =>
+                value == null || value.isEmpty ? 'Informe a senha atual' : null,
+          ),
+          CustomTextField(
+            label: 'Nova senha',
+            controller: _newPassword,
+            keyboardType: TextInputType.visiblePassword,
+            obscureText: true,
+            readOnly: _changingPassword,
+            prefixIcon: const Icon(Icons.lock_outline),
+            validator: (value) => value == null || value.length < 8
+                ? 'A senha deve ter pelo menos 8 caracteres'
+                : value.length > 128
+                ? 'A senha deve ter no máximo 128 caracteres'
+                : null,
+          ),
+          CustomTextField(
+            label: 'Confirmar nova senha',
+            controller: _confirmPassword,
+            keyboardType: TextInputType.visiblePassword,
+            obscureText: true,
+            readOnly: _changingPassword,
+            prefixIcon: const Icon(Icons.lock_outline),
+            validator: (value) => value == null || value.isEmpty
+                ? 'Confirme a nova senha'
+                : value != _newPassword.text
+                ? 'As senhas não coincidem'
+                : null,
+          ),
+          if (_passwordError != null) ...[
+            Text(
+              _passwordError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            const SizedBox(height: 16),
+          ],
+          CustomButton(
+            label: 'Alterar senha',
+            onPressed: _saving ? null : _changePassword,
+            isLoading: _changingPassword,
+            icon: Icons.lock_reset,
+          ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return CustomScaffold(
       appBar: CustomAppBar(
         leading: CustomAppBarAction.backButton(context),
         title: 'Editar perfil',
-        subtitle: 'Atualize seus dados cadastrais',
+        subtitle: 'Atualize seus dados e sua senha',
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Container(
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Form(
+            key: _formKey,
+            child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -136,18 +263,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     prefixIcon: const Icon(Icons.email_outlined),
                     suffixIcon: const Icon(Icons.lock_outline),
                   ),
+                  CustomButton(
+                    label: 'Salvar alterações',
+                    onPressed: _changingPassword ? null : _save,
+                    isLoading: _saving,
+                    icon: Icons.save_outlined,
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-            CustomButton(
-              label: 'Salvar alterações',
-              onPressed: _save,
-              isLoading: _saving,
-              icon: Icons.save_outlined,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 24),
+          _passwordSection(),
+        ],
       ),
     );
   }

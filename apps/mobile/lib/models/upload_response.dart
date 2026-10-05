@@ -21,9 +21,9 @@ class PresignedUploadUrl {
   factory PresignedUploadUrl.fromJson(Map<String, dynamic> json) {
     return PresignedUploadUrl(
       imageId: json['imageId'] as String,
-      fileId: (json['fileId'] ?? json['id']) as String,
-      objectKey: _asNullableString(json['objectKey'] ?? json['key']),
-      url: _asNullableString(json['uploadUrl'] ?? json['url']),
+      fileId: json['fileId'] as String,
+      objectKey: _asNullableString(json['objectKey']),
+      url: _asNullableString(json['uploadUrl']),
       expiresAt: _parseDateTime(json['expiresAt']),
       method: _asNullableString(json['method']),
       headers: _parseHeaders(json['headers']),
@@ -70,8 +70,7 @@ class UploadInitResponse {
   });
 
   factory UploadInitResponse.fromJson(Map<String, dynamic> json) {
-    final raw = json['files'] ?? json['presignedUrls'];
-    final rawList = raw is List ? raw : const [];
+    final rawList = json['files'] as List<dynamic>;
     return UploadInitResponse(
       uploadId: json['uploadId'] as String,
       status: json['status'] as String,
@@ -90,9 +89,9 @@ class UploadCompleteResponse {
   const UploadCompleteResponse({required this.uploadId, required this.status});
 
   factory UploadCompleteResponse.fromJson(Map<String, dynamic> json) {
-    final upload = (json['upload'] ?? json) as Map<String, dynamic>;
+    final upload = json['upload'] as Map<String, dynamic>;
     return UploadCompleteResponse(
-      uploadId: (upload['id'] ?? upload['uploadId']) as String,
+      uploadId: upload['id'] as String,
       status: upload['status'] as String,
     );
   }

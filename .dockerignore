@@ -59,6 +59,9 @@ Thumbs.db
 *.tsbuildinfo
 
 # ── Projects not needed in container builds ──
-apps/mobile
 docs
 deploy
+# apps/mobile is needed for the PWA (Flutter web) build stage, minus the
+# native platform trees the web build never touches.
+apps/mobile/android
+apps/mobile/ios

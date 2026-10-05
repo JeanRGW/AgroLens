@@ -1,15 +1,16 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/download_url_response.dart';
 import '../models/pending_upload.dart';
 import '../models/upload_response.dart';
 import '../utils/app_logger.dart';
+import '../utils/platform_errors.dart';
 import 'api_client.dart';
 import 'auth_service.dart';
 import 'database_helper.dart';
 import 'catalog_repository.dart';
 import 'connectivity_monitor.dart';
+import 'local_image_store.dart';
 import 'upload_pipeline.dart';
 
 export 'upload_pipeline.dart' show StepInitResult;
@@ -20,6 +21,7 @@ class SyncService {
   final ApiClient _apiClient;
   final AuthService _authService;
   final DatabaseHelper _databaseHelper;
+  final LocalImageStore _imageStore;
   final ConnectivityMonitor _connectivityMonitor;
   final UploadPipeline _pipeline;
   final Future<void> Function() _syncPendingCatalogCreates;
@@ -39,16 +41,12 @@ class SyncService {
   /// Stream of connection status (true = online).
   Stream<bool> get connectionStatus => _connectivityMonitor.connectionStatus;
 
-  /// Stream of sync activity (true = syncing).
-  final StreamController<bool> _syncActivityController =
-      StreamController<bool>.broadcast();
-  Stream<bool> get syncActivity => _syncActivityController.stream;
-
   SyncService({
     required ApiClient apiClient,
     required AuthService authService,
     required DatabaseHelper databaseHelper,
     required CatalogRepository catalogRepository,
+    LocalImageStore? imageStore,
     Connectivity? connectivity,
     Stream<List<ConnectivityResult>>? connectivityChanges,
     Duration connectivityDebounce = const Duration(milliseconds: 250),
@@ -60,6 +58,7 @@ class SyncService {
   }) : _apiClient = apiClient,
        _authService = authService,
        _databaseHelper = databaseHelper,
+       _imageStore = imageStore ?? createLocalImageStore(),
        _now = now ?? DateTime.now,
        _syncPendingCatalogCreates =
            syncPendingCatalogCreates ??
@@ -75,6 +74,7 @@ class SyncService {
          authService: authService,
          databaseHelper: databaseHelper,
          catalogRepository: catalogRepository,
+         imageStore: imageStore,
          pollDelay: pollDelay,
          delay: delay,
          now: now,
@@ -104,9 +104,6 @@ class SyncService {
     stop();
     _disposed = true;
     _connectivityMonitor.dispose();
-    if (!_syncActivityController.isClosed) {
-      _syncActivityController.close();
-    }
   }
 
   // ── Individual sync steps ─────────────────────────────────────────
@@ -177,6 +174,12 @@ class SyncService {
   }
 
   Future<PendingUpload> _syncOne(PendingUpload upload) async {
+    if (upload.status == PendingUploadStatus.draft) {
+      throw const ApiException(
+        409,
+        'Finalize o rascunho antes de sincronizar.',
+      );
+    }
     final session = _sessionGeneration;
     final authGeneration = _authService.sessionGeneration;
     PendingUpload current = upload;
@@ -264,10 +267,6 @@ class SyncService {
 
     _isSyncingAll = true;
     final session = _sessionGeneration;
-    if (!_syncActivityController.isClosed) {
-      _syncActivityController.add(true);
-    }
-
     try {
       final uploads = await _databaseHelper.getPendingAndFailedUploads();
       if (session != _sessionGeneration || _authService.currentUser == null) {
@@ -351,9 +350,6 @@ class SyncService {
       );
     } finally {
       _isSyncingAll = false;
-      if (!_syncActivityController.isClosed) {
-        _syncActivityController.add(false);
-      }
     }
   }
 
@@ -418,9 +414,9 @@ class SyncService {
       await _databaseHelper.deleteUpload(current.id);
       for (final path in current.paths) {
         try {
-          await File(path).delete();
-        } on FileSystemException {
-          // Startup orphan cleanup retries files that could not be removed.
+          await _imageStore.deleteImage(path);
+        } catch (_) {
+          // Startup orphan cleanup retries images that could not be removed.
         }
       }
     } finally {
@@ -429,6 +425,11 @@ class SyncService {
   }
 
   Future<PendingUpload> retryUpload(PendingUpload upload) {
+    if (upload.status == PendingUploadStatus.draft) {
+      return Future.error(
+        const ApiException(409, 'Finalize o rascunho antes de sincronizar.'),
+      );
+    }
     return _runOnce(upload.id, () async {
       final session = _sessionGeneration;
       final authGeneration = _authService.sessionGeneration;
@@ -498,20 +499,6 @@ class SyncService {
     return _apiClient.getUploadDetail(accessToken: token, uploadId: uploadId);
   }
 
-  // ── Catalog refresh ────────────────────────────────────────────────
-
-  Future<void> refreshCatalogs(CatalogRepository catalogRepository) async {
-    await catalogRepository.syncPendingCatalogCreates();
-    await Future.wait([
-      catalogRepository.getProperties(forceRefresh: true),
-      catalogRepository.getTalhoes(forceRefresh: true),
-      catalogRepository.getCropTypes(forceRefresh: true),
-      catalogRepository.getEstadios(forceRefresh: true),
-    ]);
-  }
-
-  bool get isSyncing => _isSyncingAll;
-
   // ── Internal Helpers ───────────────────────────────────────────────
 
   Future<SyncAllResult?> syncPendingCatalogsAndUploads() {
@@ -561,7 +548,7 @@ class SyncService {
   }
 
   ({String code, String message}) _safeSyncFailure(Object error) {
-    if (error is SocketException || error is TimeoutException) {
+    if (isConnectionError(error) || error is TimeoutException) {
       return (
         code: 'SYNC_NETWORK_UNREACHABLE',
         message:
@@ -585,7 +572,7 @@ class SyncService {
             : 'Servidor recusou a sincronização. Tente novamente.',
       );
     }
-    if (error is FileSystemException) {
+    if (isLocalFileError(error)) {
       return (
         code: 'LOCAL_FILE_UNAVAILABLE',
         message:

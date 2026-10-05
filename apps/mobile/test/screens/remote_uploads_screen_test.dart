@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agrolens/config/env_config.dart';
 import 'package:agrolens/services/api_client.dart';
@@ -8,13 +9,9 @@ import 'package:agrolens/services/database_helper.dart';
 import 'package:agrolens/services/sync_service.dart';
 import 'package:agrolens/services/token_storage.dart';
 import 'package:agrolens/screens/remote_uploads_screen.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../helpers/test_doubles.dart';
 
 void main() {
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
-
   late MockHttpClient mockHttp;
   late ApiClient apiClient;
   late AuthService authService;
@@ -30,7 +27,7 @@ void main() {
     final tokenStorage = TokenStorage(storage: FakeFlutterSecureStorage());
     authService = AuthService(apiClient: apiClient, tokenStorage: tokenStorage);
     await tokenStorage.saveTokens(
-      accessToken: 'access-123',
+      accessToken: testAccessToken('user-1'),
       refreshToken: 'refresh-456',
     );
     final now = DateTime.now().toIso8601String();
@@ -48,6 +45,7 @@ void main() {
     });
     await authService.tryRestoreSession();
     final appDb = createTestAppDatabase();
+    addTearDown(appDb.close);
     catalogRepository = CatalogRepository(
       appDatabase: appDb,
       apiClient: apiClient,
@@ -113,9 +111,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('list with previews and load-more renders without overflow', (
-    tester,
-  ) async {
+  testWidgets('load-more paginates uploads without overflow', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -126,13 +122,28 @@ void main() {
     await tester.pumpWidget(buildScreen());
     await tester.pumpAndSettle();
 
-    expect(find.byType(ListTile), findsWidgets);
+    expect(find.byType(Card), findsWidgets);
+    expect(find.byTooltip('Atualizar lista'), findsOneWidget);
+    expect(find.text('4 imagens'), findsWidgets);
     await tester.scrollUntilVisible(
       find.text('Carregar mais'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Carregar mais'), findsOneWidget);
+    mockHttp.queueResponse('GET', '/api/uploads', 200, {
+      'uploads': [uploadJson(20)],
+    });
+    await tester.tap(find.text('Carregar mais'));
+    await tester.pumpAndSettle();
+    expect(find.text('Carregar mais'), findsNothing);
+    expect(
+      mockHttp.requests
+          .lastWhere((r) => r.url.path == '/api/uploads')
+          .url
+          .queryParameters['offset'],
+      '20',
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -153,7 +164,239 @@ void main() {
     await tester.pumpWidget(buildScreen());
     await tester.pumpAndSettle();
 
-    expect(find.byType(ListTile), findsOneWidget);
+    expect(find.byType(Card), findsOneWidget);
+    expect(find.textContaining('Falha no processamento:'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  Map<String, dynamic> fileJson(
+    int i, {
+    String variant = 'original',
+    double? latitude = -22.123456,
+    double? longitude = -47.654321,
+  }) => {
+    'id': '$variant-$i',
+    'imageId': 'image-$i',
+    'variant': variant,
+    'latitude': latitude,
+    'longitude': longitude,
+    'contentType': 'image/jpeg',
+    'objectKey': 'uploads/technical-storage-key-$i',
+    'sizeBytes': 1024,
+  };
+
+  void queueImageUrl(String variant, int i) {
+    final fileId = '$variant-$i';
+    final endpoint = variant == 'preview' ? 'preview-url' : 'download-url';
+    mockHttp.queueResponse(
+      'GET',
+      '/api/uploads/upload-1-abcdef1234567890/files/$fileId/$endpoint',
+      200,
+      {
+        'downloadUrl': 'https://test.images/$fileId.jpg',
+        'expiresAt': '2099-01-01T00:00:00Z',
+        'fileId': fileId,
+        'uploadId': 'upload-1-abcdef1234567890',
+      },
+    );
+  }
+
+  Future<void> openDetail(
+    WidgetTester tester,
+    List<Map<String, dynamic>> files,
+  ) async {
+    final upload = uploadJson(1, withPreview: false);
+    upload['files'] = files;
+    upload['fileCount'] = files.where((f) => f['variant'] == 'original').length;
+    mockHttp.queueResponse('GET', '/api/uploads', 200, {
+      'uploads': [upload],
+    });
+    mockHttp.queueResponse('GET', '/api/uploads/${upload['id']}', 200, upload);
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Card).first);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('carousel shows all images and opens the image viewer', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    queueImageUrl('preview', 1);
+    queueImageUrl('original', 2);
+    queueImageUrl('original', 3);
+    await openDetail(tester, [
+      fileJson(1),
+      fileJson(1, variant: 'preview'),
+      fileJson(2, latitude: null, longitude: null),
+      fileJson(3),
+    ]);
+
+    expect(find.byType(PageView), findsOneWidget);
+    expect(find.text('Ver no mapa'), findsOneWidget);
+    expect(find.text('Sem localização'), findsNothing);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.chevron_left),
+          )
+          .onPressed,
+      isNull,
+    );
+    final firstImage = find.byType(Image).first;
+
+    await tester.tap(firstImage);
+    await tester.pumpAndSettle();
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    await tester.tap(find.byTooltip('Fechar imagem'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(PageView), const Offset(-260, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Sem localização'), findsOneWidget);
+    expect(find.text('Ver no mapa'), findsNothing);
+    await tester.tap(find.byTooltip('Próxima imagem'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ver no mapa'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.chevron_right),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      mockHttp.requests.where(
+        (r) => r.url.path.endsWith('/original-3/download-url'),
+      ),
+      hasLength(1),
+    );
+    await tester.tap(find.byTooltip('Imagem anterior'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sem localização'), findsOneWidget);
+    expect(
+      mockHttp.requests.where(
+        (r) => r.url.path.endsWith('/original-2/download-url'),
+      ),
+      hasLength(1),
+    );
+    expect(
+      mockHttp.requests.where(
+        (r) => r.url.path.endsWith('/preview-1/preview-url'),
+      ),
+      hasLength(1),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('map button opens coordinates and reports launch failure', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final launchedUrls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      launchedUrls.add((call.arguments as Map)['url'] as String);
+      return false;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    queueImageUrl('original', 1);
+    await openDetail(tester, [fileJson(1)]);
+    await tester.ensureVisible(find.text('Ver no mapa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ver no mapa'));
+    await tester.pumpAndSettle();
+
+    expect(
+      Uri.parse(launchedUrls.last).queryParameters['query'],
+      '-22.123456,-47.654321',
+    );
+    expect(
+      find.text('Não foi possível abrir o mapa. Tente novamente.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('partial coordinates do not show a map button', (tester) async {
+    queueImageUrl('original', 1);
+    await openDetail(tester, [fileJson(1, longitude: null)]);
+    expect(find.text('Ver no mapa'), findsNothing);
+    expect(find.text('Sem localização'), findsOneWidget);
+    expect(find.byTooltip('Imagem anterior'), findsNothing);
+    expect(find.byTooltip('Próxima imagem'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'carousel actions follow the selected image without a refresh button',
+    (tester) async {
+      const channel = MethodChannel('plugins.flutter.io/url_launcher');
+      final launchedUrls = <Uri>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        launchedUrls.add(Uri.parse((call.arguments as Map)['url'] as String));
+        return true;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+      queueImageUrl('original', 1);
+      queueImageUrl('original', 2);
+      await openDetail(tester, [
+        fileJson(1),
+        fileJson(2, latitude: 10, longitude: 20),
+      ]);
+      await tester.tap(find.byTooltip('Próxima imagem'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ver no mapa'));
+      await tester.pumpAndSettle();
+      expect(
+        launchedUrls.last.queryParameters['q'] ??
+            launchedUrls.last.queryParameters['query'],
+        '10.0,20.0',
+      );
+
+      queueImageUrl('original', 2);
+      await tester.tap(find.text('Abrir original'));
+      await tester.pumpAndSettle();
+      expect(launchedUrls.last.path, '/original-2.jpg');
+
+      expect(find.byTooltip('Atualizar'), findsNothing);
+      expect(
+        tester.widget<PageView>(find.byType(PageView)).controller!.page,
+        1,
+      );
+      expect(find.byTooltip('Excluir upload na nuvem'), findsOneWidget);
+      expect(
+        mockHttp.requests.where(
+          (r) => r.url.path == '/api/uploads/upload-1-abcdef1234567890',
+        ),
+        hasLength(1),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('empty upload does not build a carousel', (tester) async {
+    await openDetail(tester, []);
+    expect(find.byType(PageView), findsNothing);
+    expect(
+      find.text('Nenhuma imagem disponível neste upload.'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

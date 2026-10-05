@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import '../models/user.dart';
+import '../utils/browser_lock.dart';
 import 'api_client.dart';
+import 'session_events.dart';
 import 'token_storage.dart';
 
 /// Auth service that uses the backend `/auth/*` endpoints.
@@ -11,12 +14,25 @@ import 'token_storage.dart';
 class AuthService {
   final ApiClient _apiClient;
   final TokenStorage _tokenStorage;
+  final SessionEvents _sessionEvents;
+  late final StreamSubscription<void> _sessionSubscription;
+  String? _sessionRevision;
 
   /// Stream of auth state changes. Emits the current user or null.
   final StreamController<User?> _authStateController =
       StreamController<User?>.broadcast();
 
-  AuthService({required this._apiClient, required this._tokenStorage}) {
+  AuthService({
+    required this._apiClient,
+    required this._tokenStorage,
+    SessionEvents? sessionEvents,
+  }) : _sessionEvents = sessionEvents ?? createSessionEvents() {
+    _sessionRevision = _sessionEvents.revision;
+    _sessionSubscription = _sessionEvents.changes.listen((_) {
+      if (_sessionRevision != _sessionEvents.revision) {
+        _invalidateLocalSession();
+      }
+    });
     _apiClient.setRefreshHandler(_refreshAccessToken);
   }
 
@@ -54,7 +70,7 @@ class AuthService {
         refreshToken: response.refreshToken,
       );
       await _tokenStorage.saveUser(response.user);
-    });
+    }, notifyChange: true);
     _ensureSession(generation);
     _currentUser = response.user;
     _authStateController.add(_currentUser);
@@ -75,7 +91,7 @@ class AuthService {
         refreshToken: response.refreshToken,
       );
       await _tokenStorage.saveUser(response.user);
-    });
+    }, notifyChange: true);
     _ensureSession(generation);
     _currentUser = response.user;
     _authStateController.add(_currentUser);
@@ -124,7 +140,11 @@ class AuthService {
     final refreshToken = await _tokenStorage.getRefreshToken();
     if (generation != _sessionGeneration) return null;
     if (refreshToken == null) {
-      await _writeForSession(generation, _tokenStorage.clearAll);
+      await _writeForSession(
+        generation,
+        _tokenStorage.clearAll,
+        notifyChange: true,
+      );
       return null;
     }
 
@@ -143,7 +163,11 @@ class AuthService {
     } on ApiException catch (error) {
       if (generation != _sessionGeneration) return null;
       if (error.statusCode == 401) {
-        await _writeForSession(generation, _tokenStorage.clearAll);
+        await _writeForSession(
+          generation,
+          _tokenStorage.clearAll,
+          notifyChange: true,
+        );
         _ensureSession(generation);
         _sessionGeneration++;
         _apiClient.invalidateAuthRequests();
@@ -161,6 +185,13 @@ class AuthService {
     final cached = await _tokenStorage.getCachedUser();
     if (generation != _sessionGeneration) return null;
     if (cached != null) {
+      final token = await _tokenStorage.getAccessToken();
+      try {
+        _ensureSession(generation);
+        _ensureTokenOwner(token, cached);
+      } on ApiException {
+        return null;
+      }
       _currentUser = cached;
       _authStateController.add(_currentUser);
       return cached;
@@ -176,7 +207,11 @@ class AuthService {
     await _storageWrite;
     _ensureSession(generation);
     final refreshToken = await _tokenStorage.getRefreshToken();
-    await _writeForSession(generation, _tokenStorage.clearAll);
+    await _writeForSession(
+      generation,
+      _tokenStorage.clearAll,
+      notifyChange: true,
+    );
     _ensureSession(generation);
     _currentUser = null;
     _authStateController.add(null);
@@ -213,6 +248,31 @@ class AuthService {
     return me.user;
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final generation = _sessionGeneration;
+    var token = await getValidAccessToken();
+    if (token == null) throw const ApiException(401, 'Not authenticated');
+    _ensureSession(generation);
+    // Refresh through an unambiguous auth endpoint, not a password-error 401.
+    final verified = await _apiClient.me(accessToken: token);
+    _ensureSession(generation);
+    token = await getValidAccessToken();
+    if (token == null) throw const ApiException(401, 'Not authenticated');
+    _ensureSession(generation);
+    _ensureTokenOwner(token, verified.user);
+    await _apiClient.changePassword(
+      accessToken: token,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    _ensureSession(generation);
+    // Password changes revoke refresh sessions, so require a fresh login.
+    await logout();
+  }
+
   /// Request a password reset email for [email].
   /// Unauthenticated — always shows generic success to avoid enumeration.
   Future<void> requestPasswordReset({required String email}) async {
@@ -221,7 +281,37 @@ class AuthService {
 
   /// Return the stored access token. Authenticated API calls refresh it on 401.
   /// Returns null if not authenticated.
-  Future<String?> getValidAccessToken() => _tokenStorage.getAccessToken();
+  Future<String?> getValidAccessToken() async {
+    final generation = _sessionGeneration;
+    final user = _currentUser;
+    if (user == null) return null;
+    final token = await _tokenStorage.getAccessToken();
+    _ensureSession(generation);
+    _ensureTokenOwner(token, user);
+    return token;
+  }
+
+  void _ensureTokenOwner(String? token, User user) {
+    // This is a local ownership guard; JWT signature validation stays server-side.
+    String? subject;
+    try {
+      final parts = token!.split('.');
+      if (parts.length == 3) {
+        final payload =
+            jsonDecode(
+                  utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+                )
+                as Map<String, dynamic>;
+        subject = payload['sub'] as String?;
+      }
+    } catch (_) {
+      // Malformed tokens cannot establish queue ownership.
+    }
+    if (subject != user.id) {
+      _invalidateLocalSession();
+      throw const ApiException(401, 'Token belongs to a different session');
+    }
+  }
 
   Future<String?> _refreshAccessToken() {
     final existing = _refreshInFlight;
@@ -235,36 +325,58 @@ class AuthService {
 
   Future<String?> _executeRefresh() async {
     final generation = _sessionGeneration;
-    final refreshToken = await _tokenStorage.getRefreshToken();
-    if (refreshToken == null) return null;
+    final observedRefresh = await _tokenStorage.getRefreshToken();
     try {
-      final refreshed = await _apiClient.refresh(refreshToken: refreshToken);
-      if (generation != _sessionGeneration) return null;
-      await _writeForSession(
-        generation,
-        () => _tokenStorage.saveTokens(
-          accessToken: refreshed.accessToken,
-          refreshToken: refreshed.refreshToken,
-        ),
-      );
-      if (generation != _sessionGeneration) return null;
-      return refreshed.accessToken;
-    } on ApiException catch (error) {
-      if (generation != _sessionGeneration) return null;
-      if (error.statusCode == 401) {
-        await _writeForSession(generation, _tokenStorage.clearAll);
+      // Separate from commit locking so logout can invalidate a slow request.
+      return await withBrowserLock('agrolens-mobile-refresh', () async {
         _ensureSession(generation);
-        _sessionGeneration++;
-        _apiClient.invalidateAuthRequests();
-        _currentUser = null;
-        _authStateController.add(null);
-        return null;
-      }
+        final user = _currentUser ?? await _tokenStorage.getCachedUser();
+        final storedAccess = await _tokenStorage.getAccessToken();
+        if (user != null) _ensureTokenOwner(storedAccess, user);
+        final refreshToken = await _tokenStorage.getRefreshToken();
+        _ensureSession(generation);
+        if (refreshToken == null) return null;
+        if (refreshToken != observedRefresh) {
+          return storedAccess;
+        }
+        try {
+          final refreshed = await _apiClient.refresh(
+            refreshToken: refreshToken,
+          );
+          _ensureSession(generation);
+          if (user != null) _ensureTokenOwner(refreshed.accessToken, user);
+          await _writeForSession(
+            generation,
+            () => _tokenStorage.saveTokens(
+              accessToken: refreshed.accessToken,
+              refreshToken: refreshed.refreshToken,
+            ),
+          );
+          return refreshed.accessToken;
+        } on ApiException catch (error) {
+          _ensureSession(generation);
+          if (error.statusCode != 401) rethrow;
+          await _writeForSession(
+            generation,
+            _tokenStorage.clearAll,
+            notifyChange: true,
+          );
+          _ensureSession(generation);
+          _sessionGeneration++;
+          _apiClient.invalidateAuthRequests();
+          _currentUser = null;
+          _authStateController.add(null);
+          return null;
+        }
+      });
+    } on ApiException {
+      if (generation != _sessionGeneration) return null;
       rethrow;
     }
   }
 
   void _ensureSession(int generation) {
+    if (_sessionRevision != _sessionEvents.revision) _invalidateLocalSession();
     if (generation != _sessionGeneration) {
       throw const ApiException(401, 'Session changed');
     }
@@ -272,13 +384,20 @@ class AuthService {
 
   Future<void> _writeForSession(
     int generation,
-    Future<void> Function() write,
-  ) async {
+    Future<void> Function() write, {
+    bool notifyChange = false,
+  }) async {
     final previous = _storageWrite;
     final pending = Future<void>.sync(() async {
       if (previous != null) await previous;
-      _ensureSession(generation);
-      await write();
+      await withBrowserLock('agrolens-mobile-auth', () async {
+        _ensureSession(generation);
+        if (notifyChange) {
+          _sessionEvents.notifyChange();
+          _sessionRevision = _sessionEvents.revision;
+        }
+        await write();
+      });
     });
     final tracked = pending.catchError((Object _) {});
     _storageWrite = tracked;
@@ -291,6 +410,17 @@ class AuthService {
   }
 
   void dispose() {
+    _sessionSubscription.cancel();
+    _sessionEvents.dispose();
     _authStateController.close();
+  }
+
+  void _invalidateLocalSession() {
+    _sessionRevision = _sessionEvents.revision;
+    _sessionGeneration++;
+    _refreshInFlight = null;
+    _apiClient.invalidateAuthRequests();
+    _currentUser = null;
+    _authStateController.add(null);
   }
 }

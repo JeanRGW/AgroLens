@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'models/user.dart';
 import 'services/api_client.dart';
 import 'services/app_database.dart';
 import 'services/auth_service.dart';
 import 'services/database_helper.dart';
+import 'services/local_image_store.dart';
 import 'services/token_storage.dart';
 import 'services/sync_service.dart';
 import 'services/catalog_repository.dart';
@@ -58,12 +57,14 @@ class AuthWrapper extends StatefulWidget {
   final ApiClient? apiClient;
   final TokenStorage? tokenStorage;
   final AppDatabase? appDatabase;
+  final LocalImageStore? imageStore;
 
   const AuthWrapper({
     super.key,
     this.apiClient,
     this.tokenStorage,
     this.appDatabase,
+    this.imageStore,
   });
 
   @override
@@ -78,6 +79,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
   late final DatabaseHelper _databaseHelper;
   late final CatalogRepository _catalogRepository;
   late final SyncService _syncService;
+  late final LocalImageStore _imageStore =
+      widget.imageStore ?? createLocalImageStore();
   StreamSubscription<User?>? _authStateSubscription;
 
   bool _initializing = true;
@@ -109,6 +112,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       authService: _authService,
       databaseHelper: _databaseHelper,
       catalogRepository: _catalogRepository,
+      imageStore: _imageStore,
     );
 
     _authStateSubscription = _authService.authStateChanges.listen((User? user) {
@@ -151,9 +155,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   Future<void> _cleanupOrphans() async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory('${appDir.path}/pending_images');
-      await _databaseHelper.cleanupOrphanedImages(imagesDirectory: imagesDir);
+      await _databaseHelper.cleanupOrphanedImages(imageStore: _imageStore);
     } catch (error, stack) {
       AppLogger.warning('Orphan image cleanup failed', error, stack);
     }
@@ -211,6 +213,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         databaseHelper: _databaseHelper,
         catalogRepository: _catalogRepository,
         syncService: _syncService,
+        imageStore: _imageStore,
       );
     }
 

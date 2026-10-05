@@ -7,15 +7,16 @@ import '../models/catalog.dart';
 import '../services/auth_service.dart';
 import '../services/sync_service.dart';
 import '../services/catalog_repository.dart';
+import '../utils/open_map.dart';
 import '../utils/source_labels.dart';
+import '../widgets/catalog_widgets.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_scaffold.dart';
 import '../widgets/custom_button.dart';
 
 /// Screen that lists `ready` uploads from the backend via `GET /uploads`.
 ///
-/// Provides pull-to-refresh, status badges, detail navigation, and basic
-/// pagination/filter support.
+/// Provides image previews, detail navigation, pull-to-refresh, and pagination.
 class RemoteUploadsScreen extends StatefulWidget {
   final AuthService authService;
   final SyncService syncService;
@@ -36,7 +37,6 @@ class _RemoteUploadsScreenState extends State<RemoteUploadsScreen> {
   List<UploadDetail> _uploads = [];
   bool _loading = true;
   String? _error;
-  bool _refreshingDetail = false;
 
   static const int _pageSize = 20;
   // Pagination uses backend offset/limit parameters.
@@ -109,33 +109,6 @@ class _RemoteUploadsScreenState extends State<RemoteUploadsScreen> {
     }
   }
 
-  Future<void> _refreshUploadDetail(UploadDetail upload) async {
-    setState(() => _refreshingDetail = true);
-    try {
-      final refreshed = await widget.syncService.fetchRemoteUploadDetail(
-        upload.id,
-      );
-      if (mounted) {
-        setState(() {
-          final index = _uploads.indexWhere((u) => u.id == upload.id);
-          if (index >= 0) {
-            _uploads[index] = refreshed;
-          }
-          _refreshingDetail = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _refreshingDetail = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Não foi possível atualizar. Tente novamente.'),
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _loadNextPage() {
     _currentOffset = _uploads.length;
     return _loadUploads();
@@ -172,15 +145,6 @@ class _RemoteUploadsScreenState extends State<RemoteUploadsScreen> {
         title: 'Uploads remotos',
         subtitle: 'Arquivos enviados para a nuvem',
         actions: [
-          if (_refreshingDetail)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
           CustomAppBarAction(
             child: IconButton(
               icon: const Icon(Icons.refresh, color: Colors.white),
@@ -256,8 +220,11 @@ class _RemoteUploadsScreenState extends State<RemoteUploadsScreen> {
     return RefreshIndicator(
       onRefresh: () => _loadUploads(refresh: true),
       child: ListView.builder(
-        itemCount: _uploads.length + (_hasMore ? 1 : 0),
-        itemBuilder: (context, index) {
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        itemCount: (_uploads.length / 2).ceil() + (_hasMore ? 1 : 0),
+        itemBuilder: (context, rowIndex) {
+          final index = rowIndex * 2;
           if (index >= _uploads.length) {
             // Load-more indicator
             return Padding(
@@ -276,20 +243,34 @@ class _RemoteUploadsScreenState extends State<RemoteUploadsScreen> {
             );
           }
 
-          final upload = _uploads[index];
-          return _UploadListTile(
-            upload: upload,
-            syncService: widget.syncService,
-            catalogRepository: widget.catalogRepository,
-            previewFuture: _previewFutureFor(upload),
-            onRetryPreview: () => _retryPreview(upload.id),
-            onRefreshDetail: () => _refreshUploadDetail(upload),
-            onRefreshList: () => _loadUploads(refresh: true),
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _uploadTile(_uploads[index])),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: index + 1 < _uploads.length
+                      ? _uploadTile(_uploads[index + 1])
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
           );
         },
       ),
     );
   }
+
+  Widget _uploadTile(UploadDetail upload) => _UploadListTile(
+    upload: upload,
+    syncService: widget.syncService,
+    catalogRepository: widget.catalogRepository,
+    previewFuture: _previewFutureFor(upload),
+    onRetryPreview: () => _retryPreview(upload.id),
+    onRefreshList: () => _loadUploads(refresh: true),
+  );
 }
 
 /// A single upload tile in the remote list.
@@ -299,7 +280,6 @@ class _UploadListTile extends StatelessWidget {
   final CatalogRepository catalogRepository;
   final Future<DownloadUrlResponse>? previewFuture;
   final VoidCallback onRetryPreview;
-  final VoidCallback onRefreshDetail;
   final Future<void> Function() onRefreshList;
 
   const _UploadListTile({
@@ -308,7 +288,6 @@ class _UploadListTile extends StatelessWidget {
     required this.catalogRepository,
     required this.previewFuture,
     required this.onRetryPreview,
-    required this.onRefreshDetail,
     required this.onRefreshList,
   });
 
@@ -316,7 +295,8 @@ class _UploadListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM/yy HH:mm');
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
       elevation: 3,
       shadowColor: Colors.black.withValues(alpha: 0.14),
       shape: RoundedRectangleBorder(
@@ -325,42 +305,7 @@ class _UploadListTile extends StatelessWidget {
           color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
         ),
       ),
-      child: ListTile(
-        leading: _PreviewThumbnail(
-          future: previewFuture,
-          onRetry: onRetryPreview,
-        ),
-        title: Text(
-          '${upload.id.substring(0, 12)}...',
-          style: const TextStyle(fontWeight: FontWeight.w500),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Status: ${_statusLabel(upload.status)}'),
-            Text('Fonte: ${sourceLabel(upload.source)}'),
-            Text('Criado: ${dateFormat.format(upload.createdAt)}'),
-            if (upload.activityDate != upload.createdAt)
-              Text('Atividade: ${dateFormat.format(upload.activityDate)}'),
-            Text('Arquivos: ${upload.fileCount}'),
-            if (upload.previewCount > 0)
-              Text('Pré-visualizações: ${upload.previewCount}'),
-
-            if (upload.errorMessage != null)
-              Text(
-                'Erro: ${upload.errorMessage}',
-                style: const TextStyle(color: Colors.red),
-              ),
-          ],
-        ),
-        isThreeLine: true,
-        trailing: IconButton(
-          icon: const Icon(Icons.refresh, size: 20),
-          onPressed: onRefreshDetail,
-          tooltip: 'Atualizar status',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        ),
+      child: InkWell(
         onTap: () async {
           final didDelete = await Navigator.of(context).push<bool>(
             MaterialPageRoute(
@@ -375,37 +320,53 @@ class _UploadListTile extends StatelessWidget {
             await onRefreshList();
           }
         },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: _PreviewThumbnail(
+                future: previewFuture,
+                onRetry: onRetryPreview,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dateFormat.format(upload.createdAt),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        Text(
+                          '${upload.fileCount} ${upload.fileCount == 1 ? 'imagem' : 'imagens'}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (upload.errorMessage != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Erro: ${upload.errorMessage}',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right, size: 18),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
-  }
-
-  String _statusLabel(String status) => _statusInfo(status).label;
-
-  _RemoteStatusInfo _statusInfo(String status) {
-    switch (status) {
-      case 'ready':
-        return const _RemoteStatusInfo(
-          'Pronto',
-          Icons.check_circle,
-          Colors.green,
-        );
-      case 'finalizing':
-        return const _RemoteStatusInfo(
-          'Finalizando',
-          Icons.autorenew,
-          Colors.blue,
-        );
-      case 'draft':
-        return const _RemoteStatusInfo('Rascunho', Icons.edit, Colors.grey);
-      case 'failed':
-        return const _RemoteStatusInfo('Falhou', Icons.error, Colors.red);
-      default:
-        return const _RemoteStatusInfo(
-          'Desconhecido',
-          Icons.help_outline,
-          Colors.grey,
-        );
-    }
   }
 }
 
@@ -422,15 +383,7 @@ class _ResolvedCatalogNames {
   });
 }
 
-class _RemoteStatusInfo {
-  final String label;
-  final IconData icon;
-  final Color color;
-
-  const _RemoteStatusInfo(this.label, this.icon, this.color);
-}
-
-/// 60×60 thumbnail for a remote upload's preview image.
+/// Preview image that fills the space provided by the upload card.
 class _PreviewThumbnail extends StatelessWidget {
   final Future<DownloadUrlResponse>? future;
   final VoidCallback onRetry;
@@ -439,56 +392,58 @@ class _PreviewThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 60,
-        height: 60,
-        child: FutureBuilder<DownloadUrlResponse>(
-          future: future,
-          builder: (context, snapshot) {
-            final url = snapshot.data?.url;
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Container(
+    return FutureBuilder<DownloadUrlResponse>(
+      future: future,
+      builder: (context, snapshot) {
+        final url = snapshot.data?.url;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey.shade200,
+            child: const Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        if (future == null) {
+          return Container(
+            color: Colors.grey.shade200,
+            child: const Center(child: Icon(Icons.image_outlined, size: 40)),
+          );
+        }
+        if (snapshot.hasError || url == null || url.trim().isEmpty) {
+          return InkWell(
+            onTap: onRetry,
+            child: Tooltip(
+              message: 'Tentar carregar imagem novamente',
+              child: Container(
                 color: Colors.grey.shade200,
-                child: const Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              );
-            }
-            if (snapshot.hasError || url == null || url.trim().isEmpty) {
-              return InkWell(
-                onTap: onRetry,
-                child: Container(
-                  color: Colors.grey.shade200,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-              );
-            }
-            return Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => InkWell(
-                onTap: onRetry,
-                child: Container(
-                  color: Colors.grey.shade200,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.grey.shade500,
-                  ),
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.grey.shade500,
                 ),
               ),
-            );
-          },
-        ),
-      ),
+            ),
+          );
+        }
+        return Image.network(
+          url,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => InkWell(
+            onTap: onRetry,
+            child: Container(
+              color: Colors.grey.shade200,
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: Colors.grey.shade500,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -516,8 +471,10 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
   bool _downloadingFile = false;
   bool _deleting = false;
   String? _error;
-  final Map<String, Future<DownloadUrlResponse>> _previewUrlFutures = {};
+  final Map<String, Future<DownloadUrlResponse>> _imageUrlFutures = {};
   Future<_ResolvedCatalogNames>? _catalogNamesFuture;
+  final PageController _imagePageController = PageController(keepPage: false);
+  int _activeImageIndex = 0;
 
   @override
   void initState() {
@@ -527,10 +484,17 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
     _refresh();
   }
 
+  @override
+  void dispose() {
+    _imagePageController.dispose();
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
     setState(() {
       _refreshing = true;
       _error = null;
+      _activeImageIndex = 0;
     });
     try {
       final refreshed = await widget.syncService.fetchRemoteUploadDetail(
@@ -539,7 +503,7 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
       if (mounted) {
         setState(() {
           _upload = refreshed;
-          _previewUrlFutures.clear();
+          _imageUrlFutures.clear();
           _refreshing = false;
           _catalogNamesFuture = _resolveCatalogNames(refreshed);
         });
@@ -593,26 +557,14 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
   }
 
   Future<void> _deleteUpload() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Excluir upload na nuvem?'),
-        content: const Text(
+    final confirmed = await confirmDestructiveAction(
+      context,
+      title: 'Excluir upload na nuvem?',
+      message:
           'Isso remove o upload do servidor e atualiza a lista. A limpeza local da fila é feita separadamente no aparelho.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Excluir na nuvem'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Excluir na nuvem',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     setState(() {
       _deleting = true;
@@ -634,14 +586,30 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
     }
   }
 
-  Future<DownloadUrlResponse> _previewUrlFor(UploadFileInfo file) {
-    return _previewUrlFutures.putIfAbsent(
+  Future<DownloadUrlResponse> _imageUrlFor(UploadFileInfo file) {
+    return _imageUrlFutures.putIfAbsent(
       file.id,
-      () => widget.syncService.fetchPreviewUrl(
-        uploadId: _upload.id,
-        fileId: file.id,
-      ),
+      () => file.variant == 'preview'
+          ? widget.syncService.fetchPreviewUrl(
+              uploadId: _upload.id,
+              fileId: file.id,
+            )
+          : widget.syncService.fetchDownloadUrl(
+              uploadId: _upload.id,
+              fileId: file.id,
+            ),
     );
+  }
+
+  Future<void> _openMap(UploadFileInfo file) async {
+    final opened = await openMapCoordinates(file.latitude!, file.longitude!);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível abrir o mapa. Tente novamente.'),
+        ),
+      );
+    }
   }
 
   Future<void> _showImageViewer(String imageUrl, String title) async {
@@ -678,13 +646,19 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(dialogContext).pop(),
                       icon: const Icon(Icons.close, color: Colors.white),
+                      tooltip: 'Fechar imagem',
                     ),
                   ],
                 ),
@@ -708,9 +682,9 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
         if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
+              const SnackBar(
                 content: Text(
-                  'Não foi possível abrir a URL de ${file.variant} (${file.imageId})',
+                  'Não foi possível abrir a imagem. Tente novamente.',
                 ),
               ),
             );
@@ -752,12 +726,13 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM/yy HH:mm');
     final u = _upload;
+    final images = _logicalFiles(u.files);
 
     return CustomScaffold(
       appBar: CustomAppBar(
         leading: CustomAppBarAction.backButton(context),
         title: 'Detalhes do upload',
-        subtitle: 'Informações e arquivos enviados',
+        subtitle: 'Imagens enviadas para a nuvem',
         actions: [
           if (_deleting)
             const Padding(
@@ -776,22 +751,6 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                 tooltip: 'Excluir upload na nuvem',
               ),
             ),
-          if (_refreshing)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          CustomAppBarAction(
-            child: IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: _refreshing ? null : _refresh,
-              tooltip: 'Atualizar',
-            ),
-          ),
         ],
       ),
       body: _refreshing && _error == null
@@ -799,64 +758,26 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Cartão de status
-                _sectionCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              'Status: ',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            _statusBadge(u.status),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text('Arquivos: ${u.fileCount}'),
-                        if (u.errorMessage != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Erro: ${u.errorMessage}',
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ],
-                      ],
+                if (images.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'Nenhuma imagem disponível neste upload.',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else
+                  _imageCarousel(images),
+                if (u.errorMessage != null) ...[
+                  Text(
+                    'Erro: ${u.errorMessage}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                ],
                 const SizedBox(height: 12),
-
-                // Cartão de metadados
-                _sectionCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Detalhes do upload',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const Divider(),
-                        _metaRow('ID do upload', u.id),
-                        _metaRow('Fonte', sourceLabel(u.source)),
-                        _metaRow('Criado', dateFormat.format(u.createdAt)),
-                        _metaRow('Atualizado', dateFormat.format(u.updatedAt)),
-                        _metaRow(
-                          'Data da atividade',
-                          dateFormat.format(u.activityDate),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Cartão de referências do catálogo (nomes resolvidos localmente)
                 FutureBuilder<_ResolvedCatalogNames>(
                   future: _catalogNamesFuture,
                   builder: (context, snap) {
@@ -871,10 +792,15 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Referências do catálogo',
+                              'Sobre o upload',
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             const Divider(),
+                            _metaRow('Fonte', sourceLabel(u.source)),
+                            _metaRow(
+                              'Enviado em',
+                              dateFormat.format(u.createdAt),
+                            ),
                             if (waiting)
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 8),
@@ -911,162 +837,6 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 12),
-
-                // Cartão de arquivos
-                _sectionCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Arquivos (${u.fileCount})',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const Divider(),
-                        ..._logicalFiles(u.files).indexed.map((indexedEntry) {
-                          final index = indexedEntry.$1;
-                          final entry = indexedEntry.$2;
-                          final original = entry.$1;
-                          final preview = entry.$2;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                FutureBuilder<DownloadUrlResponse>(
-                                  future: preview == null
-                                      ? null
-                                      : _previewUrlFor(preview),
-                                  builder: (context, snapshot) {
-                                    final url = snapshot.data?.url;
-                                    return InkWell(
-                                      onTap: url == null
-                                          ? null
-                                          : () => _showImageViewer(
-                                              url,
-                                              'Imagem #${index + 1}',
-                                            ),
-                                      child: Container(
-                                        width: 72,
-                                        height: 72,
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.shade200,
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          child:
-                                              snapshot.connectionState ==
-                                                  ConnectionState.waiting
-                                              ? const Center(
-                                                  child: SizedBox(
-                                                    width: 20,
-                                                    height: 20,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                        ),
-                                                  ),
-                                                )
-                                              : snapshot.hasError || url == null
-                                              ? const Center(
-                                                  child: Icon(
-                                                    Icons.broken_image,
-                                                  ),
-                                                )
-                                              : Image.network(
-                                                  url,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) => const Center(
-                                                        child: Icon(
-                                                          Icons.broken_image,
-                                                        ),
-                                                      ),
-                                                ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Imagem #${index + 1}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      Text(
-                                        original.latitude == null
-                                            ? 'Sem localização'
-                                            : '${original.latitude!.toStringAsFixed(6)}, ${original.longitude!.toStringAsFixed(6)}',
-                                      ),
-                                      Text(
-                                        'Tipo: ${original.contentType}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                      if (original.sizeBytes != null)
-                                        Text(
-                                          'Tamanho: ${_formatBytes(original.sizeBytes!)}',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall,
-                                        ),
-                                      if (original.objectKey != null)
-                                        Text(
-                                          'Chave: ${original.objectKey}',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: _downloadingFile
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.open_in_new, size: 20),
-                                  onPressed: _downloadingFile
-                                      ? null
-                                      : () => _openDownloadUrl(original),
-                                  tooltip: 'Abrir ou baixar',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 36,
-                                    minHeight: 36,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                ),
 
                 if (_error != null) ...[
                   const SizedBox(height: 12),
@@ -1077,8 +847,195 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
     );
   }
 
+  void _changeImage(int index) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _imagePageController.jumpToPage(index);
+      return;
+    }
+    _imagePageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  Widget _imageCarousel(List<(UploadFileInfo, UploadFileInfo?)> images) {
+    final original = images[_activeImageIndex].$1;
+    return _sectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) => SizedBox(
+              height: (constraints.maxWidth * 3 / 4).clamp(180.0, 280.0),
+              child: Stack(
+                children: [
+                  PageView.builder(
+                    controller: _imagePageController,
+                    itemCount: images.length,
+                    onPageChanged: (index) =>
+                        setState(() => _activeImageIndex = index),
+                    itemBuilder: (context, index) => _imagePreview(
+                      images[index].$2 ?? images[index].$1,
+                      index,
+                      images.length,
+                    ),
+                  ),
+                  if (images.length > 1) ...[
+                    Positioned(
+                      left: 4,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: IconButton.filledTonal(
+                          onPressed: _activeImageIndex == 0
+                              ? null
+                              : () => _changeImage(_activeImageIndex - 1),
+                          icon: const Icon(Icons.chevron_left),
+                          tooltip: 'Imagem anterior',
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 4,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: IconButton.filledTonal(
+                          onPressed: _activeImageIndex == images.length - 1
+                              ? null
+                              : () => _changeImage(_activeImageIndex + 1),
+                          icon: const Icon(Icons.chevron_right),
+                          tooltip: 'Próxima imagem',
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 56,
+                      right: 56,
+                      bottom: 8,
+                      child: Center(
+                        child: Semantics(
+                          label:
+                              'Imagem ${_activeImageIndex + 1} de ${images.length}',
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: List.generate(
+                                    images.length,
+                                    (index) => Container(
+                                      width: 6,
+                                      height: 6,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: index == _activeImageIndex
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.outlineVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: _imageActions(original),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _imagePreview(UploadFileInfo file, int index, int imageCount) {
+    return FutureBuilder<DownloadUrlResponse>(
+      future: _imageUrlFor(file),
+      builder: (context, snapshot) {
+        final url = snapshot.data?.url;
+        final hasUrl = url != null && url.trim().isNotEmpty;
+        return Semantics(
+          label: 'Ampliar imagem ${index + 1} de $imageCount',
+          button: true,
+          enabled: hasUrl,
+          child: InkWell(
+            onTap: hasUrl ? () => _showImageViewer(url, 'Imagem') : null,
+            child: ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              child: snapshot.connectionState == ConnectionState.waiting
+                  ? const Center(child: CircularProgressIndicator())
+                  : !hasUrl || snapshot.hasError
+                  ? const Center(child: Text('Imagem indisponível'))
+                  : Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Center(child: Text('Imagem indisponível')),
+                    ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _imageActions(UploadFileInfo original) {
+    final hasLocation = original.latitude != null && original.longitude != null;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (hasLocation)
+          OutlinedButton.icon(
+            onPressed: () => _openMap(original),
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Ver no mapa'),
+          )
+        else
+          const Text('Sem localização'),
+        TextButton.icon(
+          onPressed: _downloadingFile ? null : () => _openDownloadUrl(original),
+          icon: _downloadingFile
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.open_in_new),
+          label: const Text('Abrir original'),
+        ),
+      ],
+    );
+  }
+
   Widget _sectionCard({required Widget child}) {
     return Card(
+      clipBehavior: Clip.antiAlias,
       elevation: 3,
       shadowColor: Colors.black.withValues(alpha: 0.14),
       shape: RoundedRectangleBorder(
@@ -1108,61 +1065,5 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
         ],
       ),
     );
-  }
-
-  Widget _statusBadge(String status) {
-    final info = _statusInfo(status);
-    final color = info.color;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(info.icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            info.label,
-            style: TextStyle(color: color, fontWeight: FontWeight.w500),
-          ),
-        ],
-      ),
-    );
-  }
-
-  _RemoteStatusInfo _statusInfo(String status) {
-    switch (status) {
-      case 'ready':
-        return const _RemoteStatusInfo(
-          'Pronto',
-          Icons.check_circle,
-          Colors.green,
-        );
-      case 'finalizing':
-        return const _RemoteStatusInfo(
-          'Finalizando',
-          Icons.autorenew,
-          Colors.blue,
-        );
-      case 'draft':
-        return const _RemoteStatusInfo('Rascunho', Icons.edit, Colors.grey);
-      case 'failed':
-        return const _RemoteStatusInfo('Falhou', Icons.error, Colors.red);
-      default:
-        return const _RemoteStatusInfo(
-          'Desconhecido',
-          Icons.help_outline,
-          Colors.grey,
-        );
-    }
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }

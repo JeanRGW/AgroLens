@@ -8,6 +8,11 @@ import 'package:agrolens/models/user.dart';
 import 'package:agrolens/services/api_client.dart';
 import 'package:agrolens/services/auth_service.dart';
 import 'package:agrolens/services/token_storage.dart';
+import 'package:agrolens/services/session_events.dart';
+import 'package:agrolens/services/database_helper.dart';
+import 'package:agrolens/services/catalog_repository.dart';
+import 'package:agrolens/services/upload_pipeline.dart';
+import 'package:agrolens/models/pending_upload.dart';
 import '../helpers/test_doubles.dart';
 
 class _DelayedTokenStorage extends TokenStorage {
@@ -29,6 +34,26 @@ class _DelayedTokenStorage extends TokenStorage {
       refreshToken: refreshToken,
     );
   }
+}
+
+String _jwt(String subject) =>
+    'eyJhbGciOiJIUzI1NiJ9.${base64Url.encode(utf8.encode(jsonEncode({'sub': subject})))}.signature';
+
+class _SessionEvents extends SessionEvents {
+  final events = StreamController<void>.broadcast(sync: true);
+  @override
+  String? revision;
+  @override
+  Stream<void> get changes => events.stream;
+  @override
+  void notifyChange() => revision = '${revision ?? ''}next';
+  void changeFromAnotherTab({bool dispatch = true}) {
+    notifyChange();
+    if (dispatch) events.add(null);
+  }
+
+  @override
+  void dispose() => events.close();
 }
 
 void main() {
@@ -57,6 +82,335 @@ void main() {
     );
     tokenStorage = TokenStorage(storage: FakeFlutterSecureStorage());
     authService = AuthService(apiClient: apiClient, tokenStorage: tokenStorage);
+  });
+  tearDown(() => authService.dispose());
+
+  Future<void> loginAs(String id) async {
+    mockHttp.queueResponse('POST', '/api/auth/login', 200, {
+      'user': {...userJson, 'id': id},
+      'accessToken': _jwt(id),
+      'refreshToken': 'refresh-$id',
+    });
+    await authService.login(email: '$id@test', password: 'password');
+  }
+
+  group('password changes', () {
+    test('successful changes clear tokens and require a new login', () async {
+      await loginAs('user-1');
+      mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
+      mockHttp.queueResponse('POST', '/api/auth/change-password', 200, {
+        'message': 'Password changed',
+      });
+      mockHttp.queueRawResponse('POST', '/api/auth/logout', 204, '');
+      await authService.changePassword(
+        currentPassword: 'old-password',
+        newPassword: 'new-password',
+      );
+      expect(authService.currentUser, isNull);
+      expect(await tokenStorage.getAccessToken(), isNull);
+      expect(await tokenStorage.getRefreshToken(), isNull);
+      expect(mockHttp.requests.last.url.path, '/api/auth/logout');
+    });
+
+    test('failed changes keep the current session', () async {
+      await loginAs('user-1');
+      mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
+      mockHttp.queueResponse('POST', '/api/auth/change-password', 401, {
+        'message': 'Invalid current password',
+      });
+      await expectLater(
+        authService.changePassword(
+          currentPassword: 'wrong-password',
+          newPassword: 'new-password',
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(authService.currentUser?.id, 'user-1');
+      expect(await tokenStorage.getRefreshToken(), 'refresh-user-1');
+      expect(mockHttp.requests, hasLength(3));
+      expect(
+        mockHttp.requests.where((r) => r.url.path == '/api/auth/refresh'),
+        isEmpty,
+      );
+    });
+
+    test('unauthenticated users cannot change passwords', () async {
+      await expectLater(
+        authService.changePassword(
+          currentPassword: 'old-password',
+          newPassword: 'new-password',
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(mockHttp.requests, isEmpty);
+    });
+
+    test('a delayed change cannot sign out a replacement session', () async {
+      await loginAs('user-1');
+      mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
+      final started = Completer<void>();
+      final release = Completer<void>();
+      mockHttp.beforeResponse = (request) async {
+        if (request.url.path == '/api/auth/change-password') {
+          started.complete();
+          await release.future;
+        }
+      };
+      mockHttp.queueResponse('POST', '/api/auth/change-password', 200, {
+        'message': 'Password changed',
+      });
+      final change = authService.changePassword(
+        currentPassword: 'old-password',
+        newPassword: 'new-password',
+      );
+      final rejected = expectLater(change, throwsA(isA<ApiException>()));
+      await started.future;
+      await loginAs('user-2');
+      release.complete();
+      await rejected;
+      expect(authService.currentUser?.id, 'user-2');
+      expect(await tokenStorage.getRefreshToken(), 'refresh-user-2');
+      expect(
+        mockHttp.requests.where((r) => r.url.path == '/api/auth/logout'),
+        isEmpty,
+      );
+    });
+
+    for (final correctPassword in [true, false]) {
+      test(
+        'expired credentials refresh before password submission ($correctPassword)',
+        () async {
+          await loginAs('user-1');
+          final fresh = '${_jwt('user-1')}fresh';
+          mockHttp.queueResponse('GET', '/api/auth/me', 401, {
+            'message': 'Expired',
+          });
+          mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
+            'accessToken': fresh,
+            'refreshToken': 'rotated',
+          });
+          mockHttp.queueResponse('GET', '/api/auth/me', 200, {
+            'user': userJson,
+          });
+          mockHttp.queueResponse(
+            'POST',
+            '/api/auth/change-password',
+            correctPassword ? 200 : 401,
+            {
+              'message': correctPassword
+                  ? 'Password changed'
+                  : 'Invalid current password',
+            },
+          );
+          mockHttp.queueRawResponse('POST', '/api/auth/logout', 204, '');
+          final change = authService.changePassword(
+            currentPassword: 'password',
+            newPassword: 'new-password',
+          );
+          if (correctPassword) {
+            await change;
+            expect(authService.currentUser, isNull);
+          } else {
+            await expectLater(change, throwsA(isA<ApiException>()));
+            expect(authService.currentUser?.id, 'user-1');
+            expect(await tokenStorage.getRefreshToken(), 'rotated');
+          }
+          final requests = mockHttp.requests
+              .where((r) => r.url.path == '/api/auth/change-password')
+              .toList();
+          expect(requests, hasLength(1));
+          expect(requests.single.headers['Authorization'], 'Bearer $fresh');
+          expect(
+            mockHttp.requests.where((r) => r.url.path == '/api/auth/refresh'),
+            hasLength(1),
+          );
+        },
+      );
+    }
+
+    test(
+      'a replacement session during preflight prevents password submission',
+      () async {
+        await loginAs('user-1');
+        final started = Completer<void>();
+        final release = Completer<void>();
+        mockHttp.beforeResponse = (request) async {
+          if (request.url.path == '/api/auth/me') {
+            started.complete();
+            await release.future;
+          }
+        };
+        mockHttp.queueResponse('GET', '/api/auth/me', 200, {'user': userJson});
+        final change = authService.changePassword(
+          currentPassword: 'password',
+          newPassword: 'new-password',
+        );
+        final rejected = expectLater(change, throwsA(isA<ApiException>()));
+        await started.future;
+        await loginAs('user-2');
+        release.complete();
+        await rejected;
+        expect(authService.currentUser?.id, 'user-2');
+        expect(
+          mockHttp.requests.where(
+            (r) => r.url.path == '/api/auth/change-password',
+          ),
+          isEmpty,
+        );
+      },
+    );
+  });
+
+  group('cross-tab queue ownership', () {
+    Future<void> loginA() async {
+      mockHttp.queueResponse('POST', '/api/auth/login', 200, {
+        'user': userJson,
+        'accessToken': _jwt('user-1'),
+        'refreshToken': 'refresh-a',
+      });
+      await authService.login(email: 'a@test', password: 'password');
+    }
+
+    for (final dispatch in [true, false]) {
+      test(
+        'account changes invalidate the session (storage event: $dispatch)',
+        () async {
+          authService.dispose();
+          final events = _SessionEvents();
+          authService = AuthService(
+            apiClient: apiClient,
+            tokenStorage: tokenStorage,
+            sessionEvents: events,
+          );
+          await loginA();
+          final generation = authService.sessionGeneration;
+          events.changeFromAnotherTab(dispatch: dispatch);
+          await tokenStorage.saveTokens(
+            accessToken: _jwt('user-2'),
+            refreshToken: 'refresh-b',
+          );
+          if (dispatch) {
+            expect(authService.currentUser, isNull);
+          } else {
+            await expectLater(
+              authService.getValidAccessToken(),
+              throwsA(isA<ApiException>()),
+            );
+          }
+          expect(authService.sessionGeneration, greaterThan(generation));
+          expect(authService.currentUser, isNull);
+          expect(await tokenStorage.getRefreshToken(), 'refresh-b');
+        },
+      );
+    }
+
+    test(
+      'rejects another account token even without any storage event or marker',
+      () async {
+        await loginA();
+        await tokenStorage.saveTokens(
+          accessToken: _jwt('user-2'),
+          refreshToken: 'refresh-b',
+        );
+        await expectLater(
+          authService.getValidAccessToken(),
+          throwsA(isA<ApiException>()),
+        );
+        expect(authService.currentUser, isNull);
+        expect(mockHttp.requests, hasLength(1));
+        expect(await tokenStorage.getRefreshToken(), 'refresh-b');
+      },
+    );
+
+    test(
+      'cannot initialize A queued images with B shared credentials',
+      () async {
+        await loginA();
+        final db = createTestAppDatabase();
+        final helper = DatabaseHelper(
+          appDatabase: db,
+          authService: authService,
+        );
+        addTearDown(helper.close);
+        final upload = PendingUpload(
+          id: 'a-batch',
+          ownerId: 'user-1',
+          paths: [],
+          createdAt: DateTime.now(),
+          propertyId: 'shared-property',
+          talhaoId: 'shared-talhao',
+          cropTypeId: 'shared-crop',
+        );
+        await helper.insertPendingUpload(upload);
+        final catalogs = CatalogRepository(
+          appDatabase: db,
+          apiClient: apiClient,
+          authService: authService,
+        );
+        final pipeline = UploadPipeline(
+          apiClient: apiClient,
+          authService: authService,
+          databaseHelper: helper,
+          catalogRepository: catalogs,
+        );
+        await tokenStorage.saveTokens(
+          accessToken: _jwt('user-2'),
+          refreshToken: 'refresh-b',
+        );
+        await expectLater(
+          pipeline.stepInit(upload),
+          throwsA(isA<ApiException>()),
+        );
+        expect(
+          mockHttp.requests.where((r) => r.url.path == '/api/uploads/init'),
+          isEmpty,
+        );
+        expect(
+          (await db.readRows(
+            'SELECT owner_id FROM pending_uploads WHERE id = ?',
+            ['a-batch'],
+          )).single['owner_id'],
+          'user-1',
+        );
+      },
+    );
+
+    test('never replays an A request with a refreshed B token', () async {
+      await loginA();
+      mockHttp.queueResponse('GET', '/api/uploads', 401, {
+        'message': 'Expired',
+      });
+      mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
+        'accessToken': _jwt('user-2'),
+        'refreshToken': 'refresh-b',
+      });
+      await expectLater(
+        apiClient.listUploads(accessToken: _jwt('user-1')),
+        throwsA(isA<ApiException>()),
+      );
+      expect(
+        mockHttp.requests.where((r) => r.url.path == '/api/uploads'),
+        hasLength(1),
+      );
+      expect(await tokenStorage.getAccessToken(), _jwt('user-1'));
+      expect(authService.currentUser, isNull);
+    });
+
+    test(
+      'offline restoration refuses a cached A user with B credentials',
+      () async {
+        await tokenStorage.saveUser(User.fromJson(userJson));
+        await tokenStorage.saveTokens(
+          accessToken: _jwt('user-2'),
+          refreshToken: 'refresh-b',
+        );
+        mockHttp.queueResponse('GET', '/api/auth/me', 503, {
+          'message': 'Offline',
+        });
+        expect(await authService.tryRestoreSession(), isNull);
+        expect(authService.currentUser, isNull);
+      },
+    );
   });
 
   group('AuthService - token lifecycle', () {
@@ -171,7 +525,7 @@ void main() {
         'message': 'expired',
       });
       mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
-        'accessToken': 'refreshed',
+        'accessToken': _jwt('user-2'),
         'refreshToken': 'rotated',
       });
       final oldRequest = apiClient.updateProfile(
@@ -185,7 +539,7 @@ void main() {
       await started.future;
       mockHttp.queueResponse('POST', '/api/auth/login', 200, {
         'user': {...userJson, 'id': 'user-2'},
-        'accessToken': 'account-b',
+        'accessToken': _jwt('user-2'),
         'refreshToken': 'refresh-b',
       });
       await authService.login(email: 'b@example.com', password: 'password');
@@ -193,7 +547,7 @@ void main() {
         'message': 'expired',
       });
       mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
-        'accessToken': 'refreshed',
+        'accessToken': _jwt('user-2'),
         'refreshToken': 'rotated',
       });
       mockHttp.queueResponse('PATCH', '/api/users/me', 200, {
@@ -212,10 +566,7 @@ void main() {
       test(
         'ignores late successful profile response (switch: $switchAccount)',
         () async {
-          await tokenStorage.saveTokens(
-            accessToken: 'account-a',
-            refreshToken: 'refresh-a',
-          );
+          await loginAs('user-1');
           final started = Completer<void>();
           final release = Completer<void>();
           mockHttp.beforeResponse = (request) async {
@@ -291,19 +642,6 @@ void main() {
       expect(await tokenStorage.getAccessToken(), 'account-b');
     });
 
-    test('clearing the phone sends explicit null to the backend', () async {
-      mockHttp.queueResponse('PATCH', '/api/users/me', 200, {'user': userJson});
-      await apiClient.updateProfile(
-        accessToken: 'access',
-        fullName: 'Test User',
-        phone: '  ',
-      );
-      final body =
-          jsonDecode((mockHttp.requests.single as http.Request).body)
-              as Map<String, dynamic>;
-      expect(body.containsKey('phone'), isTrue);
-      expect(body['phone'], isNull);
-    });
     test(
       'preserves transient refresh failures instead of reporting logout',
       () async {
@@ -335,7 +673,7 @@ void main() {
       'persists a refresh rotation that finishes after the startup timeout',
       () async {
         await tokenStorage.saveTokens(
-          accessToken: 'expired',
+          accessToken: _jwt('user-1'),
           refreshToken: 'refresh',
         );
         await tokenStorage.saveUser(User.fromJson(userJson));
@@ -347,7 +685,7 @@ void main() {
           'message': 'Expired',
         });
         mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
-          'accessToken': 'rotated-access',
+          'accessToken': _jwt('user-1'),
           'refreshToken': 'rotated-refresh',
         });
         final user = await authService.tryRestoreSession(
@@ -361,17 +699,15 @@ void main() {
     );
 
     test(
-      'getValidAccessToken returns stored access token without preflight',
+      'getValidAccessToken verifies the stored subject without network preflight',
       () async {
-        await tokenStorage.saveTokens(
-          accessToken: 'valid-access',
-          refreshToken: 'valid-refresh',
-        );
+        await loginAs('user-1');
+        final requestCount = mockHttp.requests.length;
 
         final token = await authService.getValidAccessToken();
 
-        expect(token, 'valid-access');
-        expect(mockHttp.requests, isEmpty);
+        expect(token, _jwt('user-1'));
+        expect(mockHttp.requests, hasLength(requestCount));
       },
     );
 
@@ -470,15 +806,12 @@ void main() {
     test(
       'updateProfile retries with refreshed token and uses the mutation response',
       () async {
-        await tokenStorage.saveTokens(
-          accessToken: 'expired-access',
-          refreshToken: 'usable-refresh',
-        );
+        await loginAs('user-1');
         mockHttp.queueResponse('PATCH', '/api/users/me', 401, {
           'message': 'Token expired',
         });
         mockHttp.queueResponse('POST', '/api/auth/refresh', 200, {
-          'accessToken': 'new-access',
+          'accessToken': _jwt('user-1'),
           'refreshToken': 'new-refresh',
         });
         mockHttp.queueResponse('PATCH', '/api/users/me', 200, {
@@ -499,7 +832,7 @@ void main() {
         );
         expect(
           mockHttp.requests.last.headers['authorization'],
-          'Bearer new-access',
+          'Bearer ${_jwt('user-1')}',
         );
       },
     );

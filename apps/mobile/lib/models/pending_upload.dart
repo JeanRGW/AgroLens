@@ -4,12 +4,14 @@ import 'package:uuid/uuid.dart';
 /// Local pending upload statuses matching the backend flow.
 ///
 /// Status flow:
+/// - draft          → locally saved, not eligible for synchronization
 /// - pending        → waiting to call /uploads/init or upload originals
 /// - uploading      → uploading originals to object storage
 /// - pendingMetadataSync → waiting to call /uploads/:id/complete
 /// - completed      → backend returned finalized ready upload
 /// - failed         → retryable failure
 enum PendingUploadStatus {
+  draft,
   pending,
   uploading,
   pendingMetadataSync,
@@ -41,24 +43,16 @@ class PendingImage {
   };
 
   factory PendingImage.fromJson(Map<String, dynamic> json) => PendingImage(
-    imageId: json['imageId'] as String?,
+    imageId: json['imageId'] as String,
     path: json['path'] as String,
     latitude: (json['latitude'] as num?)?.toDouble(),
     longitude: (json['longitude'] as num?)?.toDouble(),
-    origin: json['origin'] as String? ?? 'gallery',
+    origin: json['origin'] as String,
   );
 }
 
 /// Local pending upload record stored in SQLite.
 class PendingUpload {
-  static PendingUploadStatus _parseStatus(String raw) {
-    try {
-      return PendingUploadStatus.values.byName(raw);
-    } catch (_) {
-      return PendingUploadStatus.pending;
-    }
-  }
-
   final String id; // clientUploadId (UUID v4)
   final String? ownerId;
   final List<PendingImage> images;
@@ -79,15 +73,11 @@ class PendingUpload {
   final int syncAttemptCount;
   final DateTime? lastSyncAttemptAt;
 
-  /// Legacy representation retained for reading old queue records.
-  String get imagePaths => jsonEncode(paths);
-
   PendingUpload({
     required this.id,
     this.ownerId,
     List<PendingImage>? images,
     List<String>? paths,
-    String? imagePaths,
     double? latitude,
     double? longitude,
     required this.createdAt,
@@ -107,7 +97,7 @@ class PendingUpload {
     this.lastSyncAttemptAt,
   }) : images =
            images ??
-           (paths ?? _decodePaths(imagePaths))
+           (paths ?? const <String>[])
                .map(
                  (path) => PendingImage(
                    path: path,
@@ -118,25 +108,11 @@ class PendingUpload {
                .toList(),
        activityDate = activityDate ?? createdAt;
 
-  static List<String> _decodePaths(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return const [];
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is List) {
-        return decoded.map((e) => e.toString()).toList();
-      }
-      return const [];
-    } catch (_) {
-      return const [];
-    }
-  }
-
   PendingUpload copyWith({
     String? id,
     String? ownerIdOverride,
     List<PendingImage>? images,
     List<String>? paths,
-    String? imagePaths,
     double? latitude,
     double? longitude,
     DateTime? createdAt,
@@ -164,8 +140,8 @@ class PendingUpload {
       ownerId: ownerIdOverride ?? ownerId,
       images:
           images ??
-          (paths != null || imagePaths != null
-              ? (paths ?? _decodePaths(imagePaths))
+          (paths != null
+              ? paths
                     .map(
                       (path) => PendingImage(
                         path: path,
@@ -226,22 +202,14 @@ class PendingUpload {
     return PendingUpload(
       id: row['id'] as String,
       ownerId: row['owner_id'] as String?,
-      images: row['images_json'] == null
-          ? null
-          : (jsonDecode(row['images_json'] as String) as List<dynamic>)
-                .map(
-                  (value) =>
-                      PendingImage.fromJson(value as Map<String, dynamic>),
-                )
-                .toList(),
-      imagePaths: row['image_paths'] as String?,
-      latitude: (row['latitude'] as num?)?.toDouble(),
-      longitude: (row['longitude'] as num?)?.toDouble(),
+      images: (jsonDecode(row['images_json'] as String) as List<dynamic>)
+          .map((value) => PendingImage.fromJson(value as Map<String, dynamic>))
+          .toList(),
       createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
       activityDate: DateTime.fromMillisecondsSinceEpoch(
-        (row['activity_date'] as int?) ?? (row['created_at'] as int),
+        row['activity_date'] as int,
       ),
-      status: PendingUpload._parseStatus(row['status'] as String),
+      status: PendingUploadStatus.values.byName(row['status'] as String),
       errorMessage: row['error_message'] as String?,
       propertyId: row['property_id'] as String?,
       talhaoId: row['talhao_id'] as String?,
@@ -252,7 +220,7 @@ class PendingUpload {
       backendStatus: row['backend_status'] as String?,
       backendError: row['backend_error'] as String?,
       syncErrorCode: row['sync_error_code'] as String?,
-      syncAttemptCount: (row['sync_attempt_count'] as int?) ?? 0,
+      syncAttemptCount: row['sync_attempt_count'] as int,
       lastSyncAttemptAt: row['last_sync_attempt_at'] == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(

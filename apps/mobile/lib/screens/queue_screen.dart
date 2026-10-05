@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/pending_upload.dart';
@@ -7,11 +6,13 @@ import '../services/database_helper.dart';
 import '../services/auth_service.dart';
 import '../services/sync_service.dart';
 import '../services/catalog_repository.dart';
+import '../services/local_image_store.dart';
 import '../utils/app_logger.dart';
 import '../utils/source_labels.dart';
 import 'remote_uploads_screen.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_scaffold.dart';
+import '../widgets/local_image_view.dart';
 import '../widgets/stat_item.dart';
 
 class QueueScreen extends StatefulWidget {
@@ -19,6 +20,7 @@ class QueueScreen extends StatefulWidget {
   final AuthService authService;
   final SyncService syncService;
   final CatalogRepository catalogRepository;
+  final LocalImageStore? imageStore;
 
   const QueueScreen({
     super.key,
@@ -26,6 +28,7 @@ class QueueScreen extends StatefulWidget {
     required this.authService,
     required this.syncService,
     required this.catalogRepository,
+    this.imageStore,
   });
 
   @override
@@ -33,6 +36,8 @@ class QueueScreen extends StatefulWidget {
 }
 
 class _QueueScreenState extends State<QueueScreen> {
+  late final LocalImageStore _imageStore =
+      widget.imageStore ?? createLocalImageStore();
   late Future<List<PendingUpload>> _uploadsFuture;
   bool _cleaningUp = false;
   bool _syncing = false;
@@ -91,7 +96,7 @@ class _QueueScreenState extends State<QueueScreen> {
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Sem conexão. Os uploads serão enviados quando a conexão for restabelecida.',
+                'Sem conexão. Mantenha o app aberto para sincronizar quando a conexão voltar.',
               ),
             ),
           ],
@@ -158,9 +163,8 @@ class _QueueScreenState extends State<QueueScreen> {
         // Remove local image files if they still exist
         try {
           for (final path in upload.paths) {
-            final file = File(path);
-            if (await file.exists()) {
-              await file.delete();
+            if (await _imageStore.exists(path)) {
+              await _imageStore.deleteImage(path);
             }
           }
         } catch (error, stack) {
@@ -426,8 +430,9 @@ class _QueueScreenState extends State<QueueScreen> {
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
                           onTap: () => _showFullscreen(paths[index]),
-                          child: Image.file(
-                            File(paths[index]),
+                          child: storedImageView(
+                            _imageStore,
+                            paths[index],
                             fit: BoxFit.cover,
                             // Grid cell is ~1/3 of a phone width; decode at 2x.
                             cacheWidth: 480,
@@ -464,8 +469,9 @@ class _QueueScreenState extends State<QueueScreen> {
               child: InteractiveViewer(
                 minScale: 1,
                 maxScale: 4,
-                child: Image.file(
-                  File(path),
+                child: storedImageView(
+                  _imageStore,
+                  path,
                   fit: BoxFit.contain,
                   errorBuilder: (_, _, _) =>
                       const Icon(Icons.broken_image, color: Colors.white),
@@ -763,7 +769,7 @@ class _QueueScreenState extends State<QueueScreen> {
     itemBuilder: (context, index) {
       final upload = uploads[index];
       final paths = upload.paths;
-      final preview = paths.isEmpty ? null : File(paths.first);
+      final preview = paths.isEmpty ? null : paths.first;
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
@@ -787,7 +793,8 @@ class _QueueScreenState extends State<QueueScreen> {
                   // No existsSync() probe here: decoding is async anyway and
                   // errorBuilder covers missing files without per-row disk IO.
                   if (preview != null)
-                    Image.file(
+                    storedImageView(
+                      _imageStore,
                       preview,
                       fit: BoxFit.cover,
                       cacheWidth: 180,
@@ -930,6 +937,12 @@ class _QueueScreenState extends State<QueueScreen> {
 
   _QueueStatusInfo _statusInfo(PendingUploadStatus status) {
     switch (status) {
+      case PendingUploadStatus.draft:
+        return const _QueueStatusInfo(
+          'Rascunho',
+          Icons.edit_outlined,
+          Colors.grey,
+        );
       case PendingUploadStatus.pending:
         return const _QueueStatusInfo('Pendente', Icons.schedule, Colors.grey);
       case PendingUploadStatus.uploading:

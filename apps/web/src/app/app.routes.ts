@@ -59,13 +59,6 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'uploads/queue',
-        loadComponent: () =>
-          import('./features/uploads/offline-upload-queue-page.component').then(
-            (m) => m.OfflineUploadQueuePageComponent,
-          ),
-      },
-      {
         path: 'uploads/:id',
         loadComponent: () =>
           import('./features/uploads/upload-detail-page.component').then(
