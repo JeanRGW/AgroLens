@@ -1,0 +1,315 @@
+<section class="viewer-page">
+  <app-page-header
+    eyebrow="Inferência"
+    title="Resultados da inferência"
+    [subtitle]="job()?.modelSnapshot?.name || ''"
+  >
+    <div class="page-actions">
+      <a mat-stroked-button routerLink="/inference"><mat-icon>arrow_back</mat-icon>Voltar</a>
+      <button mat-flat-button [matMenuTriggerFor]="exportMenu" [disabled]="!job() || exporting()">
+        <mat-icon>download</mat-icon>{{ exporting() ? 'Exportando…' : 'Exportar' }}
+      </button>
+      <mat-menu #exportMenu="matMenu">
+        <button mat-menu-item (click)="exportJson()"><mat-icon>code</mat-icon>Exportar JSON</button>
+        <button mat-menu-item (click)="exportCsv()">
+          <mat-icon>description</mat-icon>Exportar CSV
+        </button>
+      </mat-menu>
+    </div>
+  </app-page-header>
+
+  @if (loadingJob()) {
+    <div class="workspace-skeleton skeleton" role="status" aria-label="Carregando execução"></div>
+  } @else if (jobError()) {
+    <div class="error-banner" role="alert">
+      <span>{{ jobError() }}</span
+      ><button mat-stroked-button (click)="retryJob()">Tentar novamente</button>
+    </div>
+  } @else if (job(); as detail) {
+    <div class="status-bar">
+      <span class="cell-badge" [class]="statusBadgeClass(detail.status)">{{
+        statusLabel(detail.status)
+      }}</span>
+      <span>{{ detail.completedCount }} de {{ detail.imageCount }} imagens concluídas</span>
+      @if (detail.failedCount) {
+        <span class="failure-count">{{ detail.failedCount }} falhas</span>
+      }
+      <span class="execution-id" [matTooltip]="detail.id"
+        >Execução {{ detail.id.slice(0, 8) }}</span
+      >
+      @if (detail.expiresAt) {
+        <span class="expiry-notice"
+          ><mat-icon>schedule</mat-icon>Expira em
+          {{ detail.expiresAt | date: 'dd/MM/yyyy HH:mm' }}</span
+        >
+      }
+    </div>
+
+    <div class="viewer-layout">
+      <aside class="image-sidebar panel" aria-label="Imagens da execução">
+        <div class="panel-header">
+          <mat-icon>photo_library</mat-icon>
+          <h2>Imagens</h2>
+          <span class="count-chip">{{ detail.images.length }}</span>
+        </div>
+        <div class="image-list">
+          @for (img of detail.images; track img.id) {
+            <button
+              type="button"
+              class="image-list-item"
+              [class.selected]="selectedImageId() === img.id"
+              [attr.aria-current]="selectedImageId() === img.id ? 'true' : null"
+              [matTooltip]="img.fileName"
+              (click)="loadImage(img)"
+            >
+              <span class="image-index">{{ img.imageIndex + 1 }}</span>
+              <span class="image-info">
+                <span class="image-filename">{{ img.fileName }}</span>
+                <span class="image-sub">{{ img.detectionCount }} detecções</span>
+                <span class="cell-badge image-status" [class]="statusBadgeClass(img.status)">{{
+                  statusLabel(img.status)
+                }}</span>
+              </span>
+            </button>
+          }
+        </div>
+      </aside>
+
+      <div class="center-panel panel">
+        <div class="image-heading">
+          <div class="image-heading-text">
+            <mat-icon>image</mat-icon
+            ><span [matTooltip]="imageResult()?.fileName || ''">{{
+              imageResult()?.fileName || 'Visualização da imagem'
+            }}</span>
+          </div>
+          @if (imageResult()?.inferenceMs; as duration) {
+            <span class="processing-time">{{ duration }} ms</span>
+          }
+        </div>
+        <div class="viewer-toolbar" role="group" aria-label="Controles da imagem">
+          <div class="zoom-controls">
+            <button
+              mat-icon-button
+              aria-label="Reduzir zoom"
+              matTooltip="Reduzir zoom"
+              (click)="zoomOut()"
+              [disabled]="!imageDecoded() || zoom() <= zoomMin"
+            >
+              <mat-icon>remove</mat-icon>
+            </button>
+            <button
+              type="button"
+              class="zoom-value"
+              aria-label="Tamanho original: 100%"
+              matTooltip="Tamanho original (100%)"
+              [disabled]="!imageDecoded()"
+              (click)="zoomNative()"
+            >
+              {{ zoomPercent() }}%
+            </button>
+            <button
+              mat-icon-button
+              aria-label="Aumentar zoom"
+              matTooltip="Aumentar zoom"
+              (click)="zoomIn()"
+              [disabled]="!imageDecoded() || zoom() >= zoomMax"
+            >
+              <mat-icon>add</mat-icon>
+            </button>
+          </div>
+          <button
+            mat-stroked-button
+            class="fit-button"
+            [class.active]="fitMode()"
+            [attr.aria-pressed]="fitMode()"
+            [disabled]="!imageDecoded()"
+            (click)="zoomReset()"
+            matTooltip="Ajustar imagem à área disponível"
+          >
+            <mat-icon>fit_screen</mat-icon>Ajustar
+          </button>
+          <button
+            mat-button
+            class="overlay-toggle"
+            [attr.aria-pressed]="showAllDetections()"
+            [disabled]="!imageDecoded()"
+            (click)="toggleAllDetections()"
+          >
+            <mat-icon>{{ showAllDetections() ? 'visibility' : 'visibility_off' }}</mat-icon
+            >{{ showAllDetections() ? 'Ocultar detecções' : 'Mostrar detecções' }}
+          </button>
+        </div>
+
+        <div
+          #viewport
+          class="image-viewport"
+          tabindex="0"
+          role="region"
+          aria-label="Imagem com detecções. Use as barras de rolagem para explorar a imagem ampliada."
+          [attr.aria-busy]="loadingImage() || (!!imageResult() && !imageDecoded() && !imageError())"
+        >
+          @if (imageError()) {
+            <div class="viewer-state" role="alert">
+              <mat-icon>broken_image</mat-icon>
+              <p>{{ imageError() }}</p>
+              <button mat-stroked-button (click)="retryImage()">Carregar novamente</button>
+            </div>
+          } @else if (imageResult(); as result) {
+            <div
+              class="image-plane"
+              [class.image-plane--loading]="!imageDecoded()"
+              [style.width.px]="renderedSize().width"
+              [style.height.px]="renderedSize().height"
+            >
+              <img
+                #viewerImage
+                [src]="result.imageUrl"
+                [alt]="result.fileName"
+                draggable="false"
+                (load)="onImageLoad()"
+                (error)="onImageError()"
+              />
+              @if (imageDecoded()) {
+                <div class="detection-overlay" aria-hidden="true">
+                  @for (det of visibleDetections(); track $index) {
+                    <div
+                      class="detection-box"
+                      [class.detection-box--right]="det.xCenter > 0.75"
+                      [style.--det-color]="classColor(det.className)"
+                      [ngStyle]="boxStyle(det, contentRect)"
+                    >
+                      <span class="detection-tag"
+                        >{{ det.className }}
+                        <strong>{{ (det.confidence * 100).toFixed(0) }}%</strong></span
+                      >
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+            @if (!imageDecoded()) {
+              <div class="canvas-skeleton skeleton" role="status">
+                <span>Carregando imagem…</span>
+              </div>
+            }
+          } @else {
+            <div class="viewer-state" role="status">
+              <mat-icon>photo_library</mat-icon>
+              <p>
+                {{
+                  loadingImage() ? 'Carregando imagem…' : 'Selecione uma imagem para visualizar.'
+                }}
+              </p>
+            </div>
+          }
+        </div>
+
+        <div class="image-nav" role="group" aria-label="Navegação entre imagens">
+          <button mat-button (click)="prevImage()" [disabled]="!hasPrevImage()">
+            <mat-icon>chevron_left</mat-icon>Anterior
+          </button>
+          <span aria-live="polite">{{
+            detail.images.length
+              ? 'Imagem ' + (currentImageIndex() + 1) + ' de ' + detail.images.length
+              : 'Nenhuma imagem'
+          }}</span>
+          <button mat-button (click)="nextImage()" [disabled]="!hasNextImage()">
+            Próxima<mat-icon iconPositionEnd>chevron_right</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <aside class="detections-sidebar panel" aria-label="Resumo e filtros das detecções">
+        <div class="panel-header">
+          <mat-icon>filter_alt</mat-icon>
+          <h2>Detecções</h2>
+        </div>
+        <div class="panel-body">
+          @if (loadingImage()) {
+            <div
+              class="filter-skeleton skeleton"
+              role="status"
+              aria-label="Carregando detecções"
+            ></div>
+          } @else if (imageResult(); as result) {
+            <div class="visible-count" aria-live="polite">
+              <strong>{{ visibleDetections().length }}</strong
+              ><span>de {{ result.detections?.length || 0 }} detecções visíveis</span>
+            </div>
+            @if (result.status === 'failed') {
+              <p class="filter-notice">
+                {{ result.errorMessage || 'A inferência falhou para esta imagem.' }}
+              </p>
+            } @else if (result.status !== 'completed') {
+              <p class="filter-notice">Aguardando o resultado da inferência.</p>
+            } @else if (!result.detections?.length) {
+              <p class="filter-notice">Nenhuma detecção encontrada nesta imagem.</p>
+            } @else {
+              <div class="section-label">Classes nesta imagem</div>
+              <div class="class-filter-list">
+                @for (entry of currentImageClassCounts(); track entry[0]) {
+                  <div class="class-filter-row">
+                    <mat-checkbox
+                      [checked]="enabledClasses().has(entry[0])"
+                      (change)="toggleClassFilter(entry[0], $event.checked)"
+                    >
+                      <span class="class-name"
+                        ><span class="color-swatch" [style.background]="classColor(entry[0])"></span
+                        >{{ entry[0] }}</span
+                      >
+                    </mat-checkbox>
+                    <span class="class-count">{{ entry[1] }}</span>
+                  </div>
+                }
+              </div>
+              <div class="confidence-label">
+                <label for="confidence-thumb">Confiança mínima</label
+                ><strong>{{ (minConfidence() * 100).toFixed(0) }}%</strong>
+              </div>
+              <mat-slider [min]="0.25" [max]="1" [step]="0.05" discrete
+                ><input
+                  id="confidence-thumb"
+                  matSliderThumb
+                  [ngModel]="minConfidence()"
+                  (ngModelChange)="minConfidence.set($event)"
+              /></mat-slider>
+              <div class="slider-scale"><span>25%</span><span>100%</span></div>
+              @if (!visibleDetections().length) {
+                <p class="filter-notice">
+                  {{
+                    showAllDetections()
+                      ? 'Nenhuma detecção corresponde aos filtros.'
+                      : 'As detecções estão ocultas.'
+                  }}
+                </p>
+              }
+              <button mat-button class="reset-filters" (click)="resetFilters()">
+                <mat-icon>restart_alt</mat-icon>Restaurar filtros
+              </button>
+            }
+          } @else {
+            <p class="filter-notice">Selecione uma imagem para ver as detecções.</p>
+          }
+
+          <details class="aggregate-summary">
+            <summary>Resumo das imagens visualizadas</summary>
+            <p class="visited-count">
+              {{ visitedImageCount() }} de {{ detail.images.length }} imagens carregadas
+            </p>
+            @for (entry of jobClassTotals(); track entry[0]) {
+              <div class="aggregate-row">
+                <span class="color-swatch" [style.background]="classColor(entry[0])"></span
+                ><span>{{ entry[0] }}</span
+                ><strong>{{ entry[1] }}</strong>
+              </div>
+            }
+            @if (!jobClassTotals().length) {
+              <p class="filter-notice">Nenhuma detecção nas imagens visualizadas.</p>
+            }
+          </details>
+        </div>
+      </aside>
+    </div>
+  }
+</section>

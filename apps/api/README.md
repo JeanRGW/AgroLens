@@ -76,6 +76,10 @@ INFERENCE_ENABLED=true docker compose -f deploy/docker-compose.dev.yml --profile
 
 Both services receive the same `INFERENCE_API_KEY` from the Compose environment (or its development default). The worker calls `http://inference:8000`; inference downloads models from `http://garage:3900`. The profile starts the service, while `INFERENCE_ENABLED` enables backend inference processing. Models are uploaded and activated through the web admin UI.
 
+Model names are unique among non-deleted models. Include any version label in the
+name (for example, `Weeds — October 2026`); there is no separate version field.
+UUIDs identify model records and SHA-256 identifies the exact model bytes.
+
 ### Backend hot reload
 
 ```bash

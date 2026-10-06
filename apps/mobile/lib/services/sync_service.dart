@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'inference_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/download_url_response.dart';
 import '../models/pending_upload.dart';
@@ -18,6 +19,7 @@ export 'upload_pipeline.dart' show StepInitResult;
 /// Sync service orchestrating catalog sync, upload queue execution,
 /// retry logic, and connectivity monitoring.
 class SyncService {
+  late final inference = InferenceService(_apiClient, _authService);
   final ApiClient _apiClient;
   final AuthService _authService;
   final DatabaseHelper _databaseHelper;

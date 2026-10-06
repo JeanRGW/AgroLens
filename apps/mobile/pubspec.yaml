@@ -45,6 +45,7 @@ dependencies:
 
   # URL launcher for opening signed download URLs
   url_launcher: ^6.3.2
+  share_plus: ^12.0.2
   flutter_svg: ^2.0.17
   mask_text_input_formatter: ^2.9.0
 

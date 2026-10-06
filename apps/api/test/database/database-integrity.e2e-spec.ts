@@ -14,6 +14,7 @@ import {
   AccessRepository,
   CatalogRepository,
   InferenceRepository,
+  InferenceModelsRepository,
   JobsRepository,
   UploadsRepository,
   type User,
@@ -27,6 +28,7 @@ describe('Database integrity (e2e)', () => {
   let app: INestApplication;
   let db: DatabaseConnection;
   let inference: InferenceRepository;
+  let models: InferenceModelsRepository;
   let owner: User;
   let other: User;
   let admin: User;
@@ -39,6 +41,7 @@ describe('Database integrity (e2e)', () => {
     app.get(ConfigService).set('INFERENCE_ENABLED', true);
     db = app.get(DATABASE_CONNECTION);
     inference = app.get(InferenceRepository);
+    models = app.get(InferenceModelsRepository);
   }, 30_000);
 
   beforeEach(async () => {
@@ -61,9 +64,8 @@ describe('Database integrity (e2e)', () => {
   });
 
   async function modelFixture(overrides: Partial<typeof schema.inferenceModels.$inferInsert> = {}) {
-    return inference.createModel({
+    return models.createModel({
       name: randomUUID(),
-      version: '1',
       objectKey: `models/${randomUUID()}/best.pt`,
       sizeBytes: 1,
       createdByUserId: admin.id,
@@ -96,6 +98,40 @@ describe('Database integrity (e2e)', () => {
     );
     return { job, keys };
   }
+
+  it('paginates non-expired inference jobs in SQL with stable ordering and owner isolation', async () => {
+    const createdAt = new Date();
+    const first = await jobFixture({ createdAt, expiresAt: null });
+    const second = await jobFixture({ createdAt, expiresAt: new Date(Date.now() + 60_000) });
+    await jobFixture({ expiresAt: new Date(Date.now() - 60_000) });
+    await jobFixture({ userId: other.id });
+    const ids = [first.job.id, second.job.id].sort().reverse();
+
+    const page1 = await inference.listJobsByUserId(owner.id, 1, 0);
+    const page2 = await inference.listJobsByUserId(owner.id, 1, 1);
+    const empty = await inference.listJobsByUserId(owner.id, 1, 2);
+    expect(page1.jobs.map((job) => job.id)).toEqual([ids[0]]);
+    expect(page2.jobs.map((job) => job.id)).toEqual([ids[1]]);
+    expect([page1.total, page2.total, empty.total]).toEqual([2, 2, 2]);
+    expect(empty.jobs).toEqual([]);
+  });
+
+  it('looks up inference images only within their parent job', async () => {
+    const first = await jobFixture();
+    const second = await jobFixture();
+    const [image] = await inference.listImagesByJobId(first.job.id);
+    expect(await inference.findImageById(first.job.id, image.id)).toMatchObject({ id: image.id });
+    expect(await inference.findImageById(second.job.id, image.id)).toBeUndefined();
+  });
+
+  it('requires unique non-deleted model names and allows reuse after deletion', async () => {
+    const model = await modelFixture({ name: 'Weeds v2' });
+    await expect(modelFixture({ name: 'Weeds v2' })).rejects.toMatchObject({
+      cause: { code: '23505', constraint_name: 'inference_models_name_non_deleted_idx' },
+    });
+    await models.softDeleteModel(model.id);
+    expect(await modelFixture({ name: 'Weeds v2' })).toMatchObject({ name: 'Weeds v2' });
+  });
 
   async function rejectCleanupInserts(action: () => Promise<void>) {
     await db.execute(sql`
@@ -152,8 +188,8 @@ describe('Database integrity (e2e)', () => {
       .delete(`/api/admin/inference-models/${model.id}`)
       .set('Authorization', adminAuth)
       .expect(200);
-    expect(await inference.findModelById(model.id)).toBeUndefined();
-    expect(await inference.softDeleteModel(model.id)).toBeUndefined();
+    expect(await models.findModelById(model.id)).toBeUndefined();
+    expect(await models.softDeleteModel(model.id)).toBeUndefined();
     const cleanup = await db.select().from(schema.objectDeletionJobs);
     expect(cleanup).toHaveLength(1);
     expect(cleanup[0]).toMatchObject({
@@ -174,7 +210,7 @@ describe('Database integrity (e2e)', () => {
         .set('Authorization', adminAuth)
         .expect(500);
     });
-    expect(await inference.findModelById(model.id)).toMatchObject({ deletedAt: null });
+    expect(await models.findModelById(model.id)).toMatchObject({ deletedAt: null });
     expect(await db.select().from(schema.objectDeletionJobs)).toEqual([]);
     expect(await db.select().from(schema.auditEvents)).toEqual([]);
   });
@@ -190,7 +226,7 @@ describe('Database integrity (e2e)', () => {
       expect(await worker.processExpiredJobs()).toBe(false);
     });
     expect(await inference.findExpiredJobs()).toEqual([expect.objectContaining({ id: job.id })]);
-    expect(await inference.findAbandonedModelUploads()).toEqual([
+    expect(await models.findAbandonedModelUploads()).toEqual([
       expect.objectContaining({ id: model.id }),
     ]);
     expect(await inference.listImagesByJobId(job.id)).toHaveLength(2);
@@ -199,7 +235,7 @@ describe('Database integrity (e2e)', () => {
     expect(await worker.processExpiredJobs()).toBe(true);
     expect(await worker.processExpiredJobs()).toBe(false);
     expect(await inference.findJobById(job.id)).toBeUndefined();
-    expect(await inference.findModelById(model.id)).toBeUndefined();
+    expect(await models.findModelById(model.id)).toBeUndefined();
     const cleanup = await db.select().from(schema.objectDeletionJobs);
     expect(cleanup.map((row) => row.objectKey).sort()).toEqual([...keys, model.objectKey].sort());
   });

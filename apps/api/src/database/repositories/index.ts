@@ -49,13 +49,11 @@ export { RetentionRepository } from './retention.repository';
 export type { RetentionPruneResult } from './retention.repository';
 export { InferenceRepository } from './inference.repository';
 export { InferenceModelsRepository } from './inference-models.repository';
-export { MAX_VALIDATION_ATTEMPTS } from './inference.repository';
+export { MAX_VALIDATION_ATTEMPTS } from './inference-models.repository';
+export type { InferenceModel, NewInferenceModel } from './inference-models.repository';
 export type {
-  InferenceModel,
-  NewInferenceModel,
   InferenceJob,
   NewInferenceJob,
   InferenceJobImage,
   NewInferenceJobImage,
-  ModelSnapshot,
 } from './inference.repository';

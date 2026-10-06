@@ -25,7 +25,7 @@ describe('InferenceService', () => {
 
   describe('listActiveModels', () => {
     it('should GET /inference/models', async () => {
-      const mockModels = [{ id: 'm1', name: 'Model', version: '1', task: null, classes: [] }];
+      const mockModels = [{ id: 'm1', name: 'Model', task: null, classes: [] }];
       api.get.and.returnValue(of(mockModels));
 
       const result = await service.listActiveModels();
@@ -36,7 +36,7 @@ describe('InferenceService', () => {
 
   describe('listJobs', () => {
     it('should GET /inference/jobs with default limit/offset', async () => {
-      const mockResponse = { jobs: [], total: 0 };
+      const mockResponse = { jobs: [], total: 0, limit: 20, offset: 0 };
       api.get.and.returnValue(of(mockResponse));
 
       const result = await service.listJobs();
@@ -45,7 +45,7 @@ describe('InferenceService', () => {
     });
 
     it('should pass custom limit/offset', async () => {
-      const mockResponse = { jobs: [], total: 0 };
+      const mockResponse = { jobs: [], total: 0, limit: 10, offset: 5 };
       api.get.and.returnValue(of(mockResponse));
 
       await service.listJobs(10, 5);

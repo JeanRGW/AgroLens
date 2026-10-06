@@ -10,6 +10,7 @@ import { InferenceJobService } from '../../src/inference/inference-job.service';
 import { InferenceClient } from '../../src/inference/inference-client';
 import {
   InferenceRepository,
+  InferenceModelsRepository,
   UploadsRepository,
   AccessRepository,
   AuditRepository,
@@ -62,7 +63,6 @@ function makeModel(overrides: Partial<InferenceModel> = {}): InferenceModel {
   return {
     id: 'model-uuid-1',
     name: 'Test Model',
-    version: 'v1',
     description: null,
     objectKey: 'models/model-uuid-1/best.pt',
     sizeBytes: 1024,
@@ -86,7 +86,7 @@ function makeJob(overrides: Record<string, unknown> = {}) {
     id: 'job-uuid-1',
     userId: 'user-uuid-1',
     modelId: 'model-uuid-1',
-    modelSnapshot: { id: 'model-uuid-1', name: 'Test', version: 'v1', task: 'detect', classes: [] },
+    modelSnapshot: { id: 'model-uuid-1', name: 'Test', task: 'detect', classes: [] },
     sourceType: 'upload',
     uploadId: 'upload-uuid-1',
     status: 'queued',
@@ -144,6 +144,7 @@ describe('InferenceModelService and InferenceJobService', () => {
     findJobById: jest.fn(),
     listJobsByUserId: jest.fn(),
     listImagesByJobId: jest.fn(),
+    findImageById: jest.fn(),
     sealAndCompleteTemporaryJob: jest.fn(),
     failImage: jest.fn(),
     deleteJob: jest.fn(),
@@ -204,6 +205,7 @@ describe('InferenceModelService and InferenceJobService', () => {
         InferenceModelService,
         InferenceJobService,
         { provide: InferenceRepository, useValue: mockInferenceRepo },
+        { provide: InferenceModelsRepository, useValue: mockInferenceRepo },
         { provide: UploadsRepository, useValue: mockUploadsRepo },
         { provide: AccessRepository, useValue: mockAccessRepo },
         { provide: AuditRepository, useValue: mockAuditRepo },
@@ -223,9 +225,9 @@ describe('InferenceModelService and InferenceJobService', () => {
 
   describe('initModel', () => {
     it('should reject non-admin users', async () => {
-      await expect(
-        modelService.initModel({ name: 'My Model', version: 'v1' }, makeCurrentUser()),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(modelService.initModel({ name: 'My Model' }, makeCurrentUser())).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should create model row and return presigned URL', async () => {
@@ -239,17 +241,17 @@ describe('InferenceModelService and InferenceJobService', () => {
       });
 
       const result = await modelService.initModel(
-        { name: 'My Model', version: 'v1', description: 'A test model' },
+        { name: 'My Model', description: 'A test model' },
         makeAdminUser(),
       );
 
       expect(result.id).toBeDefined();
       expect(result.uploadUrl).toBe('https://presigned.url');
       expect(result.headers).toBeDefined();
+      expect(mockInferenceRepo.createModel.mock.calls[0][0]).not.toHaveProperty('version');
       expect(mockInferenceRepo.createModel).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'My Model',
-          version: 'v1',
           description: 'A test model',
         }),
         expect.objectContaining({ actorUserId: 'admin-uuid-1' }),
@@ -469,6 +471,7 @@ describe('InferenceModelService and InferenceJobService', () => {
       const result = await modelService.listActiveModels();
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('model-uuid-1');
+      expect(result[0]).not.toHaveProperty('version');
     });
   });
 
@@ -534,6 +537,9 @@ describe('InferenceModelService and InferenceJobService', () => {
       expect(result.id).toBeDefined();
       expect(result.status).toBe('queued');
       expect(result.imageCount).toBe(2);
+      expect(
+        mockInferenceRepo.createUploadJobWithFence.mock.calls[0][0].modelSnapshot,
+      ).not.toHaveProperty('version');
       expect(mockUploadsRepo.findByIdAnyStatus).toHaveBeenCalledWith('upload-uuid-1');
     });
 
@@ -796,15 +802,26 @@ describe('InferenceModelService and InferenceJobService', () => {
 
   describe('listJobs', () => {
     it('should return non-expired jobs for current user', async () => {
-      mockInferenceRepo.listJobsByUserId.mockResolvedValue([
-        makeJob(),
-        makeJob({ id: 'job-2', expiresAt: new Date(Date.now() - 1000) }), // expired
-      ]);
+      mockInferenceRepo.listJobsByUserId.mockResolvedValue({ jobs: [makeJob()], total: 1 });
 
       const result = await jobService.listJobs({ limit: 20, offset: 0 }, makeCurrentUser());
 
       expect(result.jobs).toHaveLength(1);
       expect(result.total).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.offset).toBe(0);
+      expect(mockInferenceRepo.listJobsByUserId).toHaveBeenCalledWith('user-uuid-1', 20, 0);
+    });
+
+    it('returns an already-paginated page without slicing it again', async () => {
+      mockInferenceRepo.listJobsByUserId.mockResolvedValue({
+        jobs: [makeJob({ id: 'job-page-2' })],
+        total: 21,
+      });
+      const result = await jobService.listJobs({ limit: 20, offset: 20 }, makeCurrentUser());
+      expect(result.jobs.map((job) => job.id)).toEqual(['job-page-2']);
+      expect(result.total).toBe(21);
+      expect(mockInferenceRepo.listJobsByUserId).toHaveBeenCalledWith('user-uuid-1', 20, 20);
     });
   });
 
@@ -867,20 +884,18 @@ describe('InferenceModelService and InferenceJobService', () => {
     it('should return image result with signed display URL', async () => {
       mockInferenceRepo.findJobById.mockResolvedValue(makeJob());
       mockUploadsRepo.findByIdAnyStatus.mockResolvedValue(makeUpload());
-      mockInferenceRepo.listImagesByJobId.mockResolvedValue([
-        {
-          id: 'img-1',
-          imageIndex: 0,
-          fileName: 'f1.jpg',
-          sourceObjectKey: 'key1',
-          status: 'completed',
-          detections: [],
-          inferenceMs: 100,
-          width: 1920,
-          height: 1080,
-          errorMessage: null,
-        },
-      ]);
+      mockInferenceRepo.findImageById.mockResolvedValue({
+        id: 'img-1',
+        imageIndex: 0,
+        fileName: 'f1.jpg',
+        sourceObjectKey: 'key1',
+        status: 'completed',
+        detections: [],
+        inferenceMs: 100,
+        width: 1920,
+        height: 1080,
+        errorMessage: null,
+      });
       mockStorageService.getPresignedGetUrl.mockResolvedValue({
         url: 'https://download.url',
         expiresAt: new Date(),
@@ -891,6 +906,17 @@ describe('InferenceModelService and InferenceJobService', () => {
       expect(result.imageUrl).toBe('https://download.url');
       expect(result.detections).toEqual([]);
       expect(result.errorMessage).toBeNull();
+      expect(mockInferenceRepo.findImageById).toHaveBeenCalledWith('job-uuid-1', 'img-1');
+      expect(mockInferenceRepo.listImagesByJobId).not.toHaveBeenCalled();
+    });
+
+    it('rejects an image absent from the authorized job before signing a URL', async () => {
+      mockInferenceRepo.findJobById.mockResolvedValue(makeJob({ sourceType: 'temporary' }));
+      mockInferenceRepo.findImageById.mockResolvedValue(undefined);
+      await expect(
+        jobService.getImageResult('job-uuid-1', 'other-job-image', makeCurrentUser()),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStorageService.getPresignedGetUrl).not.toHaveBeenCalled();
     });
 
     it('should reject non-owner', async () => {

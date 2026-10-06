@@ -1,6 +1,6 @@
-import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq, and, desc, asc, sql, lt } from 'drizzle-orm';
+import { eq, and, or, isNull, gte, desc, asc, sql, lt } from 'drizzle-orm';
 import { DATABASE_CONNECTION, type DatabaseConnection } from '../database.constants';
 import {
   inferenceModels,
@@ -11,30 +11,12 @@ import {
 } from '../schema';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { toCamelCase, namedError } from '../database.utils';
-import {
-  InferenceModelsRepository,
-  type InferenceModel,
-  type NewInferenceModel,
-  MAX_VALIDATION_ATTEMPTS,
-} from './inference-models.repository';
-
-export { MAX_VALIDATION_ATTEMPTS };
-export type { InferenceModel, NewInferenceModel };
 
 export type InferenceJob = InferSelectModel<typeof inferenceJobs>;
 export type NewInferenceJob = InferInsertModel<typeof inferenceJobs>;
 
 export type InferenceJobImage = InferSelectModel<typeof inferenceJobImages>;
 export type NewInferenceJobImage = InferInsertModel<typeof inferenceJobImages>;
-
-/** Snapshot stored on every job row for audit/display. */
-export interface ModelSnapshot {
-  id: string;
-  name: string;
-  version: string;
-  task: string | null;
-  classes: unknown;
-}
 
 /** Images still running for this long are considered stale and eligible for reclaim. */
 const STALE_RUNNING_MS = 10 * 60 * 1000;
@@ -43,93 +25,10 @@ const IMAGE_RETRY_BACKOFF_MS = 30 * 1000;
 
 @Injectable()
 export class InferenceRepository {
-  private readonly modelsRepo: InferenceModelsRepository;
-
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: DatabaseConnection,
     private readonly config: ConfigService,
-    @Optional() modelsRepo?: InferenceModelsRepository,
-  ) {
-    this.modelsRepo = modelsRepo ?? new InferenceModelsRepository(db, config);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  Inference Models (delegated to InferenceModelsRepository)
-  // ═══════════════════════════════════════════════════════════════════
-
-  createModel(
-    data: NewInferenceModel,
-    audit?: { actorUserId: string; metadata?: unknown },
-  ): Promise<InferenceModel> {
-    return this.modelsRepo.createModel(data, audit);
-  }
-
-  findModelById(id: string): Promise<InferenceModel | undefined> {
-    return this.modelsRepo.findModelById(id);
-  }
-
-  listActiveModels(): Promise<InferenceModel[]> {
-    return this.modelsRepo.listActiveModels();
-  }
-
-  listAllModels(): Promise<InferenceModel[]> {
-    return this.modelsRepo.listAllModels();
-  }
-
-  updateModel(
-    id: string,
-    data: Partial<
-      Pick<
-        InferenceModel,
-        | 'name'
-        | 'version'
-        | 'description'
-        | 'status'
-        | 'active'
-        | 'task'
-        | 'classes'
-        | 'sha256'
-        | 'sizeBytes'
-        | 'errorMessage'
-      >
-    >,
-    audit?: { actorUserId: string; eventType: string; metadata?: unknown },
-  ): Promise<InferenceModel | undefined> {
-    return this.modelsRepo.updateModel(id, data, audit);
-  }
-
-  softDeleteModel(
-    id: string,
-    audit?: { actorUserId: string; metadata?: unknown },
-  ): Promise<InferenceModel | undefined> {
-    return this.modelsRepo.softDeleteModel(id, audit);
-  }
-
-  claimValidation(): Promise<InferenceModel | undefined> {
-    return this.modelsRepo.claimValidation();
-  }
-
-  completeValidation(
-    id: string,
-    attempts: number,
-    result: {
-      status: 'ready' | 'invalid';
-      task?: string;
-      classes?: unknown;
-      sha256?: string;
-      errorMessage: string | null;
-    },
-  ): Promise<InferenceModel | undefined> {
-    return this.modelsRepo.completeValidation(id, attempts, result);
-  }
-
-  hasActiveJobsForModel(modelId: string): Promise<boolean> {
-    return this.modelsRepo.hasActiveJobsForModel(modelId);
-  }
-
-  findAbandonedModelUploads(limit = 10): Promise<InferenceModel[]> {
-    return this.modelsRepo.findAbandonedModelUploads(limit);
-  }
+  ) {}
 
   // ═══════════════════════════════════════════════════════════════════
   //  Inference Jobs
@@ -227,12 +126,36 @@ export class InferenceRepository {
     return row;
   }
 
-  async listJobsByUserId(userId: string): Promise<InferenceJob[]> {
-    return this.db
+  async listJobsByUserId(
+    userId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ jobs: InferenceJob[]; total: number }> {
+    const where = and(
+      eq(inferenceJobs.userId, userId),
+      or(isNull(inferenceJobs.expiresAt), gte(inferenceJobs.expiresAt, new Date())),
+    );
+    const jobs = await this.db
       .select()
       .from(inferenceJobs)
-      .where(eq(inferenceJobs.userId, userId))
-      .orderBy(desc(inferenceJobs.createdAt), desc(inferenceJobs.id));
+      .where(where)
+      .orderBy(desc(inferenceJobs.createdAt), desc(inferenceJobs.id))
+      .limit(limit)
+      .offset(offset);
+    const [count] = await this.db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(inferenceJobs)
+      .where(where);
+    return { jobs, total: count?.total ?? 0 };
+  }
+
+  async findImageById(jobId: string, imageId: string): Promise<InferenceJobImage | undefined> {
+    const [image] = await this.db
+      .select()
+      .from(inferenceJobImages)
+      .where(and(eq(inferenceJobImages.jobId, jobId), eq(inferenceJobImages.id, imageId)))
+      .limit(1);
+    return image;
   }
 
   async listImagesByJobId(jobId: string): Promise<InferenceJobImage[]> {

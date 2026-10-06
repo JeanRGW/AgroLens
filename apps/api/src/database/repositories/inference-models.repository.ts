@@ -79,7 +79,6 @@ export class InferenceModelsRepository {
       Pick<
         InferenceModel,
         | 'name'
-        | 'version'
         | 'description'
         | 'status'
         | 'active'

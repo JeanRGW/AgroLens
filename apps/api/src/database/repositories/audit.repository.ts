@@ -152,12 +152,11 @@ export class AuditRepository {
           .select({
             id: inferenceModels.id,
             name: inferenceModels.name,
-            version: inferenceModels.version,
           })
           .from(inferenceModels)
           .where(inArray(inferenceModels.id, ids));
         for (const row of rows) {
-          names.set(key('inference_model', row.id), `${row.name} (${row.version})`);
+          names.set(key('inference_model', row.id), row.name);
         }
       })(),
     ]);

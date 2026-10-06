@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'inference_screen.dart';
 import '../models/download_url_response.dart';
 import '../models/upload_response.dart';
 import '../models/catalog.dart';
@@ -734,6 +735,35 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
         title: 'Detalhes do upload',
         subtitle: 'Imagens enviadas para a nuvem',
         actions: [
+          if (u.status == 'ready' && images.isNotEmpty)
+            CustomAppBarAction(
+              child: PopupMenuButton<bool>(
+                tooltip: 'Analisar imagens',
+                icon: const Icon(Icons.manage_search, color: Colors.white),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: false,
+                    child: Text('Analisar todo o upload'),
+                  ),
+                  PopupMenuItem(
+                    value: true,
+                    child: Text('Analisar esta imagem'),
+                  ),
+                ],
+                onSelected: (single) => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => InferenceScreen(
+                      service: widget.syncService.inference,
+                      initialUpload: u,
+                      imageId: single
+                          ? images[_activeImageIndex].$1.imageId
+                          : null,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_deleting)
             const Padding(
               padding: EdgeInsets.only(right: 8),

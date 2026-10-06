@@ -2,13 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from './api.service';
-import { InferenceModelAdmin } from '@agrolens/contracts';
-
-interface InitModelResponse {
-  id: string;
-  uploadUrl: string;
-  headers: Record<string, string>;
-}
+import { InferenceModelAdmin, InferenceModelInitResponse } from '@agrolens/contracts';
 
 @Injectable({
   providedIn: 'root',
@@ -16,11 +10,10 @@ interface InitModelResponse {
 export class InferenceModelsService {
   private readonly api = inject(ApiService);
 
-  initModel(name: string, version: string, description?: string): Promise<InitModelResponse> {
+  initModel(name: string, description?: string): Promise<InferenceModelInitResponse> {
     return firstValueFrom(
-      this.api.post<InitModelResponse>('/admin/inference-models/init', {
+      this.api.post<InferenceModelInitResponse>('/admin/inference-models/init', {
         name,
-        version,
         description,
       }),
     );

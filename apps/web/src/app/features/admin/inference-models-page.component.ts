@@ -31,12 +31,11 @@ import { formatFileSize } from '../../shared/utils/upload-utils';
 
 interface NewModelFormValue {
   name: string;
-  version: string;
   description: string;
 }
 
 /* ===================================================================
- * Edit Model Dialog (name + description only, version is immutable)
+ * Edit Model Dialog
  * =================================================================== */
 @Component({
   selector: 'app-edit-model-dialog',
@@ -117,11 +116,6 @@ class EditModelDialogComponent {
         <mat-form-field appearance="outline" subscriptSizing="dynamic">
           <mat-label>Nome</mat-label>
           <input matInput formControlName="name" />
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <mat-label>Versão</mat-label>
-          <input matInput formControlName="version" placeholder="ex: 1.0.0" />
         </mat-form-field>
 
         <mat-form-field appearance="outline" subscriptSizing="dynamic">
@@ -219,7 +213,6 @@ export class UploadModelDialogComponent {
 
   readonly form = this.fb.nonNullable.group({
     name: ['', Validators.required],
-    version: ['', Validators.required],
     description: [''],
   });
 
@@ -245,11 +238,11 @@ export class UploadModelDialogComponent {
     this.errorMessage.set('');
 
     try {
-      const { name, version, description } = this.form.getRawValue();
+      const { name, description } = this.form.getRawValue();
       const file = this.selectedFile()!;
 
       // Step 1: init model
-      const init = await this.modelsService.initModel(name, version, description || undefined);
+      const init = await this.modelsService.initModel(name, description || undefined);
 
       // Step 2: PUT file to presigned URL with progress
       await this.uploadFile(file, init.uploadUrl, init.headers);
@@ -351,7 +344,6 @@ export class UploadModelDialogComponent {
                       >
                         {{ row.name }}
                       </button>
-                      <span class="model-version">v{{ row.version }}</span>
                     </td>
                   </ng-container>
 
@@ -518,13 +510,6 @@ export class UploadModelDialogComponent {
       }
     }
 
-    .model-version {
-      margin-left: 0.4rem;
-      font-size: 0.72rem;
-      color: var(--agri-text-muted);
-      font-family: var(--agri-mono);
-    }
-
     .status-badge {
       display: inline-block;
       font-size: 0.7rem;
@@ -688,7 +673,7 @@ export class InferenceModelsPageComponent implements OnInit {
     const ref = this.dialog.open(ConfirmDialogComponent, {
       data: {
         title: 'Excluir modelo',
-        message: `Deseja excluir o modelo "${model.name}" v${model.version}? Esta ação não pode ser desfeita.`,
+        message: `Deseja excluir o modelo "${model.name}"? Esta ação não pode ser desfeita.`,
         confirmText: 'Excluir',
         confirmColor: 'warn',
       },

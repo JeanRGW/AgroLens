@@ -23,22 +23,28 @@ describe('drizzle baseline structure', () => {
     const journal = JSON.parse(readFileSync(join(drizzleDir, 'meta/_journal.json'), 'utf8')) as {
       entries: Array<{ tag: string }>;
     };
-    expect(journal.entries.map((entry) => entry.tag)).toEqual(['0000_baseline']);
+    expect(journal.entries[0].tag).toBe('0000_baseline');
     for (const entry of journal.entries) {
       expect(existsSync(join(drizzleDir, `${entry.tag}.sql`))).toBe(true);
     }
     const sqlFiles = readdirSync(drizzleDir).filter((f) => f.endsWith('.sql'));
-    expect(sqlFiles).toEqual(['0000_baseline.sql']);
+    expect(sqlFiles.sort()).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`).sort());
     const snapshots = readdirSync(join(drizzleDir, 'meta')).filter((f) =>
       f.endsWith('_snapshot.json'),
     );
-    expect(snapshots).toEqual(['0000_snapshot.json']);
+    expect(snapshots.sort()).toEqual(
+      journal.entries.map((_, index) => `${String(index).padStart(4, '0')}_snapshot.json`),
+    );
   });
 
   it('passes drizzle-kit check against src/database/schema.ts', () => {
     const output = execFileSync(
-      'pnpm',
-      ['exec', 'drizzle-kit', 'check', '--config=./drizzle.config.ts'],
+      process.execPath,
+      [
+        join(resolve(__dirname, '../..'), 'node_modules/drizzle-kit/bin.cjs'),
+        'check',
+        '--config=./drizzle.config.ts',
+      ],
       {
         encoding: 'utf8',
         cwd: resolve(__dirname, '../..'),

@@ -1,4 +1,6 @@
 import { InferenceRepository } from '../../../src/database/repositories/inference.repository';
+import { InferenceModelsRepository } from '../../../src/database/repositories/inference-models.repository';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { objectDeletionJobs } from '../../../src/database/schema';
 import { ConfigService } from '@nestjs/config';
 
@@ -50,7 +52,6 @@ function rawModelRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'model-1',
     name: 'yolo-v8',
-    version: '1.0.0',
     description: 'Test model',
     objectKey: 'models/yolo.pt',
     sizeBytes: 12_345_678,
@@ -121,6 +122,7 @@ function makeMock() {
 
 describe('InferenceRepository', () => {
   let repo: InferenceRepository;
+  let models: InferenceModelsRepository;
   let db: ReturnType<typeof makeMock>;
   let executeRaw: jest.Mock;
   let txMock: jest.Mock;
@@ -139,6 +141,7 @@ describe('InferenceRepository', () => {
     db.transaction = txMock;
 
     repo = new InferenceRepository(db as any, new ConfigService());
+    models = new InferenceModelsRepository(db as any, new ConfigService());
   });
 
   // ═══════════════════════════════════════════════════════════════════
@@ -148,9 +151,8 @@ describe('InferenceRepository', () => {
   describe('createModel', () => {
     it('inserts and returns a model', async () => {
       push([rawModelRow()]);
-      const r = await repo.createModel({
+      const r = await models.createModel({
         name: 'm',
-        version: '1',
         objectKey: 'k',
         sizeBytes: 100,
         createdByUserId: 'u',
@@ -162,21 +164,21 @@ describe('InferenceRepository', () => {
   describe('findModelById', () => {
     it('returns the model for a non-deleted id', async () => {
       push([rawModelRow()]);
-      const r = await repo.findModelById('model-1');
+      const r = await models.findModelById('model-1');
       expect(r).toBeDefined();
       expect(r!.id).toBe('model-1');
     });
 
     it('returns undefined when not found', async () => {
       push([]);
-      expect(await repo.findModelById('missing')).toBeUndefined();
+      expect(await models.findModelById('missing')).toBeUndefined();
     });
   });
 
   describe('listActiveModels', () => {
     it('returns ready + active models', async () => {
       push([rawModelRow({ status: 'ready', active: true })]);
-      const r = await repo.listActiveModels();
+      const r = await models.listActiveModels();
       expect(r).toHaveLength(1);
     });
   });
@@ -184,7 +186,7 @@ describe('InferenceRepository', () => {
   describe('updateModel', () => {
     it('updates and returns the model', async () => {
       push([rawModelRow({ status: 'ready' })]);
-      const r = await repo.updateModel('model-1', { status: 'ready' });
+      const r = await models.updateModel('model-1', { status: 'ready' });
       expect(r!.status).toBe('ready');
     });
   });
@@ -199,7 +201,7 @@ describe('InferenceRepository', () => {
       push([rawModelRow()]);
       push([]);
       push([rawModelRow({ deletedAt: new Date() })]);
-      const r = await repo.softDeleteModel('model-1');
+      const r = await models.softDeleteModel('model-1');
       expect(r!.deletedAt).toBeInstanceOf(Date);
       expect(db.values.mock.calls[0][0].runAfter.getTime()).toBeGreaterThanOrEqual(
         before + 24 * 3600000,
@@ -208,7 +210,7 @@ describe('InferenceRepository', () => {
 
     it('returns undefined for already-deleted', async () => {
       push([]);
-      expect(await repo.softDeleteModel('gone')).toBeUndefined();
+      expect(await models.softDeleteModel('gone')).toBeUndefined();
     });
   });
 
@@ -220,7 +222,7 @@ describe('InferenceRepository', () => {
     it('executes atomic UPDATE…RETURNING with FOR UPDATE SKIP LOCKED', async () => {
       executeRaw.mockResolvedValue([rawModelRow({ status: 'validating', validation_attempts: 1 })]);
 
-      const r = await repo.claimValidation();
+      const r = await models.claimValidation();
       expect(r).toBeDefined();
       expect(r!.id).toBe('model-1');
       expect(executeRaw).toHaveBeenCalledTimes(2);
@@ -236,12 +238,12 @@ describe('InferenceRepository', () => {
 
     it('returns undefined when nothing eligible', async () => {
       executeRaw.mockResolvedValue([]);
-      expect(await repo.claimValidation()).toBeUndefined();
+      expect(await models.claimValidation()).toBeUndefined();
     });
 
     it('contains stale updated_at threshold in the SQL', async () => {
       executeRaw.mockResolvedValue([rawModelRow({ status: 'validating', validation_attempts: 0 })]);
-      await repo.claimValidation();
+      await models.claimValidation();
       expect(executeRaw).toHaveBeenCalledTimes(2);
 
       const chunks: any[] = executeRaw.mock.calls[1][0].queryChunks ?? [];
@@ -270,22 +272,22 @@ describe('InferenceRepository', () => {
   describe('hasActiveJobsForModel', () => {
     it('returns true when count > 0', async () => {
       push([{ count: 3 }]);
-      expect(await repo.hasActiveJobsForModel('model-1')).toBe(true);
+      expect(await models.hasActiveJobsForModel('model-1')).toBe(true);
     });
 
     it('returns false when count = 0', async () => {
       push([{ count: 0 }]);
-      expect(await repo.hasActiveJobsForModel('model-1')).toBe(false);
+      expect(await models.hasActiveJobsForModel('model-1')).toBe(false);
     });
 
     it('returns true when queued/running/uploading jobs exist (non-terminal)', async () => {
       push([{ count: 1 }]);
-      expect(await repo.hasActiveJobsForModel('model-1')).toBe(true);
+      expect(await models.hasActiveJobsForModel('model-1')).toBe(true);
     });
 
     it('returns false when only completed/failed jobs exist', async () => {
       push([{ count: 0 }]);
-      expect(await repo.hasActiveJobsForModel('model-1')).toBe(false);
+      expect(await models.hasActiveJobsForModel('model-1')).toBe(false);
     });
   });
 
@@ -347,10 +349,46 @@ describe('InferenceRepository', () => {
   });
 
   describe('listJobsByUserId', () => {
-    it('returns ordered list', async () => {
+    it('filters by owner and expiry in both queries and paginates only the rows', async () => {
       push([{ id: 'job-1' }]);
-      const r = await repo.listJobsByUserId('u');
-      expect(r).toHaveLength(1);
+      push([{ total: 21 }]);
+      const r = await repo.listJobsByUserId('u', 20, 20);
+      expect(r).toEqual({ jobs: [{ id: 'job-1' }], total: 21 });
+      expect(db.limit).toHaveBeenCalledWith(20);
+      expect(db.offset).toHaveBeenCalledWith(20);
+      expect(db.orderBy).toHaveBeenCalledTimes(1);
+      const predicates = db.where.mock.calls.map(([where]: [any]) =>
+        new PgDialect().sqlToQuery(where),
+      );
+      expect(predicates).toHaveLength(2);
+      expect(predicates[0].sql).toContain('"inference_jobs"."user_id" =');
+      expect(predicates[0].sql).toContain('"inference_jobs"."expires_at" is null or');
+      expect(predicates[0].sql).toContain('>=');
+      expect(predicates[0].params[0]).toBe('u');
+      expect(predicates[1]).toEqual(predicates[0]);
+    });
+
+    it('preserves the total on an empty page', async () => {
+      push([]);
+      push([{ total: 2 }]);
+      expect(await repo.listJobsByUserId('u', 20, 20)).toEqual({ jobs: [], total: 2 });
+    });
+  });
+
+  describe('findImageById', () => {
+    it('constrains the image lookup to the job and image IDs', async () => {
+      push([rawImageRow()]);
+      expect((await repo.findImageById('job-1', 'img-1'))?.id).toBe('img-1');
+      const query = new PgDialect().sqlToQuery(db.where.mock.calls[0][0]);
+      expect(query.sql).toContain('"inference_job_images"."job_id" =');
+      expect(query.sql).toContain('"inference_job_images"."id" =');
+      expect(query.params).toEqual(['job-1', 'img-1']);
+      expect(db.limit).toHaveBeenCalledWith(1);
+    });
+
+    it('returns undefined when the image does not belong to the job', async () => {
+      push([]);
+      expect(await repo.findImageById('job-1', 'other-image')).toBeUndefined();
     });
   });
 
