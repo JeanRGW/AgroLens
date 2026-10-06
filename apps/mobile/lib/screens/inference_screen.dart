@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -29,11 +30,34 @@ class _SelectedImage {
   final XFile file;
   final int sizeBytes;
   final Uint8List? thumbnail;
-  _SelectedImage(this.file, this.sizeBytes, this.thumbnail);
+  final bool camera;
+  _SelectedImage(
+    this.file,
+    this.sizeBytes,
+    this.thumbnail, {
+    this.camera = false,
+  });
+  String label(int index) => camera ? 'Foto ${index + 1}' : file.name;
 }
 
 class _InferenceScreenState extends State<InferenceScreen>
     with WidgetsBindingObserver {
+  static const _secondaryTextStyle = TextStyle(
+    fontSize: 13,
+    color: Color(0xff53624c),
+  );
+  static final _sourceButtonStyle = OutlinedButton.styleFrom(
+    foregroundColor: const Color(0xff245d38),
+    side: const BorderSide(color: Color(0xff83917d)),
+    minimumSize: const Size(0, 48),
+    visualDensity: VisualDensity.standard,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  );
+  static final _textButtonStyle = TextButton.styleFrom(
+    foregroundColor: const Color(0xff245d38),
+    minimumSize: const Size(0, 48),
+    visualDensity: VisualDensity.standard,
+  );
   List<InferenceModel> _models = [];
   List<InferenceJob> _jobs = [];
   final List<_SelectedImage> _files = [];
@@ -43,6 +67,7 @@ class _InferenceScreenState extends State<InferenceScreen>
   bool _device = true,
       _modelsLoading = true,
       _jobsLoading = false,
+      _jobsRefreshing = false,
       _submitting = false,
       _picking = false;
   int _tab = 0, _offset = 0, _total = 0;
@@ -118,11 +143,12 @@ class _InferenceScreenState extends State<InferenceScreen>
     }
   }
 
-  Future<void> _loadJobs() async {
+  Future<void> _loadJobs({bool background = false}) async {
     if (_jobsLoading) return;
     _poll?.cancel();
     setState(() {
       _jobsLoading = true;
+      _jobsRefreshing = !background;
       _jobsError = null;
     });
     try {
@@ -149,11 +175,14 @@ class _InferenceScreenState extends State<InferenceScreen>
       }
     } finally {
       if (mounted) {
-        setState(() => _jobsLoading = false);
+        setState(() {
+          _jobsLoading = false;
+          _jobsRefreshing = false;
+        });
         if (_foreground && _tab == 1 && _jobs.any((job) => job.active)) {
           _poll = Timer.periodic(const Duration(seconds: 5), (_) {
             if (mounted && ModalRoute.of(context)?.isCurrent == true) {
-              _loadJobs();
+              _loadJobs(background: true);
             }
           });
         }
@@ -161,13 +190,20 @@ class _InferenceScreenState extends State<InferenceScreen>
     }
   }
 
-  Future<void> _pick() async {
+  Future<void> _pick({bool camera = false}) async {
     setState(() {
       _picking = true;
       _error = null;
     });
     try {
-      final picked = await ImagePicker().pickMultiImage();
+      final picker = ImagePicker();
+      final List<XFile> picked;
+      if (camera) {
+        final photo = await picker.pickImage(source: ImageSource.camera);
+        picked = photo == null ? [] : [photo];
+      } else {
+        picked = await picker.pickMultiImage();
+      }
       if (!mounted || picked.isEmpty) return;
       final additions = <_SelectedImage>[];
       for (final file in picked) {
@@ -187,14 +223,21 @@ class _InferenceScreenState extends State<InferenceScreen>
         if (!mounted) return;
         final thumbnail = await inferenceThumbnail(file);
         if (!mounted) return;
-        additions.add(_SelectedImage(file, size, thumbnail));
+        additions.add(_SelectedImage(file, size, thumbnail, camera: camera));
       }
-      if (mounted) setState(() => _files.addAll(additions));
+      if (mounted) {
+        setState(() {
+          _files.addAll(additions);
+          _device = true;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(
           () => _error = e is FormatException
               ? e.message
+              : camera
+              ? 'Não foi possível tirar a foto. Verifique a permissão da câmera e tente novamente.'
               : 'Não foi possível selecionar imagens. Tente novamente.',
         );
       }
@@ -212,6 +255,8 @@ class _InferenceScreenState extends State<InferenceScreen>
     setState(() {
       _upload = upload;
       _cover = widget.service.cover(upload);
+      _device = false;
+      _error = null;
     });
   }
 
@@ -313,6 +358,17 @@ class _InferenceScreenState extends State<InferenceScreen>
           Padding(
             padding: const EdgeInsets.all(16),
             child: SegmentedButton<int>(
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                side: const BorderSide(color: Color(0xffcdd8c8)),
+                minimumSize: const Size(0, 48),
+                visualDensity: VisualDensity.standard,
+                tapTargetSize: MaterialTapTargetSize.padded,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+              ),
               segments: const [
                 ButtonSegment(value: 0, label: Text('Nova inferência')),
                 ButtonSegment(value: 1, label: Text('Histórico')),
@@ -332,10 +388,10 @@ class _InferenceScreenState extends State<InferenceScreen>
       ),
     ),
   );
-  Widget _panel(String title, Widget child) => Card(
+  Widget _panel(String title, Widget child, {Widget? trailing}) => Card(
     elevation: 0,
     shape: RoundedRectangleBorder(
-      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      side: const BorderSide(color: Color(0xffcdd8c8)),
       borderRadius: BorderRadius.circular(16),
     ),
     child: Padding(
@@ -343,8 +399,21 @@ class _InferenceScreenState extends State<InferenceScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 12), trailing],
+            ],
+          ),
+          const SizedBox(height: 12),
           child,
         ],
       ),
@@ -372,6 +441,9 @@ class _InferenceScreenState extends State<InferenceScreen>
               decoration: const InputDecoration(
                 labelText: 'Modelo de detecção',
                 border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xff83917d)),
+                ),
               ),
               items: _models
                   .map(
@@ -391,31 +463,22 @@ class _InferenceScreenState extends State<InferenceScreen>
               child: const Text('Tentar novamente'),
             ),
           if (model != null) ...[
-            const SizedBox(height: 16),
-            const Text('Classes detectadas'),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: model.classes
-                  .take(8)
-                  .map((c) => Chip(label: Text(c.name)))
-                  .toList(),
-            ),
-            if (model.classes.length > 8)
+            if (model.classes.isNotEmpty)
               ExpansionTile(
+                key: ValueKey(model.id),
                 tilePadding: EdgeInsets.zero,
-                title: Text('Ver todas as ${model.classes.length} classes'),
-                children: [
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: model.classes
-                        .skip(8)
-                        .map((c) => Chip(label: Text(c.name)))
-                        .toList(),
+                shape: const Border(),
+                collapsedShape: const Border(),
+                title: Text(
+                  '${model.classes.length} ${model.classes.length == 1 ? 'classe disponível' : 'classes disponíveis'}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xff53624c),
                   ),
-                ],
+                ),
+                childrenPadding: const EdgeInsets.only(bottom: 8),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                children: [Text(model.classes.map((c) => c.name).join(', '))],
               ),
           ],
         ],
@@ -426,39 +489,60 @@ class _InferenceScreenState extends State<InferenceScreen>
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: true, label: Text('Do dispositivo')),
-              ButtonSegment(value: false, label: Text('De um upload')),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                style: _sourceButtonStyle,
+                onPressed: _submitting || _picking || _files.length >= 20
+                    ? null
+                    : () => _pick(camera: true),
+                icon: const Icon(Icons.camera_alt_outlined),
+                label: const Text('Tirar foto'),
+              ),
+              OutlinedButton.icon(
+                style: _sourceButtonStyle,
+                onPressed: _submitting || _picking || _files.length >= 20
+                    ? null
+                    : () => _pick(),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Galeria'),
+              ),
             ],
-            selected: {_device},
-            onSelectionChanged: _submitting || _picking
-                ? null
-                : (v) => setState(() {
-                    _device = v.first;
-                    _error = null;
-                  }),
           ),
-          const SizedBox(height: 16),
-          if (_device) ...[
-            OutlinedButton.icon(
-              onPressed: _submitting || _picking || _files.length >= 20
-                  ? null
-                  : _pick,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: Text(_picking ? 'Selecionando…' : 'Selecionar imagens'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: _textButtonStyle,
+              onPressed: _submitting || _picking ? null : _chooseUpload,
+              child: Text(
+                _device ? 'Selecionar upload existente' : 'Trocar upload',
+              ),
             ),
-            const Text(
-              'JPEG, PNG ou WebP · Até 20 imagens · 25 MB por arquivo',
-              style: TextStyle(fontSize: 12),
+          ),
+          if (_picking)
+            const Text('Selecionando…', semanticsLabel: 'Selecionando imagens'),
+          if (_device) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$_count ${_count == 1 ? 'imagem selecionada' : 'imagens selecionadas'}',
+                  ),
+                ),
+                if (_files.isNotEmpty)
+                  TextButton(
+                    style: _textButtonStyle,
+                    onPressed: _submitting || _picking
+                        ? null
+                        : () => setState(_files.clear),
+                    child: const Text('Limpar'),
+                  ),
+              ],
             ),
             if (_files.isNotEmpty) ...[
-              TextButton(
-                onPressed: _submitting || _picking
-                    ? null
-                    : () => setState(_files.clear),
-                child: const Text('Limpar seleção'),
-              ),
+              const SizedBox(height: 8),
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -491,7 +575,13 @@ class _InferenceScreenState extends State<InferenceScreen>
                             top: 0,
                             right: 0,
                             child: IconButton.filledTonal(
-                              tooltip: 'Remover ${_files[index].file.name}',
+                              tooltip: 'Remover ${_files[index].label(index)}',
+                              style: IconButton.styleFrom(
+                                backgroundColor: const Color(0xfff0f4ed),
+                                foregroundColor: const Color(0xff245d38),
+                                minimumSize: const Size(48, 48),
+                                visualDensity: VisualDensity.standard,
+                              ),
                               onPressed: _submitting || _picking
                                   ? null
                                   : () =>
@@ -503,7 +593,7 @@ class _InferenceScreenState extends State<InferenceScreen>
                       ),
                     ),
                     Text(
-                      _files[index].file.name,
+                      _files[index].label(index),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -512,46 +602,68 @@ class _InferenceScreenState extends State<InferenceScreen>
               ),
             ],
           ] else ...[
-            OutlinedButton.icon(
-              onPressed: _submitting ? null : _chooseUpload,
-              icon: const Icon(Icons.cloud_done_outlined),
-              label: Text(
-                _upload == null ? 'Selecionar upload' : 'Trocar upload',
-              ),
-            ),
             if (_upload != null) ...[
               UploadCover(future: _cover!),
               const SizedBox(height: 8),
               Text(
                 '${_propertyNames[_upload!.propertyId] ?? 'Upload'} · ${DateFormat('dd/MM/yyyy').format(_upload!.activityDate)} · $_count ${_count == 1 ? 'imagem para analisar' : 'imagens para analisar'}',
               ),
-              if (_count == 1 && widget.imageId != null)
+              if (_upload!.id == widget.initialUpload?.id &&
+                  widget.imageId != null)
                 const Text('Imagem selecionada no upload.'),
             ],
+            if (_files.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  style: _textButtonStyle,
+                  onPressed: _submitting || _picking
+                      ? null
+                      : () => setState(() {
+                          _device = true;
+                          _error = null;
+                        }),
+                  child: const Text('Usar imagens do dispositivo'),
+                ),
+              ),
           ],
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          if (_device) ...[
+            const Text(
+              'JPEG, PNG ou WebP · Máx. 20 · 25 MB cada',
+              style: _secondaryTextStyle,
+            ),
+            if (kIsWeb)
+              const Text(
+                'Se a câmera não abrir neste navegador, use a galeria.',
+                style: _secondaryTextStyle,
+              ),
+          ],
           if (_error != null)
             Text(
               _error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
-          Text(
-            _submitting
-                ? _stage
-                : '$_count ${_count == 1 ? 'imagem selecionada' : 'imagens selecionadas'}',
-            semanticsLabel: _submitting ? _stage : null,
-          ),
+          if (_submitting) Semantics(liveRegion: true, child: Text(_stage)),
           if (!_submitting)
             Text(
               _modelId == null
                   ? 'Selecione um modelo para continuar.'
                   : _count == 0
                   ? 'Adicione imagens para continuar.'
-                  : 'A inferência precisa de conexão com a internet.',
-              style: const TextStyle(fontSize: 12),
+                  : 'Requer conexão com a internet.',
+              style: _secondaryTextStyle,
             ),
           const SizedBox(height: 12),
           FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xff426b2d),
+              minimumSize: const Size(0, 48),
+              visualDensity: VisualDensity.standard,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             onPressed: _canSubmit ? _submit : null,
             icon: Icon(_submitting ? Icons.hourglass_empty : Icons.play_arrow),
             label: Text(_submitting ? 'Enviando…' : 'Executar inferência'),
@@ -584,18 +696,33 @@ class _InferenceScreenState extends State<InferenceScreen>
           children: [
             Expanded(
               child: Text(
-                '$_total execuções',
+                '$_total ${_total == 1 ? 'execução' : 'execuções'}',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
             IconButton(
+              style: IconButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                visualDensity: VisualDensity.standard,
+              ),
               tooltip: 'Atualizar histórico',
               onPressed: _jobsLoading ? null : _loadJobs,
-              icon: const Icon(Icons.refresh),
+              icon: _jobsRefreshing && _jobs.isNotEmpty
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
             ),
           ],
         ),
-        if (_jobsLoading) const LinearProgressIndicator(),
+        SizedBox(
+          height: 2,
+          child: _jobsLoading && _jobs.isEmpty
+              ? const LinearProgressIndicator(minHeight: 2)
+              : null,
+        ),
         if (_jobsError != null) Text(_jobsError!),
         if (!_jobsLoading && _jobs.isEmpty && _jobsError == null)
           const Padding(
@@ -611,74 +738,122 @@ class _InferenceScreenState extends State<InferenceScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  inferenceStatus(job.status),
-                  style: TextStyle(
-                    color: job.status == 'failed'
-                        ? Theme.of(context).colorScheme.error
-                        : const Color(0xff245d38),
-                    fontWeight: FontWeight.w600,
+                  '${job.status == 'completed' ? '${job.imageCount} ${job.imageCount == 1 ? 'imagem' : 'imagens'}' : '${job.completedCount} de ${job.imageCount} concluídas'} · ${job.sourceType == 'upload' ? 'Upload existente' : 'Do dispositivo'}',
+                ),
+                if (job.failedCount > 0)
+                  Text(
+                    '${job.failedCount} ${job.failedCount == 1 ? 'falha' : 'falhas'}',
+                    style: const TextStyle(color: Color(0xffb42318)),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${job.sourceType == 'upload' ? 'Upload existente' : 'Do dispositivo'} · ${job.completedCount} de ${job.imageCount} concluídas',
-                ),
-                if (job.failedCount > 0) Text('${job.failedCount} falhas'),
+                const SizedBox(height: 4),
                 Text(
                   DateFormat(
-                    'dd/MM/yyyy HH:mm',
+                    'dd/MM/yyyy · HH:mm',
                   ).format(job.createdAt.toLocal()),
+                  style: _secondaryTextStyle,
                 ),
                 if (job.expiresAt != null)
-                  Text(
-                    'Expira em ${DateFormat('dd/MM/yyyy HH:mm').format(job.expiresAt!.toLocal())}',
+                  Tooltip(
+                    message:
+                        'Disponível até ${DateFormat('dd/MM/yyyy HH:mm').format(job.expiresAt!.toLocal())}',
+                    child: Text(
+                      'Disponível até ${DateFormat('dd/MM').format(job.expiresAt!.toLocal())}',
+                      style: _secondaryTextStyle,
+                    ),
                   ),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     Expanded(
-                      child: TextButton.icon(
-                        onPressed: () => _open(job),
-                        icon: const Icon(Icons.arrow_forward),
-                        label: const Text('Ver resultados'),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          style: _textButtonStyle,
+                          onPressed: () => _open(job),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(child: Text('Ver resultados')),
+                              SizedBox(width: 8),
+                              Icon(Icons.arrow_forward, size: 18),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                     if (job.status != 'queued' && job.status != 'running')
-                      IconButton(
-                        tooltip: 'Excluir execução',
-                        onPressed: () => _delete(job),
-                        icon: const Icon(Icons.delete_outline),
+                      PopupMenuButton<String>(
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          visualDensity: VisualDensity.standard,
+                        ),
+                        tooltip: 'Opções da execução',
+                        icon: const Icon(Icons.more_vert),
+                        onSelected: (_) => _delete(job),
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('Excluir execução'),
+                          ),
+                        ],
                       ),
                   ],
                 ),
               ],
             ),
+            trailing: DecoratedBox(
+              decoration: BoxDecoration(
+                color: job.status == 'failed'
+                    ? const Color(0xfffceeed)
+                    : job.status == 'completed'
+                    ? const Color(0xffedf5e9)
+                    : const Color(0xfff0f4ed),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Text(
+                  inferenceStatus(job.status),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: job.status == 'failed'
+                        ? const Color(0xffb42318)
+                        : job.status == 'completed'
+                        ? const Color(0xff245d38)
+                        : const Color(0xff53624c),
+                  ),
+                ),
+              ),
+            ),
           ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            TextButton(
-              onPressed: _jobsLoading || _offset == 0
-                  ? null
-                  : () {
-                      _offset -= 20;
-                      _loadJobs();
-                    },
-              child: const Text('Anterior'),
-            ),
-            Text(
-              '${_total == 0 ? 0 : _offset + 1}–${_offset + _jobs.length} de $_total',
-            ),
-            TextButton(
-              onPressed: _jobsLoading || _offset + 20 >= _total
-                  ? null
-                  : () {
-                      _offset += 20;
-                      _loadJobs();
-                    },
-              child: const Text('Próxima'),
-            ),
-          ],
-        ),
+        if (_total > 20)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                onPressed: _jobsLoading || _offset == 0
+                    ? null
+                    : () {
+                        _offset -= 20;
+                        _loadJobs();
+                      },
+                child: const Text('Anterior'),
+              ),
+              Text(
+                '${_total == 0 ? 0 : _offset + 1}–${_offset + _jobs.length} de $_total',
+              ),
+              TextButton(
+                onPressed: _jobsLoading || _offset + 20 >= _total
+                    ? null
+                    : () {
+                        _offset += 20;
+                        _loadJobs();
+                      },
+                child: const Text('Próxima'),
+              ),
+            ],
+          ),
       ],
     ),
   );

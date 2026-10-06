@@ -4,20 +4,21 @@ import 'dart:ui' as ui;
 import 'package:image_picker/image_picker.dart';
 
 Future<Uint8List?> inferenceThumbnail(XFile file) async {
-  ui.ImmutableBuffer? buffer;
-  ui.ImageDescriptor? descriptor;
   ui.Codec? codec;
   ui.Image? image;
   try {
-    buffer = await ui.ImmutableBuffer.fromUint8List(await file.readAsBytes());
-    descriptor = await ui.ImageDescriptor.encoded(buffer);
-    final scale = math.min(
-      1.0,
-      360 / math.max(descriptor.width, descriptor.height),
+    final buffer = await ui.ImmutableBuffer.fromUint8List(
+      await file.readAsBytes(),
     );
-    codec = await descriptor.instantiateCodec(
-      targetWidth: math.max(1, (descriptor.width * scale).round()),
-      targetHeight: math.max(1, (descriptor.height * scale).round()),
+    codec = await ui.instantiateImageCodecWithSize(
+      buffer,
+      getTargetSize: (width, height) {
+        final scale = math.min(1.0, 360 / math.max(width, height));
+        return ui.TargetImageSize(
+          width: math.max(1, (width * scale).round()),
+          height: math.max(1, (height * scale).round()),
+        );
+      },
     );
     image = (await codec.getNextFrame()).image;
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -27,7 +28,5 @@ Future<Uint8List?> inferenceThumbnail(XFile file) async {
   } finally {
     image?.dispose();
     codec?.dispose();
-    descriptor?.dispose();
-    buffer?.dispose();
   }
 }
