@@ -33,7 +33,11 @@ export const authTokenInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
   const token = req.context.get(AUTH_TOKEN_OVERRIDE) ?? sessionService.token;
   const expectedUserId = req.context.get(EXPECTED_USER_ID) ?? authService.user()?.id;
-  const isApiRequest = req.url.startsWith(environment.apiBaseUrl);
+  const base = new URL(environment.apiBaseUrl, window.location.origin);
+  const request = new URL(req.url, window.location.origin);
+  const isApiRequest =
+    request.origin === base.origin &&
+    (request.pathname === base.pathname || request.pathname.startsWith(`${base.pathname}/`));
   if (expectedUserId && req.context.get(EXPECTED_USER_ID) && isApiRequest) {
     try {
       authService.assertIdentity(expectedUserId);

@@ -16,7 +16,7 @@ void main() {
       const override = String.fromEnvironment('API_BASE_URL');
       expect(
         EnvConfig.defaultInstance().apiBaseUrl,
-        override.isEmpty ? 'https://app.agrolens.rgw.app/api' : override,
+        override.isEmpty ? 'https://api.agrolens.rgw.app/api' : override,
       );
     });
     test('uri throws FormatException when apiBaseUrl lacks a valid scheme', () {

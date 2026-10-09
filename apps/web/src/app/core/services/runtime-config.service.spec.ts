@@ -2,6 +2,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { RuntimeConfigService } from './runtime-config.service';
+import { environment } from '../../../environments/environment';
 
 describe('RuntimeConfigService', () => {
   let service: RuntimeConfigService;
@@ -15,7 +16,20 @@ describe('RuntimeConfigService', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    environment.apiBaseUrl = '/api';
+    http.verify();
+  });
+
+  it('loads feature flags from the configured remote API', async () => {
+    environment.apiBaseUrl = 'https://api.agrolens.rgw.app/api';
+    const promise = service.load();
+    http
+      .expectOne('https://api.agrolens.rgw.app/api/health/config')
+      .flush({ inferenceEnabled: true });
+    await promise;
+    expect(service.config().inferenceEnabled).toBeTrue();
+  });
 
   it('loads the public runtime configuration', async () => {
     const promise = service.load();

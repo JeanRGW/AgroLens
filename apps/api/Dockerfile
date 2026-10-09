@@ -64,7 +64,7 @@ RUN pnpm --filter @agrolens/contracts build
 RUN pnpm --filter @agrolens/api build
 
 # ── Production stage ───────────────────────────────────────────────────────
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS production
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS api-only
 
 RUN corepack enable && apk add --no-cache tini
 
@@ -80,8 +80,6 @@ COPY --chown=node:node --from=api-builder /app/apps/api/dist ./apps/api/dist
 COPY --chown=node:node --from=api-builder /app/apps/api/drizzle ./apps/api/drizzle
 COPY --chown=node:node --from=api-builder /app/packages/contracts/dist ./packages/contracts/dist
 COPY --chown=node:node --from=api-builder /app/packages/contracts/package.json ./packages/contracts/package.json
-COPY --chown=node:node --from=web-builder /app/apps/web/dist/agrolens-web/browser ./apps/api/web
-COPY --chown=node:node --from=mobile-web-builder /app/apps/mobile/build/web ./apps/api/web-mobile
 
 WORKDIR /app/apps/api
 
@@ -89,3 +87,8 @@ USER node
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/main.js"]
+
+# Compatibility target for existing all-in-one installations.
+FROM api-only AS production
+COPY --chown=node:node --from=web-builder /app/apps/web/dist/agrolens-web/browser ./web
+COPY --chown=node:node --from=mobile-web-builder /app/apps/mobile/build/web ./web-mobile

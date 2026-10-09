@@ -12,11 +12,14 @@ describe('production proxy contract', () => {
       'utf8',
     );
 
-    expect(config).toContain('app.agrolens.rgw.app');
+    expect(config).toContain('{$API_HOST:app.agrolens.rgw.app}');
     expect(config).toContain('@readiness path /api/health/ready /api/health/ready/');
     expect(config).toContain('respond @readiness 404');
-    expect(config).toContain('s3.agrolens.rgw.app');
-    expect(config).toContain('header_up Host {host}');
+    expect(config).toContain('{$S3_ADDRESS:s3.agrolens.rgw.app}');
+    expect(config).toContain('reverse_proxy 127.0.0.1:3000');
+    expect(config).toContain('reverse_proxy 127.0.0.1:3900');
+    // Caddy preserves Host by default; overriding it can drop the signed S3 port.
+    expect(config).not.toMatch(/^\s*header_up\s+[-+]?Host\b/im);
     expect(config).toContain('path_regexp ^/[^/]+/staging/uploads/');
     expect(config).toContain('max_size 104857600');
     expect(config).toContain('path_regexp ^/[^/]+/inference/');

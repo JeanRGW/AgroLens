@@ -2,6 +2,8 @@ name: Mobile
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -13,18 +15,38 @@ jobs:
     name: Mobile (Flutter)
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      commit: ${{ steps.revision.outputs.commit }}
+      version: ${{ steps.revision.outputs.version }}
     defaults:
       run:
         working-directory: apps/mobile
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag before testing
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        id: revision
+        working-directory: .
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          commit=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
+          [[ "$commit" == "$GITHUB_SHA" ]]
+          git merge-base --is-ancestor "$commit" origin/main
+          git switch --detach "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           channel: stable
-          flutter-version: "3.47.0"
+          flutter-version: "3.47.5"
           cache: true
 
       - name: Set up Java
@@ -62,3 +84,89 @@ jobs:
 
       - name: Build debug APK
         run: flutter build apk --debug --no-pub
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    permissions:
+      contents: write
+    concurrency:
+      group: android-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.mobile.outputs.commit }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.5'
+          cache: true
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Build signed bundle
+        working-directory: apps/mobile
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          API_URL: ${{ vars.PUBLIC_API_URL }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION: ${{ needs.mobile.outputs.version }}
+        run: |
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ && "$API_URL" == https://* ]]
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks"
+          trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
+          printf '%s' "$KEYSTORE" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          chmod 600 "$ANDROID_KEYSTORE_FILE"
+          flutter pub get
+          flutter build appbundle --release --build-name "$VERSION" --build-number "$VERSION_CODE" --dart-define="API_BASE_URL=$API_URL"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: play-store-bundle
+          path: apps/mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+      - name: Build signed APKs per architecture
+        working-directory: apps/mobile
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_APP_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_APP_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_APP_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_APP_KEY_PASSWORD }}
+          API_URL: ${{ vars.PUBLIC_API_URL }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION: ${{ needs.mobile.outputs.version }}
+        run: |
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ && "$API_URL" == https://* ]]
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/app-signing.jks"
+          trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
+          printf '%s' "$KEYSTORE" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          chmod 600 "$ANDROID_KEYSTORE_FILE"
+          flutter build apk --release --split-per-abi --no-pub --build-name "$VERSION" --build-number "$VERSION_CODE" --dart-define="API_BASE_URL=$API_URL"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: direct-install-apks
+          path: apps/mobile/build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
+      - name: Create draft GitHub Release with signed binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          COMMIT: ${{ needs.mobile.outputs.commit }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          git fetch origin "refs/tags/$TAG"
+          [[ "$(git rev-parse 'FETCH_HEAD^{commit}')" == "$COMMIT" ]] || { echo 'Release tag moved after testing' >&2; exit 1; }
+          assets=(apps/mobile/build/app/outputs/bundle/release/app-release.aab
+            apps/mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            apps/mobile/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            apps/mobile/build/app/outputs/flutter-apk/app-x86_64-release.apk)
+          for asset in "${assets[@]}"; do [[ -f "$asset" ]]; done
+          gh release create "$TAG" "${assets[@]}" --verify-tag --draft --title "AgroLens $TAG" \
+            --notes "Android release from $COMMIT (version code $VERSION_CODE). AAB: Google Play upload. APKs: direct installation."
+          echo "Draft release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG — commit $COMMIT" >> "$GITHUB_STEP_SUMMARY"
