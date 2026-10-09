@@ -10,12 +10,12 @@ import 'api_base_url.dart';
 class EnvConfig {
   /// Production public API base URL. This is the safe default used by release
   /// builds so a distributed APK never points at an emulator/local host.
-  static const String productionApiBaseUrl = 'https://app.agrolens.rgw.app/api';
+  static const String productionApiBaseUrl = 'https://api.agrolens.rgw.app/api';
 
   /// Default (production) API base URL. Used when no `--dart-define` is set.
   static const String defaultApiBaseUrl = productionApiBaseUrl;
 
-  /// The backend API base URL (e.g. `https://app.agrolens.rgw.app/api`).
+  /// The backend API base URL (e.g. `https://api.agrolens.rgw.app/api`).
   final String apiBaseUrl;
 
   const EnvConfig({this.apiBaseUrl = defaultApiBaseUrl})

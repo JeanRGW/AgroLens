@@ -5,6 +5,45 @@ import vm from "node:vm";
 
 const web = new URL("../../web/", import.meta.url);
 
+test("Pages rewrites only the PWA entry point, never its boot assets", async () => {
+  const redirects = await readFile(
+    new URL("../../../web/public/_redirects", import.meta.url),
+    "utf8",
+  );
+  const rules = redirects
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.split(/\s+/));
+  const matches = (source, path) => {
+    const pattern = source
+      .split("*")
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*");
+    return new RegExp(`^${pattern}$`).test(path);
+  };
+  assert.deepEqual(
+    rules.find(([source]) => matches(source, "/m")),
+    ["/m", "/m/", "301"],
+  );
+  assert.deepEqual(
+    rules.find(([source]) => matches(source, "/m/")),
+    ["/m/", "/m/index.html", "200"],
+  );
+
+  const worker = await readFile(new URL("sw.js", web), "utf8");
+  const shell = vm.runInNewContext(
+    worker.match(/const REQUIRED_SHELL = (\[[\s\S]*?\]);/)[1],
+  );
+  for (const asset of [...shell.filter((path) => path !== "./"), "sw.js"]) {
+    const path = new URL(asset, "https://app.test/m/").pathname;
+    assert.equal(
+      rules.some(([source]) => matches(source, path)),
+      false,
+      path,
+    );
+  }
+});
+
 test("production CSP permits picker blob reads without enabling script eval", async () => {
   const caddyfile = await readFile(
     new URL("../../../../deploy/production/Caddyfile.example", import.meta.url),

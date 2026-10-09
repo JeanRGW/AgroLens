@@ -68,8 +68,46 @@ describe('static client routing', () => {
   });
 
   it('excludes /m from the root fallback even without a mobile build', () => {
-    expect(staticClientOptions('/web')[0].exclude).toEqual(
+    expect(staticClientOptions(join(directory, 'web'))[0].exclude).toEqual(
       expect.arrayContaining(['/m', '/m/{*path}']),
     );
+  });
+
+  it.each([
+    { web: true, mobile: false },
+    { web: false, mobile: true },
+    { web: false, mobile: false },
+  ])('registers clients independently: %j', async (builds) => {
+    const options = staticClientOptions(
+      join(directory, builds.web ? 'web' : 'missing-web'),
+      join(directory, builds.mobile ? 'mobile' : 'missing-mobile'),
+    );
+    @Module({ imports: options.length ? [ServeStaticModule.forRoot(...options)] : [] })
+    class TestModule {}
+    const isolated = await NestFactory.create(TestModule, { logger: false });
+    try {
+      await isolated.init();
+      await request(isolated.getHttpServer())
+        .get('/uploads')
+        .expect(builds.web ? 200 : 404);
+      await request(isolated.getHttpServer())
+        .get('/m/')
+        .expect(builds.mobile ? 200 : 404);
+      if (builds.mobile) {
+        await request(isolated.getHttpServer())
+          .get('/m/')
+          .expect(/Flutter/);
+        await request(isolated.getHttpServer())
+          .get('/m/sw.js')
+          .expect(200)
+          .expect(/Flutter/);
+        await request(isolated.getHttpServer())
+          .get('/m/sqlite3.wasm')
+          .expect(200)
+          .expect('Content-Type', 'application/wasm');
+      }
+    } finally {
+      await isolated.close();
+    }
   });
 });

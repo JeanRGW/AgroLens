@@ -12,7 +12,7 @@
 	}
 }
 
-app.agrolens.rgw.app {
+{$API_HOST:app.agrolens.rgw.app} {
 	import app_security
 
 	route {
@@ -27,20 +27,17 @@ app.agrolens.rgw.app {
 			request_body {
 				max_size 2MB
 			}
-			reverse_proxy 127.0.0.1:3000 {
-				header_up Host {host}
-			}
+			reverse_proxy 127.0.0.1:3000
 		}
 
 		handle {
-			reverse_proxy 127.0.0.1:3000 {
-				header_up Host {host}
-			}
+			reverse_proxy 127.0.0.1:3000
 		}
 	}
 }
 
-s3.agrolens.rgw.app {
+# For one DNS record, set S3_ADDRESS=https://app.agrolens.rgw.app:8443.
+{$S3_ADDRESS:s3.agrolens.rgw.app} {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -57,9 +54,8 @@ s3.agrolens.rgw.app {
 		request_body {
 			max_size 104857600
 		}
-		reverse_proxy 127.0.0.1:3900 {
-			header_up Host {host}
-		}
+		# Preserve the original Host, including :8443, for S3 signatures.
+		reverse_proxy 127.0.0.1:3900
 	}
 	@inference_images {
 		method PUT
@@ -69,17 +65,13 @@ s3.agrolens.rgw.app {
 		request_body {
 			max_size 26214400
 		}
-		reverse_proxy 127.0.0.1:3900 {
-			header_up Host {host}
-		}
+		reverse_proxy 127.0.0.1:3900
 	}
 
 	handle {
 		request_body {
 			max_size 524288000
 		}
-		reverse_proxy 127.0.0.1:3900 {
-			header_up Host {host}
-		}
+		reverse_proxy 127.0.0.1:3900
 	}
 }

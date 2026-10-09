@@ -104,7 +104,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
-      target: production
+      target: ${API_BUILD_TARGET:-production}
     restart: unless-stopped
     stop_grace_period: 6m
     mem_limit: 1g
@@ -125,6 +125,7 @@ services:
       SWAGGER_ENABLED: "false"
       REGISTRATION_ENABLED: "false"
       PORT: "3000"
+      TRUST_PROXY: ${TRUST_PROXY:-1}
       API_PREFIX: ${API_PREFIX}
       INFERENCE_ENABLED: ${INFERENCE_ENABLED}
       WORKER_ENABLED: "true"
@@ -149,7 +150,7 @@ services:
       interval: 15s
       timeout: 35s
       retries: 5
-      # Boot includes migrations and the embedded SPA mount; do not count
+      # Boot includes migrations; do not count
       # startup probes against retries.
       start_period: 60s
 

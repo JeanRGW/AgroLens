@@ -43,7 +43,7 @@ const mobileWebDistPath =
   (existsSync(join(__dirname, '..', 'web-mobile'))
     ? join(__dirname, '..', 'web-mobile')
     : join(__dirname, '..', '..', '..', 'mobile', 'build', 'web'));
-const mountMobilePwa = existsSync(mobileWebDistPath);
+const clients = staticClientOptions(webDistPath, mobileWebDistPath);
 
 @Module({
   imports: [
@@ -57,9 +57,7 @@ const mountMobilePwa = existsSync(mobileWebDistPath);
         },
       ],
     }),
-    ServeStaticModule.forRoot(
-      ...staticClientOptions(webDistPath, mountMobilePwa ? mobileWebDistPath : undefined),
-    ),
+    ...(clients.length ? [ServeStaticModule.forRoot(...clients)] : []),
     AppConfigModule,
     MailModule,
     DatabaseModule,

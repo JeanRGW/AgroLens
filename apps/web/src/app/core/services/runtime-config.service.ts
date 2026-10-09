@@ -1,6 +1,7 @@
 import { firstValueFrom, timeout } from 'rxjs';
 import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { environment } from '../../../environments/environment';
 
 export interface RuntimeConfig {
   inferenceEnabled: boolean;
@@ -16,7 +17,7 @@ export class RuntimeConfigService {
     if (!navigator.onLine) return;
     try {
       const config = await firstValueFrom(
-        this.http.get<RuntimeConfig>('/api/health/config').pipe(timeout(3000)),
+        this.http.get<RuntimeConfig>(`${environment.apiBaseUrl}/health/config`).pipe(timeout(3000)),
       );
       if (typeof config.inferenceEnabled !== 'boolean') {
         throw new Error('Invalid runtime configuration');

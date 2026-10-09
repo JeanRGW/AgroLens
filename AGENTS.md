@@ -57,6 +57,6 @@
 - Production validates with:
   `cd deploy/production && docker compose -f docker-compose.prod.yml --env-file .env.example config --quiet`.
 - Production image builds from repo root: `docker build -f apps/api/Dockerfile .`
-  (web-builder → api-builder → production stages).
+  (web-builder → api-builder → production stages). Use `--target api-only` for split hosting.
 - Never commit `.env` files, secrets, signing keys, generated builds, local auth
   state, or cross-app E2E credential artifacts.

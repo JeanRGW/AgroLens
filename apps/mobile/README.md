@@ -4,7 +4,7 @@ Flutter field app for offline image capture, metadata collection, and backend sy
 
 ## Setup
 
-`API_BASE_URL` is compile-time configuration; production defaults to `https://app.agrolens.rgw.app/api`.
+`API_BASE_URL` is compile-time configuration; native production defaults to `https://api.agrolens.rgw.app/api`. For single-host deployments, build with `--dart-define=API_BASE_URL=https://app.agrolens.rgw.app/api`. Web defaults to same-origin `/api`; Pages builds must explicitly use the remote API URL.
 
 Upload validation defaults to 100 files per batch and 100 MiB per file, matching
 the backend defaults. If deployment limits differ, use the same values for
@@ -20,6 +20,17 @@ flutter pub get
 dart run build_runner build
 flutter run --dart-define=API_BASE_URL=http://localhost:3000/api
 ```
+
+## Android releases
+
+For Android distribution, push a `vX.Y.Z` tag pointing to a commit in `main`
+history. The `Mobile` workflow tests that exact commit and, after production
+approval, builds both an AAB for Google Play and split APKs for direct installation,
+attached to a draft GitHub Release. Version name comes from the tag; version code
+is the workflow run number (reruns keep the same code). Manual dispatch runs CI only.
+Review/publish the draft under GitHub Releases to make the binaries downloadable.
+Signing-key setup
+and Play enrollment are documented in [Google Play release](../../deploy/production/README.md#google-play-release).
 
 ## Features
 
