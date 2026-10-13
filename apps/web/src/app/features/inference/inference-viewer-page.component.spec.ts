@@ -1,6 +1,6 @@
 import { ComponentFixture, fakeAsync, flushMicrotasks, TestBed, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 
 import {
@@ -34,6 +34,8 @@ function image(id: string, status = 'completed'): InferenceJobImageResult {
     height: 480,
     status,
     detections: [],
+    reviewedDetections: null,
+    updatedAt: '2026-10-13T00:00:00.000Z',
     inferenceMs: 10,
     imageUrl: `https://example.com/${id}.jpg`,
     errorMessage: null,
@@ -149,7 +151,7 @@ describe('InferenceViewerPageComponent', () => {
     let exports: jasmine.SpyObj<ExportService>;
 
     beforeEach(async () => {
-      inference = jasmine.createSpyObj('InferenceService', ['getJob', 'getImage']);
+      inference = jasmine.createSpyObj('InferenceService', ['getJob', 'getImage', 'saveReview']);
       exports = jasmine.createSpyObj('ExportService', ['downloadBlob', 'exportGenericCsv']);
       await TestBed.configureTestingModule({
         imports: [InferenceViewerPageComponent],
@@ -162,6 +164,190 @@ describe('InferenceViewerPageComponent', () => {
       fixture = TestBed.createComponent(InferenceViewerPageComponent);
       component = fixture.componentInstance;
       component.job.set(job());
+    });
+
+    const corn = {
+      classId: 0,
+      className: 'corn',
+      confidence: 0.9,
+      xCenter: 0.5,
+      yCenter: 0.5,
+      width: 0.2,
+      height: 0.2,
+    };
+    async function loadBoxes(boxes = [corn, { ...corn, confidence: 0.6 }]) {
+      inference.getImage.and.resolveTo({ ...image('a'), detections: boxes });
+      component.job.set({
+        ...job(),
+        modelSnapshot: {
+          id: 'model',
+          name: 'corn model',
+          task: 'detect',
+          classes: [
+            { id: 0, name: 'corn' },
+            { id: 1, name: 'weed' },
+          ],
+        },
+      });
+      await component.loadImage(component.job()!.images[0]);
+    }
+    it('uses NMS for counts without making overlay visibility a data filter', async () => {
+      await loadBoxes();
+      expect(component.selectedDetections().length).toBe(2);
+      component.suppressOverlaps.set(true);
+      expect(component.selectedDetections().length).toBe(1);
+      expect(component.currentImageClassCounts()).toEqual([['corn', 1]]);
+      component.toggleAllDetections();
+      expect(component.visibleDetections()).toEqual([]);
+      expect(component.selectedDetections().length).toBe(1);
+      expect(component.imageResult()!.detections!.length).toBe(2);
+    });
+    it('seeds review from all processed classes even if a class is hidden', async () => {
+      await loadBoxes([corn, { ...corn, classId: 1, className: 'weed' }]);
+      component.toggleClassFilter('weed', false);
+      component.beginReview();
+      expect(component.draft().length).toBe(2);
+      component.selectedBox.set(0);
+      component.updateBox('xCenter', 0.6);
+      expect(component.draft()[0].confidence).toBeNull();
+      component.undoReview();
+      expect(component.draft()[0].confidence).toBe(0.9);
+      component.selectedBox.set(0);
+      component.deleteBox();
+      expect(component.draft().length).toBe(1);
+      expect(component.imageResult()!.detections!.length).toBe(2);
+    });
+    it('saves empty reviews and does not refilter manual boxes', async () => {
+      await loadBoxes();
+      component.beginReview();
+      component.changeDraft([]);
+      inference.saveReview.and.resolveTo({
+        reviewedDetections: [],
+        updatedAt: '2026-10-13T00:00:01Z',
+      });
+      await component.saveReview();
+      expect(inference.saveReview).toHaveBeenCalledWith('job', 'a', [], '2026-10-13T00:00:00.000Z');
+      expect(component.usingReview()).toBeTrue();
+      expect(component.selectedDetections()).toEqual([]);
+      component.imageResult.set({
+        ...image('a'),
+        detections: [corn],
+        reviewedDetections: [{ ...corn, confidence: null }],
+      });
+      component.minConfidence.set(1);
+      component.suppressOverlaps.set(true);
+      expect(component.processedDetections().length).toBe(1);
+    });
+    it('retains the draft on stale-save failure and protects unsaved navigation', async () => {
+      await loadBoxes();
+      component.beginReview();
+      component.changeDraft([]);
+      inference.saveReview.and.rejectWith(
+        new Error('This result changed. Reload before saving your review.'),
+      );
+      await component.saveReview();
+      expect(component.editing()).toBeTrue();
+      expect(component.reviewError()).toContain('changed');
+      const event = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+      component.onBeforeUnload(event);
+      expect(event.defaultPrevented).toBeTrue();
+      component.undoReview();
+      expect(component.reviewDirty()).toBeFalse();
+    });
+    it('fences a pending polling refresh and saves the frozen draft revision on conflict', async () => {
+      await loadBoxes([corn]);
+      component.job.set({ ...component.job()!, status: 'running' });
+      const original = component.imageResult();
+      const refresh = deferred<InferenceJobImageResult>();
+      inference.getImage.and.returnValue(refresh.promise);
+      const pending = component.loadImage(component.job()!.images[0], true);
+      component.beginReview();
+      component.selectedBox.set(0);
+      component.updateBox('xCenter', 0.6);
+      const draft = component.draft();
+      refresh.resolve({
+        ...image('a'),
+        reviewedDetections: [],
+        updatedAt: '2026-10-13T00:00:01.000Z',
+      });
+      await pending;
+      expect(component.imageResult()).toBe(original);
+      expect(component.draft()).toBe(draft);
+      expect(component.loadingImage()).toBeFalse();
+      inference.saveReview.and.rejectWith(
+        new HttpErrorResponse({
+          status: 409,
+          error: { message: 'This result changed. Reload before saving your review.' },
+        }),
+      );
+      await component.saveReview();
+      expect(inference.saveReview).toHaveBeenCalledWith(
+        'job',
+        'a',
+        draft,
+        '2026-10-13T00:00:00.000Z',
+      );
+      expect(component.editing()).toBeTrue();
+      expect(component.draft()).toBe(draft);
+      expect(component.reviewError()).toContain('changed');
+    });
+    it('ignores a late refresh rejection during editing', async () => {
+      await loadBoxes([corn]);
+      const original = component.imageResult();
+      const refresh = deferred<InferenceJobImageResult>();
+      inference.getImage.and.returnValue(refresh.promise);
+      const pending = component.loadImage(component.job()!.images[0], true);
+      component.beginReview();
+      refresh.reject(new Error('late network failure'));
+      await pending;
+      expect(component.imageResult()).toBe(original);
+      expect(component.imageError()).toBe('');
+      expect(component.draft()).toEqual([corn]);
+    });
+    it('does not replace the draft revision from mutable image state and resets it for a new draft', async () => {
+      await loadBoxes([corn]);
+      component.beginReview();
+      component.imageResult.set({
+        ...component.imageResult()!,
+        updatedAt: '2026-10-13T00:00:01.000Z',
+      });
+      inference.saveReview.and.rejectWith(new Error('conflict'));
+      await component.saveReview();
+      expect(inference.saveReview.calls.mostRecent().args[3]).toBe('2026-10-13T00:00:00.000Z');
+      expect(await component.discardReview()).toBeTrue();
+      inference.saveReview.calls.reset();
+      await component.saveReview();
+      expect(inference.saveReview).not.toHaveBeenCalled();
+      component.beginReview();
+      inference.saveReview.and.resolveTo({
+        reviewedDetections: [corn],
+        updatedAt: '2026-10-13T00:00:02.000Z',
+      });
+      await component.saveReview();
+      expect(inference.saveReview.calls.mostRecent().args[3]).toBe('2026-10-13T00:00:01.000Z');
+      component.beginReview();
+      await component.saveReview();
+      expect(inference.saveReview.calls.mostRecent().args[3]).toBe('2026-10-13T00:00:02.000Z');
+    });
+    it('exports current versus original results across all completed images', async () => {
+      await loadBoxes();
+      component.suppressOverlaps.set(true);
+      component.showAllDetections.set(false);
+      inference.getImage.and.callFake(async (_job, id) => ({
+        ...image(id),
+        detections: [corn, { ...corn, confidence: 0.6 }],
+      }));
+      await component.exportJson();
+      const current = JSON.parse(await exports.downloadBlob.calls.mostRecent().args[0].text());
+      expect(current.images.map((r: InferenceJobImageResult) => r.detections!.length)).toEqual([
+        1, 1,
+      ]);
+      expect(current.settings.filters.suppressOverlaps).toBeTrue();
+      await component.exportJson(true);
+      const original = JSON.parse(await exports.downloadBlob.calls.mostRecent().args[0].text());
+      expect(original.images.map((r: InferenceJobImageResult) => r.detections!.length)).toEqual([
+        2, 2,
+      ]);
     });
 
     afterEach(() => fixture.destroy());

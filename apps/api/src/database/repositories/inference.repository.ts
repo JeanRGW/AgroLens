@@ -1,4 +1,5 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type { ReviewedDetection } from '@agrolens/contracts';
 import { ConfigService } from '@nestjs/config';
 import { eq, and, or, isNull, gte, desc, asc, sql, lt } from 'drizzle-orm';
 import { DATABASE_CONNECTION, type DatabaseConnection } from '../database.constants';
@@ -156,6 +157,50 @@ export class InferenceRepository {
       .where(and(eq(inferenceJobImages.jobId, jobId), eq(inferenceJobImages.id, imageId)))
       .limit(1);
     return image;
+  }
+
+  async saveReview(
+    jobId: string,
+    imageId: string,
+    expectedUpdatedAt: Date,
+    detections: ReviewedDetection[] | null,
+    actorUserId: string,
+  ): Promise<InferenceJobImage> {
+    return this.db.transaction(async (tx) => {
+      // Serialize with job deletion/expiry; review rows share the job's retention lifecycle.
+      const [job] = await tx
+        .select()
+        .from(inferenceJobs)
+        .where(eq(inferenceJobs.id, jobId))
+        .for('update');
+      if (!job || (job.expiresAt && job.expiresAt <= new Date()))
+        throw new NotFoundException('Job not found or expired');
+      const [image] = await tx
+        .select()
+        .from(inferenceJobImages)
+        .where(and(eq(inferenceJobImages.id, imageId), eq(inferenceJobImages.jobId, jobId)))
+        .for('update');
+      if (!image) throw new NotFoundException('Image not found in this job');
+      if (image.status !== 'completed')
+        throw new ConflictException('Only completed images can be reviewed');
+      if (image.updatedAt.getTime() !== expectedUpdatedAt.getTime())
+        throw new ConflictException('This result changed. Reload before saving your review.');
+      // Date transport has millisecond precision. Advance monotonically under the row lock.
+      const updatedAt = new Date(Math.max(Date.now(), image.updatedAt.getTime() + 1));
+      const [saved] = await tx
+        .update(inferenceJobImages)
+        .set({ reviewedDetections: detections, updatedAt })
+        .where(eq(inferenceJobImages.id, imageId))
+        .returning();
+      await tx.insert(auditEvents).values({
+        eventType: 'inference_review_save',
+        actorUserId,
+        resourceType: 'inference_job',
+        resourceId: jobId,
+        metadata: { imageId, reviewedCount: detections?.length ?? null },
+      });
+      return saved;
+    });
   }
 
   async listImagesByJobId(jobId: string): Promise<InferenceJobImage[]> {

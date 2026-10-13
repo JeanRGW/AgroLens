@@ -19,6 +19,8 @@ import type {
   InferenceJobImageResult,
   InferenceJobListResponse,
   InferenceModelSnapshot,
+  SaveInferenceReviewDto,
+  InferenceReviewResponse,
 } from '@agrolens/contracts';
 import { StorageService } from '../storage/storage.service';
 import { resolveRetentionDays } from '../config/env.schema';
@@ -484,12 +486,62 @@ export class InferenceJobService {
       fileName: image.fileName,
       status: image.status,
       detections: image.detections as Detection[] | null,
+      reviewedDetections: image.reviewedDetections ?? null,
+      updatedAt: image.updatedAt,
       inferenceMs: image.inferenceMs,
       width: image.width,
       height: image.height,
       imageUrl: url,
       errorMessage: image.errorMessage,
     };
+  }
+
+  async saveReview(
+    jobId: string,
+    imageId: string,
+    dto: SaveInferenceReviewDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<InferenceReviewResponse> {
+    const job = await this.getJobDetail(jobId, currentUser);
+    const classes = new Map(
+      (Array.isArray(job.modelSnapshot.classes) ? job.modelSnapshot.classes : [])
+        .filter(
+          (value): value is { id: number; name: string } =>
+            typeof value?.id === 'number' && typeof value?.name === 'string',
+        )
+        .map((value) => [value.id, value.name]),
+    );
+    if (dto.detections?.some((box) => classes.get(box.classId) !== box.className))
+      throw new BadRequestException('Review classes must match the model snapshot');
+    const image = await this.inferenceRepository.findImageById(jobId, imageId);
+    if (!image) throw new NotFoundException('Image not found in this job');
+    const originals = Array.isArray(image.detections) ? (image.detections as Detection[]) : [];
+    const keys = [
+      'classId',
+      'className',
+      'confidence',
+      'xCenter',
+      'yCenter',
+      'width',
+      'height',
+    ] as const;
+    if (
+      dto.detections?.some(
+        (box) =>
+          box.confidence !== null &&
+          !originals.some((original) => keys.every((key) => original[key] === box[key])),
+      )
+    ) {
+      throw new BadRequestException('Added or modified boxes must have null confidence');
+    }
+    const saved = await this.inferenceRepository.saveReview(
+      jobId,
+      imageId,
+      dto.expectedUpdatedAt,
+      dto.detections,
+      currentUser.sub,
+    );
+    return { reviewedDetections: saved.reviewedDetections ?? null, updatedAt: saved.updatedAt };
   }
 
   // ═══════════════════════════════════════════════════════════════════

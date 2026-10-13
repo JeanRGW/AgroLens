@@ -28,6 +28,7 @@ import { ZodValidationPipe } from '../auth/pipes/zod-validation.pipe';
 import { createJobSchema, type CreateJobDto } from './dto/create-job.dto';
 import { listJobsQuerySchema, type ListJobsQueryDto } from './dto/list-jobs-query.dto';
 import { InferenceEnabledGuard } from './inference-enabled.guard';
+import { saveInferenceReviewSchema, type SaveInferenceReviewDto } from '@agrolens/contracts';
 
 @ApiTags('Inference')
 @ApiBearerAuth()
@@ -151,6 +152,19 @@ export class InferenceController {
   }
 
   // ── DELETE /inference/jobs/:id ─────────────────────────────────────
+  @Post('jobs/:id/images/:imageId/review')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Save or restore a reviewed result (owner/admin, optimistic concurrency)',
+  })
+  async saveReview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('imageId', ParseUUIDPipe) imageId: string,
+    @Body(new ZodValidationPipe(saveInferenceReviewSchema)) dto: SaveInferenceReviewDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.inferenceJobService.saveReview(id, imageId, dto, currentUser);
+  }
 
   @Delete('jobs/:id')
   @HttpCode(HttpStatus.OK)

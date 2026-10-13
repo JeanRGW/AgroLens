@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { LocationSource } from '@agrolens/contracts';
+import type { LocationSource, ReviewedDetection } from '@agrolens/contracts';
 import {
   pgTable,
   uuid,
@@ -539,6 +539,7 @@ export const inferenceJobImages = pgTable(
     height: integer('height'),
     status: text('status').notNull().default('queued'),
     detections: jsonb('detections'),
+    reviewedDetections: jsonb('reviewed_detections').$type<ReviewedDetection[]>(),
     inferenceMs: integer('inference_ms'),
     attempts: integer('attempts').notNull().default(0),
     errorMessage: text('error_message'),

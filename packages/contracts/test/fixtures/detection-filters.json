@@ -1,0 +1,101 @@
+[
+  {
+    "name": "duplicate keeps higher confidence",
+    "boxes": [
+      [0, 0.6, 0.5, 0.5, 0.2, 0.2],
+      [0, 0.9, 0.5, 0.5, 0.2, 0.2]
+    ],
+    "enabled": true,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [1]
+  },
+  {
+    "name": "different classes remain",
+    "boxes": [
+      [0, 0.6, 0.5, 0.5, 0.2, 0.2],
+      [1, 0.9, 0.5, 0.5, 0.2, 0.2]
+    ],
+    "enabled": true,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [0, 1]
+  },
+  {
+    "name": "adjacent plants remain",
+    "boxes": [
+      [0, 0.6, 0.4, 0.5, 0.2, 0.2],
+      [0, 0.9, 0.6, 0.5, 0.2, 0.2]
+    ],
+    "enabled": true,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [0, 1]
+  },
+  {
+    "name": "containment alone is not IoU duplication",
+    "boxes": [
+      [0, 0.6, 0.5, 0.5, 0.1, 0.1],
+      [0, 0.9, 0.5, 0.5, 0.4, 0.4]
+    ],
+    "enabled": true,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [0, 1]
+  },
+  {
+    "name": "ties preserve original order",
+    "boxes": [
+      [0, 0.9, 0.5, 0.5, 0.2, 0.2],
+      [0, 0.9, 0.5, 0.5, 0.2, 0.2]
+    ],
+    "enabled": true,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [0]
+  },
+  {
+    "name": "disabled NMS preserves boxes",
+    "boxes": [
+      [0, 0.6, 0.5, 0.5, 0.2, 0.2],
+      [0, 0.9, 0.5, 0.5, 0.2, 0.2]
+    ],
+    "enabled": false,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [0, 1]
+  },
+  {
+    "name": "confidence precedes NMS",
+    "boxes": [
+      [0, 0.2, 0.5, 0.5, 0.2, 0.2],
+      [0, 0.9, 0.5, 0.5, 0.2, 0.2]
+    ],
+    "enabled": false,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [1]
+  },
+  {
+    "name": "stronger suppression at lower threshold",
+    "boxes": [
+      [0, 0.6, 0.5, 0.5, 0.2, 0.2],
+      [0, 0.9, 0.55, 0.5, 0.2, 0.2]
+    ],
+    "enabled": true,
+    "threshold": 0.5,
+    "minimum": 0.25,
+    "kept": [1]
+  },
+  {
+    "name": "higher threshold preserves overlap",
+    "boxes": [
+      [0, 0.6, 0.5, 0.5, 0.2, 0.2],
+      [0, 0.9, 0.55, 0.5, 0.2, 0.2]
+    ],
+    "enabled": true,
+    "threshold": 0.7,
+    "minimum": 0.25,
+    "kept": [0, 1]
+  }
+]

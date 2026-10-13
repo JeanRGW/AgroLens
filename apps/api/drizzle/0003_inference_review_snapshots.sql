@@ -1,0 +1,1 @@
+ALTER TABLE "inference_job_images" ADD COLUMN "reviewed_detections" jsonb;

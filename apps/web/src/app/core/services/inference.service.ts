@@ -8,6 +8,8 @@ import {
   InferenceJobImageResult,
   InferenceJobListResponse,
   InferenceModelSummary,
+  ReviewedDetection,
+  InferenceReviewResponse,
 } from '@agrolens/contracts';
 
 @Injectable({
@@ -33,6 +35,20 @@ export class InferenceService {
   getImage(jobId: string, imageId: string): Promise<InferenceJobImageResult> {
     return firstValueFrom(
       this.api.get<InferenceJobImageResult>(`/inference/jobs/${jobId}/images/${imageId}`),
+    );
+  }
+
+  saveReview(
+    jobId: string,
+    imageId: string,
+    detections: ReviewedDetection[] | null,
+    expectedUpdatedAt: string,
+  ): Promise<InferenceReviewResponse> {
+    return firstValueFrom(
+      this.api.post<InferenceReviewResponse>(`/inference/jobs/${jobId}/images/${imageId}/review`, {
+        detections,
+        expectedUpdatedAt,
+      }),
     );
   }
 

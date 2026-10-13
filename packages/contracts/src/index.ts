@@ -9,3 +9,4 @@ export * from "./inference";
 export * from "./users";
 export * from "./health";
 export * from "./image-metadata";
+export * from "./detection-filters";

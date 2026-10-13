@@ -58,26 +58,40 @@ class InferenceImage {
 class Detection {
   final int classId;
   final String className;
-  final double confidence, xCenter, yCenter, width, height;
+  final double? confidence;
+  final double xCenter, yCenter, width, height;
   Detection.fromJson(Json json)
     : classId = json['classId'] as int,
       className = json['className'] as String,
-      confidence = (json['confidence'] as num).toDouble(),
+      confidence = (json['confidence'] as num?)?.toDouble(),
       xCenter = (json['xCenter'] as num).toDouble(),
       yCenter = (json['yCenter'] as num).toDouble(),
       width = (json['width'] as num).toDouble(),
       height = (json['height'] as num).toDouble();
+  Json toJson() => {
+    'classId': classId,
+    'className': className,
+    'confidence': confidence,
+    'xCenter': xCenter,
+    'yCenter': yCenter,
+    'width': width,
+    'height': height,
+  };
 }
 
 class InferenceResult {
   final Json json;
   final String id, imageUrl;
   final List<Detection> detections;
+  final List<Detection>? reviewedDetections;
   InferenceResult.fromJson(this.json)
     : id = json['id'] as String,
       imageUrl = json['imageUrl'] as String,
       detections = (json['detections'] as List? ?? [])
           .map((e) => Detection.fromJson(e as Json))
+          .toList(),
+      reviewedDetections = (json['reviewedDetections'] as List?)
+          ?.map((e) => Detection.fromJson(e as Json))
           .toList();
 }
 

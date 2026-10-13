@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageParamsSchema } from "./common";
+import type { ReviewedDetection } from "./detection-filters";
 
 export const ALLOWED_INFERENCE_CONTENT_TYPES = [
   "image/jpeg",
@@ -165,6 +166,8 @@ export interface InferenceJobListItem {
 }
 
 export interface InferenceJobImageResult {
+  reviewedDetections: ReviewedDetection[] | null;
+  updatedAt: Date | string;
   id: string;
   imageIndex: number;
   uploadImageId: string | null;
