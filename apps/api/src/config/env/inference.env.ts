@@ -37,7 +37,7 @@ export const inferenceEnvShape = {
     .int()
     .positive()
     .default(25 * 1024 * 1024),
-  IMAGE_MAX_INPUT_PIXELS: z.coerce.number().int().positive().default(40_000_000),
+  IMAGE_MAX_INPUT_PIXELS: z.coerce.number().int().positive().default(120_000_000),
   INFERENCE_ENABLED: z
     .enum(['true', 'false'])
     .default('false')

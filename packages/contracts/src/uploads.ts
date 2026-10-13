@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageParamsSchema, timestampDateSchema } from "./common";
+import { locationSourceSchema, type LocationSource } from "./image-metadata";
 
 export const UPLOAD_SOURCES = ["drone", "phone", "mixed"] as const;
 export const uploadSourceSchema = z.enum(UPLOAD_SOURCES);
@@ -25,10 +26,20 @@ export const fileDescriptorSchema = z
     sizeBytes: z.coerce.number().int().positive().optional(),
     latitude: z.number().finite().min(-90).max(90).nullable(),
     longitude: z.number().finite().min(-180).max(180).nullable(),
+    locationSource: locationSourceSchema.optional(),
   })
   .refine((file) => (file.latitude === null) === (file.longitude === null), {
     message: "Latitude and longitude must both be present or both be null",
-  });
+  })
+  .refine((file) => file.locationSource !== "none" || file.latitude === null, {
+    message: "Unset locations must have null coordinates",
+  })
+  .refine(
+    (file) =>
+      !["device", "manual"].includes(file.locationSource ?? "") ||
+      file.latitude !== null,
+    { message: "Device and manual locations require coordinates" },
+  );
 
 export type FileDescriptorDto = z.infer<typeof fileDescriptorSchema>;
 
@@ -156,6 +167,7 @@ export interface UploadFileInfo {
   imageId: string;
   latitude: number | null;
   longitude: number | null;
+  locationSource?: LocationSource | null;
   variant: FileVariant | string;
   objectKey: string;
   contentType: string;

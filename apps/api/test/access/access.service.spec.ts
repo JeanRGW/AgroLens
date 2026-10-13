@@ -56,6 +56,7 @@ function makeUpload(overrides: Partial<Upload> = {}): Upload {
   return {
     id: 'upload-uuid-1',
     clientUploadId: 'client-1',
+    initRequestHash: null,
     userId: 'owner-uuid',
     propertyId: 'prop-uuid-1',
     talhaoId: 'talhao-uuid-1',

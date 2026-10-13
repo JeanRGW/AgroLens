@@ -20,7 +20,11 @@ import type { AuthenticatedUser } from '../../src/auth/guards/jwt-auth.guard';
 import { StorageService } from '../../src/storage/storage.service';
 import { EXPORT_BATCH_MAX_SIZE } from '../../src/uploads/dto/export-download.dto';
 import { uploadListSchema } from '../../src/uploads/dto/upload-list.dto';
-import { buildUploadSearchCondition } from '../../src/uploads/uploads.service';
+import {
+  buildUploadSearchCondition,
+  uploadRequestHash,
+  normalizeUploadRequest,
+} from '../../src/uploads/uploads.service';
 import type { UploadInitDto } from '../../src/uploads/dto/upload-init.dto';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -66,6 +70,7 @@ function makeUpload(overrides: Partial<Upload> = {}): Upload {
   return {
     id: 'upload-uuid-1',
     clientUploadId: 'client-upload-1',
+    initRequestHash: null,
     userId: 'user-uuid-1',
     propertyId: 'prop-uuid-1',
     talhaoId: 'talhao-uuid-1',
@@ -352,7 +357,7 @@ describe('UploadsService', () => {
     it('should reject files exceeding max size', async () => {
       const badDto = {
         ...validDto,
-        files: [{ contentType: 'image/jpeg', sizeBytes: 200 * 1024 * 1024 }],
+        files: [{ contentType: 'image/jpeg', sizeBytes: 257 * 1024 * 1024 }],
       };
 
       await expect(initUpload(badDto, owner)).rejects.toThrow(BadRequestException);
@@ -677,7 +682,56 @@ describe('UploadsService', () => {
       const result = await initUpload(validDto, owner);
 
       expect(result).toEqual(expect.objectContaining({ uploadId: existing.id, status: 'draft' }));
-      expect(mockUploadsRepository.renewDraft).toHaveBeenCalledWith(existing.id);
+      expect(mockUploadsRepository.renewDraft).toHaveBeenCalledWith(
+        existing.id,
+        expect.any(String),
+      );
+    });
+
+    it('compares immutable location inputs after finalization extracted different coordinates', async () => {
+      const existing = makeUpload({
+        status: 'failed',
+        propertyId: validDto.propertyId,
+        talhaoId: validDto.talhaoId,
+        cropTypeId: validDto.cropTypeId,
+      });
+      mockUploadsRepository.findByClientUploadId.mockResolvedValue(existing);
+      const descriptors = validDto.files.map((file, index) => ({
+        ...file,
+        imageId: `image-uuid-${index}`,
+        latitude: null,
+        longitude: null,
+        locationSource: 'file' as const,
+      }));
+      existing.initRequestHash = uploadRequestHash(
+        normalizeUploadRequest({ ...validDto, files: descriptors }),
+      );
+      mockUploadsRepository.findFilesByUploadId.mockResolvedValue(
+        descriptors.map((descriptor) =>
+          makeUploadFile({
+            imageId: descriptor.imageId,
+            locationSource: 'file',
+            latitude: -25.4,
+            longitude: -51.4,
+            contentType: descriptor.contentType,
+            objectKey: `uploads/user-uuid-1/upload-uuid-1/${descriptor.imageId}/original.${descriptor.contentType === 'image/png' ? 'png' : 'jpg'}`,
+          }),
+        ),
+      );
+      mockStorageService.headObject.mockResolvedValue({ exists: true });
+      mockUploadsRepository.renewDraft.mockResolvedValue(makeUpload());
+      await expect(
+        service.initUpload({ ...validDto, files: descriptors } as UploadInitDto, owner),
+      ).resolves.toMatchObject({ uploadId: existing.id });
+      await expect(
+        service.initUpload(
+          {
+            ...validDto,
+            files: descriptors.map((file) => ({ ...file, locationSource: 'none' })),
+          } as UploadInitDto,
+          owner,
+        ),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should throw 409 when retry changes metadata for existing draft', async () => {

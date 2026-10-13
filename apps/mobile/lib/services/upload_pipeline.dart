@@ -368,8 +368,10 @@ class UploadPipeline {
         'imageId': image.imageId,
         'contentType': contentType,
         'sizeBytes': sizeBytes,
-        'latitude': image.latitude,
-        'longitude': image.longitude,
+        'latitude': image.locationSource == 'file' ? null : image.latitude,
+        'longitude': image.locationSource == 'file' ? null : image.longitude,
+        if (image.locationSource != null)
+          'locationSource': image.locationSource,
       });
     }
     return results;

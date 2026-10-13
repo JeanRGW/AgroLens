@@ -1040,6 +1040,14 @@ class _RemoteUploadDetailScreenState extends State<_RemoteUploadDetailScreen> {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        if (original.locationSource != null)
+          Text(switch (original.locationSource) {
+            'file' => 'Localização do arquivo',
+            'device' => 'GPS do dispositivo',
+            'manual' => 'Localização manual',
+            'none' => 'Sem localização',
+            _ => 'Origem desconhecida',
+          }),
         if (hasLocation)
           OutlinedButton.icon(
             onPressed: () => _openMap(original),

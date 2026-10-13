@@ -15,6 +15,13 @@
       "when": 1791211679100,
       "tag": "0001_simplify_inference_models",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791814462992,
+      "tag": "0002_photo_location_extraction",
+      "breakpoints": true
     }
   ]
 }

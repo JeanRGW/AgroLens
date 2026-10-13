@@ -12,6 +12,8 @@ import 'package:agrolens/services/api_client.dart';
 import 'package:agrolens/services/catalog_repository.dart';
 import 'package:agrolens/services/database_helper.dart';
 import 'package:agrolens/services/location_service.dart';
+import 'package:agrolens/services/image_metadata_service.dart';
+import 'package:agrolens/widgets/custom_button.dart';
 import 'package:agrolens/services/token_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,6 +62,12 @@ class _LocationService extends LocationService {
     calls++;
     return positions.removeFirst()();
   }
+}
+
+class _ImageMetadataService extends ImageMetadataService {
+  final Completer<LatLng?> result = Completer<LatLng?>();
+  @override
+  Future<LatLng?> extractLocation(XFile file) => result.future;
 }
 
 class _CatalogRepository extends CatalogRepository {
@@ -221,7 +229,11 @@ void main() {
     ];
   }
 
-  Future<void> showScreen(WidgetTester tester) async {
+  Future<void> showScreen(
+    WidgetTester tester, {
+    List<XFile> initialImages = const [],
+    ImageMetadataService imageMetadataService = const ImageMetadataService(),
+  }) async {
     await tester.runAsync(
       () => database.database.customSelect('SELECT 1').get(),
     );
@@ -234,6 +246,8 @@ void main() {
           imagePicker: picker,
           locationService: location,
           imageStore: store,
+          initialImages: initialImages,
+          imageMetadataService: imageMetadataService,
         ),
       ),
     );
@@ -323,6 +337,58 @@ void main() {
           widget.properties.label == 'Localização da imagem $number',
     ),
     matching: find.text(status),
+  );
+
+  testWidgets(
+    'recovered images block saving until file location extraction finishes',
+    (tester) async {
+      final metadata = _ImageMetadataService();
+      await showScreen(
+        tester,
+        initialImages: [image('recovered.png')],
+        imageMetadataService: metadata,
+      );
+      await flushDraft(tester);
+      await reveal(tester, find.text('Confirmar e preparar lote'));
+      expect(
+        tester.widget<CustomButton>(find.byType(CustomButton).last).onPressed,
+        isNull,
+      );
+      metadata.result.complete(const LatLng(-25.4, -51.4));
+      await flushDraft(tester);
+      expect(
+        tester.widget<CustomButton>(find.byType(CustomButton).last).onPressed,
+        isNotNull,
+      );
+      await reveal(
+        tester,
+        imageLocation(1, 'Arquivo · ajustar'),
+        towardTop: true,
+      );
+      expect(imageLocation(1, 'Arquivo · ajustar'), findsOneWidget);
+      expect(location.calls, 0);
+    },
+  );
+
+  testWidgets(
+    'file locations are preserved without a remove-location control',
+    (tester) async {
+      final metadata = _ImageMetadataService();
+      await showScreen(
+        tester,
+        initialImages: [image('recovered.png')],
+        imageMetadataService: metadata,
+      );
+      await flushDraft(tester);
+      expect(find.byTooltip('Sem localização'), findsNothing);
+      metadata.result.complete(const LatLng(-25.4, -51.4));
+      await flushDraft(tester);
+      final drafts = await tester.runAsync(database.getDrafts);
+      expect(drafts!.single.images.single.locationSource, 'file');
+      expect(drafts.single.images.single.latitude, -25.4);
+      await reveal(tester, imageLocation(1, 'Arquivo · ajustar'));
+      expect(imageLocation(1, 'Arquivo · ajustar'), findsOneWidget);
+    },
   );
 
   testWidgets('back button and system back require confirmation with images', (
@@ -875,7 +941,7 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(imageLocation(1, 'Localizada · ajustar'), findsOneWidget);
+    expect(imageLocation(1, 'GPS · ajustar'), findsOneWidget);
     expect(imageLocation(2, 'Sem localização · ajustar'), findsOneWidget);
 
     await tap(tester, find.text('Selecionar no mapa'), towardTop: true);
@@ -888,18 +954,18 @@ void main() {
     await tester.tap(confirm);
     await tester.pumpAndSettle();
 
-    await reveal(tester, imageLocation(1, 'Localizada · ajustar'));
-    expect(imageLocation(2, 'Localizada · ajustar'), findsOneWidget);
+    await reveal(tester, imageLocation(1, 'GPS · ajustar'));
+    expect(imageLocation(2, 'Manual · ajustar'), findsOneWidget);
     expect(find.text('Aplicar às imagens sem localização'), findsNothing);
     expect(location.calls, 1);
 
-    await tap(tester, imageLocation(1, 'Localizada · ajustar'));
+    await tap(tester, imageLocation(1, 'GPS · ajustar'));
     expect(find.text('Latitude: -20.000000'), findsOneWidget);
     expect(find.text('Longitude: -41.000000'), findsOneWidget);
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tap(tester, imageLocation(2, 'Localizada · ajustar'));
+    await tap(tester, imageLocation(2, 'Manual · ajustar'));
     expect(find.text('Latitude: -23.000000'), findsOneWidget);
     expect(find.text('Longitude: -46.000000'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -924,7 +990,7 @@ void main() {
 
     pending.complete(const LatLng(-22, -43));
     await tester.pumpAndSettle();
-    await reveal(tester, imageLocation(1, 'Localizada · ajustar'));
+    await reveal(tester, imageLocation(1, 'GPS · ajustar'));
     expect(find.textContaining('imagem precisa de localização.'), findsNothing);
   });
 
@@ -973,43 +1039,36 @@ void main() {
   );
 
   testWidgets(
-    'a later gallery GPS fix does not fill an earlier unlocated camera photo',
+    'gallery imports never request device GPS until it is explicitly applied',
     (tester) async {
       picker.cameraPhotos.add(image('camera.png'));
       picker.galleryPhotos.add([image('gallery.png')]);
       location.positions.add(
         () async => throw const LocationException('GPS unavailable'),
       );
-      final galleryPending = Completer<LatLng>();
-      location.positions.add(() => galleryPending.future);
       location.positions.add(() async => const LatLng(-22, -43));
       await showScreen(tester);
 
       await tap(tester, find.text('Câmera'));
       await tap(tester, find.text('Galeria'));
-      expect(location.calls, 2);
+      expect(location.calls, 1);
       expect(imageLocation(1, 'Sem localização · ajustar'), findsOneWidget);
-      expect(imageLocation(2, 'Localizando · ajustar'), findsOneWidget);
+      expect(imageLocation(2, 'Sem localização · ajustar'), findsOneWidget);
       await reveal(
         tester,
-        find.textContaining('1 imagem precisa de localização.'),
+        find.textContaining('2 imagens precisam de localização.'),
       );
-
-      galleryPending.complete(const LatLng(-20, -41));
-      await tester.pumpAndSettle();
-      await reveal(tester, imageLocation(1, 'Sem localização · ajustar'));
-      expect(imageLocation(2, 'Localizada · ajustar'), findsOneWidget);
 
       await tap(
         tester,
         find.text('Aplicar localização atual'),
         towardTop: true,
       );
-      expect(location.calls, 3);
-      await reveal(tester, find.text('Localizada · ajustar').first);
+      expect(location.calls, 2);
+      await reveal(tester, find.text('GPS · ajustar').first);
       expect(find.text('Sem localização · ajustar'), findsNothing);
-      expect(imageLocation(1, 'Localizada · ajustar'), findsOneWidget);
-      expect(imageLocation(2, 'Localizada · ajustar'), findsOneWidget);
+      expect(imageLocation(1, 'GPS · ajustar'), findsOneWidget);
+      expect(imageLocation(2, 'GPS · ajustar'), findsOneWidget);
     },
   );
 }

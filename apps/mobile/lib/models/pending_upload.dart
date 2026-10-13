@@ -25,6 +25,7 @@ class PendingImage {
   final double? latitude;
   final double? longitude;
   final String origin;
+  final String? locationSource;
 
   PendingImage({
     String? imageId,
@@ -32,6 +33,7 @@ class PendingImage {
     this.latitude,
     this.longitude,
     this.origin = 'gallery',
+    this.locationSource,
   }) : imageId = imageId ?? const Uuid().v4();
 
   Map<String, dynamic> toJson() => {
@@ -40,6 +42,7 @@ class PendingImage {
     'latitude': latitude,
     'longitude': longitude,
     'origin': origin,
+    if (locationSource != null) 'locationSource': locationSource,
   };
 
   factory PendingImage.fromJson(Map<String, dynamic> json) => PendingImage(
@@ -48,6 +51,7 @@ class PendingImage {
     latitude: (json['latitude'] as num?)?.toDouble(),
     longitude: (json['longitude'] as num?)?.toDouble(),
     origin: json['origin'] as String,
+    locationSource: json['locationSource'] as String?,
   );
 }
 

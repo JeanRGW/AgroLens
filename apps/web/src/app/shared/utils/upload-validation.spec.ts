@@ -34,7 +34,7 @@ describe('validateUploadImages', () => {
   it('gives actionable format guidance for untyped files without a recognized extension', () => {
     for (const name of ['capture', 'capture.bin', 'jpg']) {
       expect(() => validateUploadImages([new File(['unknown bytes'], name)])).toThrowError(
-        /O dispositivo não informou o formato.*\.jpg, \.jpeg, \.png ou \.webp/,
+        /O dispositivo não informou o formato.*JPEG, PNG ou WebP/,
       );
     }
   });

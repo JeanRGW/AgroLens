@@ -173,38 +173,61 @@
     aspect-ratio: 1;
     object-fit: cover;
   }
+}
 
-  .image-location {
-    padding: 6px 8px 0;
-    font-size: 0.75rem;
-    color: var(--agri-text-secondary);
-    overflow-wrap: anywhere;
+.preview-location {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 22px;
+  background: var(--agri-surface-raised);
+  color: var(--agri-accent-dark);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
 
-    &.missing {
-      color: #a33b29;
+  mat-icon {
+    margin: 0;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  &.missing {
+    padding: 0 12px;
+    mat-icon {
+      margin-right: 6px;
     }
   }
 
-  button:not(.preview-remove) {
-    align-self: flex-start;
+  &.missing,
+  &.warning {
+    background: #fff4db;
+    color: #774b00;
+  }
+
+  &:focus-visible {
+    outline: 3px solid var(--agri-accent-dark);
+    outline-offset: 2px;
   }
 }
 
 .preview-remove {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: 4px;
+  right: 4px;
   background: rgba(0, 0, 0, 0.6);
   color: white;
-  width: 24px;
-  height: 24px;
-  line-height: 24px;
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
   padding: 0;
 
   mat-icon {
-    font-size: 14px;
-    width: 14px;
-    height: 14px;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
   }
 }
 

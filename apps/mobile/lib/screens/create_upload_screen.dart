@@ -11,6 +11,7 @@ import '../services/database_helper.dart';
 import '../services/catalog_repository.dart';
 import '../services/local_image_store.dart';
 import '../services/location_service.dart';
+import '../services/image_metadata_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/upload_validation.dart';
 import 'location_picker_screen.dart';
@@ -26,6 +27,7 @@ class _SelectedImage {
   String? savedPath;
   LatLng? location;
   bool gpsPending = false;
+  String locationSource = 'file';
 
   _SelectedImage(
     this.file, {
@@ -49,6 +51,7 @@ class CreateUploadScreen extends StatefulWidget {
   final LocationService locationService;
   final LocalImageStore? imageStore;
   final PendingUpload? draft;
+  final ImageMetadataService imageMetadataService;
 
   const CreateUploadScreen({
     super.key,
@@ -60,6 +63,7 @@ class CreateUploadScreen extends StatefulWidget {
     this.locationService = const LocationService(),
     this.imageStore,
     this.draft,
+    this.imageMetadataService = const ImageMetadataService(),
   });
 
   @override
@@ -140,7 +144,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       _draftTouched;
   int get _missingLocationCount => _selectedImages
       .where(
-        (image) => image.location == null && (!_useGps || !image.gpsPending),
+        (image) =>
+            image.locationSource != 'none' &&
+            image.location == null &&
+            (!_useGps || !image.gpsPending),
       )
       .length;
 
@@ -172,7 +179,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                 )
                 ..location = image.latitude != null && image.longitude != null
                     ? LatLng(image.latitude!, image.longitude!)
-                    : null,
+                    : null
+                ..locationSource =
+                    image.locationSource ??
+                    (image.latitude == null ? 'file' : 'device'),
         ),
       );
       _draftRevision = _savedRevision = 1;
@@ -192,13 +202,37 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     }
     _loadCatalogs();
     if (widget.initialImages.isNotEmpty) {
+      _loadingImages = true;
       unawaited(_saveInitialImages());
     }
   }
 
   Future<void> _saveInitialImages() async {
-    await _persistDraft();
-    if (mounted) await _attemptGps(images: List.of(_selectedImages));
+    try {
+      await _persistDraft();
+      if (mounted) await _extractLocations(List.of(_selectedImages));
+    } finally {
+      if (mounted) setState(() => _loadingImages = false);
+    }
+  }
+
+  Future<void> _extractLocations(List<_SelectedImage> images) async {
+    for (final image in images) {
+      if (image.file == null) continue;
+      LatLng? point;
+      try {
+        point = await widget.imageMetadataService.extractLocation(image.file!);
+      } catch (_) {
+        point = null;
+      }
+      if (!mounted) return;
+      if (_selectedImages.contains(image) &&
+          image.locationSource == 'file' &&
+          point != null) {
+        setState(() => image.location = point);
+      }
+    }
+    _autosaveDraft();
   }
 
   void _autosaveDraft() {
@@ -217,6 +251,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     final revision = ++_draftRevision;
     final images = List<_SelectedImage>.of(_selectedImages);
     final locations = images.map((image) => image.location).toList();
+    final locationSources = images
+        .map((image) => image.locationSource)
+        .toList();
     final propertyId = _resolvePropertyId();
     final talhaoId = _resolveTalhaoId();
     final cropTypeId = _resolveCropTypeId();
@@ -268,6 +305,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     origin: images[i].origin,
                     latitude: locations[i]?.latitude,
                     longitude: locations[i]?.longitude,
+                    locationSource: locationSources[i],
                   ),
               ],
             );
@@ -409,47 +447,60 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     }
   }
 
-  Future<void> _attemptGps({
-    bool force = false,
-    List<_SelectedImage> images = const [],
+  Future<void> _attemptGps(
+    List<_SelectedImage> images, {
+    bool updateMap = true,
   }) async {
-    if ((!_useGps && !force) || (!force && images.isEmpty)) return;
-    if (mounted) {
-      setState(() {
-        _gpsError = null;
-        if (!force) {
-          for (final image in images) {
-            image.gpsPending = true;
-          }
-        }
-      });
-    }
+    if (!mounted || !_useGps || _saving) return;
+    final targets = images
+        .where(
+          (image) =>
+              image.location == null &&
+              image.locationSource != 'none' &&
+              !image.gpsPending &&
+              _selectedImages.contains(image),
+        )
+        .toList();
+    if (targets.isEmpty) return;
+    setState(() {
+      _gpsError = null;
+      for (final image in targets) {
+        image.gpsPending = true;
+      }
+    });
     try {
       final position = await widget.locationService.getCurrentPosition();
-      if (mounted && (_useGps || force)) {
+      if (mounted && _useGps) {
         setState(() {
-          _latitude = position.latitude;
-          _longitude = position.longitude;
+          if (updateMap) {
+            _latitude = position.latitude;
+            _longitude = position.longitude;
+          }
           _gpsError = null;
-          for (final image in force ? _selectedImages : images) {
-            if (_selectedImages.contains(image)) image.location ??= position;
+          for (final image in targets) {
+            if (_selectedImages.contains(image) &&
+                image.location == null &&
+                image.locationSource != 'none') {
+              image.location = position;
+              image.locationSource = 'device';
+            }
           }
         });
       }
     } on LocationException catch (e) {
-      if (mounted && (_useGps || force)) {
+      if (mounted && _useGps) {
         setState(() => _gpsError = e.message);
       }
     } catch (_) {
-      if (mounted && (_useGps || force)) {
+      if (mounted && _useGps) {
         setState(
           () => _gpsError = 'Não foi possível obter sua localização atual.',
         );
       }
     } finally {
-      if (mounted && !force) {
+      if (mounted) {
         setState(() {
-          for (final image in images) {
+          for (final image in targets) {
             image.gpsPending = false;
           }
         });
@@ -470,7 +521,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       confirmButtonLabel: 'Usar ponto selecionado',
       initialLatitude: current?.latitude,
       initialLongitude: current?.longitude,
-      showCurrentLocationButton: _useGps,
+      showCurrentLocationButton: imageIndex != null || _useGps,
     );
     if (selected == null || !mounted) return;
     setState(() {
@@ -479,9 +530,13 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       _gpsError = null;
       if (imageIndex != null && imageIndex < _selectedImages.length) {
         _selectedImages[imageIndex].location = selected;
+        _selectedImages[imageIndex].locationSource = 'manual';
       } else if (imageIndex == null) {
         for (final image in _selectedImages) {
-          image.location ??= selected;
+          if (image.location == null && image.locationSource != 'none') {
+            image.location = selected;
+            image.locationSource = 'manual';
+          }
         }
       }
     });
@@ -507,7 +562,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
             .toList();
         setState(() => _selectedImages.addAll(images));
         await _persistDraft();
-        await _attemptGps(images: images);
+        await _extractLocations(images);
       }
     } on PlatformException catch (error) {
       // Cancellation completes with null instead of throwing, so reaching
@@ -531,32 +586,12 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       if (mounted && photo != null) {
         final image = _SelectedImage(photo, origin: 'camera');
         setState(() {
-          image.gpsPending = _useGps;
           _selectedImages.add(image);
           if (_useGps) _gpsError = null;
         });
         await _persistDraft();
-        if (!_useGps) return;
-        try {
-          final point = await widget.locationService.getCurrentPosition();
-          if (mounted && _useGps && _selectedImages.contains(image)) {
-            setState(() => image.location ??= point);
-          }
-        } on LocationException catch (error) {
-          if (mounted && _useGps) {
-            setState(() => _gpsError = error.message);
-          }
-        } catch (_) {
-          if (mounted && _useGps) {
-            setState(
-              () => _gpsError =
-                  'Sem localização para a foto. Tente novamente ou escolha um ponto no mapa.',
-            );
-          }
-        } finally {
-          if (mounted) setState(() => image.gpsPending = false);
-          _autosaveDraft();
-        }
+        await _extractLocations([image]);
+        await _attemptGps([image], updateMap: false);
       }
     } on PlatformException catch (error) {
       // Cancellation completes with null instead of throwing, so reaching
@@ -576,6 +611,25 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  Widget _imageThumbnail(_SelectedImage image) {
+    return image.savedPath != null
+        ? storedImageView(
+            _imageStore,
+            image.savedPath!,
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+            cacheWidth: 360,
+          )
+        : pickedImageView(
+            image.file!,
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+            cacheWidth: 360,
+          );
   }
 
   void _removeImage(int index) {
@@ -740,7 +794,11 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           return;
         }
       }
-      final missing = images.where((image) => image.location == null).length;
+      final missing = images
+          .where(
+            (image) => image.locationSource != 'none' && image.location == null,
+          )
+          .length;
       if (missing > 0) {
         final confirmed = await showDialog<bool>(
           context: context,
@@ -1039,8 +1097,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     title: const Text('Usar localização automática (GPS)'),
                     subtitle: Text(
                       _useGps
-                          ? 'A localização será obtida automaticamente'
-                          : 'Selecione o ponto manualmente no mapa',
+                          ? 'Localização do arquivo primeiro. GPS automático apenas para novas capturas.'
+                          : 'Localização do arquivo primeiro; ajuste no mapa se necessário.',
                     ),
                     value: _useGps,
                     onChanged: (value) {
@@ -1053,7 +1111,12 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                   ),
                   if (_useGps)
                     OutlinedButton.icon(
-                      onPressed: () => _attemptGps(force: true),
+                      onPressed:
+                          _loadingImages ||
+                              _saving ||
+                              _selectedImages.any((image) => image.gpsPending)
+                          ? null
+                          : () => _attemptGps(List.of(_selectedImages)),
                       icon: const Icon(Icons.my_location),
                       label: const Text('Aplicar localização atual'),
                     ),
@@ -1147,22 +1210,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: _selectedImages[index].savedPath != null
-                                  ? storedImageView(
-                                      _imageStore,
-                                      _selectedImages[index].savedPath!,
-                                      width: 120,
-                                      height: 120,
-                                      fit: BoxFit.cover,
-                                      cacheWidth: 360,
-                                    )
-                                  : pickedImageView(
-                                      _selectedImages[index].file!,
-                                      width: 120,
-                                      height: 120,
-                                      fit: BoxFit.cover,
-                                      cacheWidth: 360,
-                                    ),
+                              child: _imageThumbnail(_selectedImages[index]),
                             ),
                             Positioned(
                               bottom: 2,
@@ -1178,7 +1226,11 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                                     padding: const EdgeInsets.all(3),
                                     child: Text(
                                       _selectedImages[index].location != null
-                                          ? 'Localizada · ajustar'
+                                          ? '${_selectedImages[index].locationSource == 'file'
+                                                ? 'Arquivo'
+                                                : _selectedImages[index].locationSource == 'device'
+                                                ? 'GPS'
+                                                : 'Manual'} · ajustar'
                                           : _useGps &&
                                                 _selectedImages[index]
                                                     .gpsPending

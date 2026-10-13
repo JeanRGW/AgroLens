@@ -167,7 +167,7 @@
                   #cameraInput
                   accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                   capture="environment"
-                  (change)="onFilesSelected($event)"
+                  (change)="onFilesSelected($event, true)"
                   [disabled]="gpsPending()"
                   class="file-input-hidden camera-input"
                 />
@@ -199,7 +199,7 @@
                 (click)="fileInput.click()"
               >
                 <mat-icon>photo_library</mat-icon>
-                Galeria
+                Importar arquivos
               </button>
               <span class="file-count">
                 {{ files().length }}
@@ -222,44 +222,47 @@
               </p>
             }
 
-            @if (previewUrls().length > 0) {
+            @if (selectedImages().length > 0) {
               <div class="preview-grid">
-                @for (url of previewUrls(); track url; let i = $index) {
+                @for (image of selectedImages(); track image.file; let i = $index) {
                   <div class="preview-item">
-                    <img [src]="url" alt="Prévia" />
-                    <span
-                      class="image-location"
-                      [class.missing]="
-                        (imageLocations()[i]?.latitude == null ||
-                          imageLocations()[i]?.longitude == null) &&
-                        (!useGps() || !gpsTargets().has(files()[i]))
-                      "
-                    >
-                      {{
-                        imageLocations()[i]?.latitude == null ||
-                        imageLocations()[i]?.longitude == null
-                          ? useGps() && gpsTargets().has(files()[i])
-                            ? 'Localizando...'
-                            : 'Sem localização'
-                          : imageLocations()[i]!.latitude!.toFixed(5) +
-                            ', ' +
-                            imageLocations()[i]!.longitude!.toFixed(5)
-                      }}
-                    </span>
+                    <img [src]="image.previewUrl" alt="Prévia" />
+                    @let locating = image.readingLocation || gpsTargets().has(image.file);
+                    @let warning = image.locationSource === 'file' && image.locationWarning;
                     <button
                       mat-button
                       type="button"
-                      [disabled]="gpsPending() || !online() || mapSelection() !== null"
-                      [attr.aria-label]="'Ajustar localização da imagem ' + (i + 1)"
+                      class="preview-location"
+                      [class.missing]="!image.location && !locating"
+                      [class.warning]="warning && !locating"
+                      [disabled]="
+                        gpsPending() || submitting() || !online() || mapSelection() !== null
+                      "
+                      [matTooltip]="locationTooltip(image)"
+                      [attr.aria-label]="
+                        'Localização da imagem ' + (i + 1) + ': ' + locationTooltip(image)
+                      "
+                      [attr.aria-busy]="locating"
                       (click)="openMap(i)"
                     >
-                      Ajustar no mapa
+                      <mat-icon aria-hidden="true">{{
+                        locating
+                          ? 'hourglass_empty'
+                          : warning
+                            ? 'warning_amber'
+                            : image.location
+                              ? 'location_on'
+                              : 'location_off'
+                      }}</mat-icon>
+                      @if (!image.location && !locating) {
+                        <span>Localizar</span>
+                      }
                     </button>
                     <button
                       mat-icon-button
                       type="button"
                       class="preview-remove"
-                      [disabled]="gpsPending()"
+                      [disabled]="gpsPending() || submitting()"
                       [attr.aria-label]="'Remover imagem ' + (i + 1)"
                       (click)="removeFile(i)"
                     >
@@ -287,8 +290,8 @@
             <p class="upload-create__location-intro">
               {{
                 useGps()
-                  ? 'O GPS localiza cada nova seleção de imagens.'
-                  : 'Escolha um ponto no mapa para as imagens sem localização.'
+                  ? 'A localização do arquivo é usada primeiro. O GPS automático é usado apenas em novas capturas; para importações, aplique a localização atual se desejar.'
+                  : 'A localização do arquivo é usada primeiro. Escolha um ponto no mapa para as imagens sem localização.'
               }}
             </p>
             @if (useGps()) {
@@ -296,7 +299,7 @@
                 mat-stroked-button
                 type="button"
                 class="upload-create__location-action"
-                [disabled]="gpsPending() || mapSelection() !== null"
+                [disabled]="gpsPending() || readingLocations() || mapSelection() !== null"
                 (click)="applyCurrentLocation()"
               >
                 <mat-icon aria-hidden="true">{{
@@ -304,23 +307,11 @@
                 }}</mat-icon>
                 {{ gpsPending() ? 'Localizando...' : 'Aplicar localização atual' }}
               </button>
-            } @else {
-              <button
-                mat-stroked-button
-                type="button"
-                class="upload-create__location-action"
-                [disabled]="!online()"
-                [attr.aria-expanded]="mapSelection() !== null"
-                (click)="mapSelection() ? cancelMap() : openMap()"
-              >
-                <mat-icon aria-hidden="true">map</mat-icon>
-                {{ mapSelection() ? 'Ocultar mapa' : 'Selecionar no mapa' }}
-              </button>
             }
             @if (gpsError()) {
               <p class="upload-create__location-error" role="alert">{{ gpsError() }}</p>
             }
-            @if (mapSelection(); as selection) {
+            @if (visibleMapSelection(); as selection) {
               <div class="upload-create__map-panel">
                 <p class="upload-create__map-instruction">
                   {{
@@ -331,21 +322,32 @@
                       : 'Toque no mapa para localizar as imagens sem ponto.'
                   }}
                 </p>
+                @if (selectedMapImage(); as image) {
+                  <p class="upload-create__map-instruction">
+                    {{ locationSourceLabel(image.locationSource) }}
+                  </p>
+                  @if (image.locationSource === 'file' && image.locationWarning) {
+                    <p class="upload-create__location-error" role="status">
+                      Confira a localização: metadados incompletos ou divergentes.
+                    </p>
+                  }
+                }
                 <app-location-picker
                   height="min(46vh, 360px)"
                   [latitude]="selection.latitude"
                   [longitude]="selection.longitude"
-                  [gpsButtonEnabled]="false"
+                  [gpsButtonEnabled]="true"
                   [mapToggleEnabled]="false"
                   [manualCoordinatesEnabled]="false"
                   (locationSelected)="onMapDraftSelected($event)"
+                  (locatingChange)="mapGpsPending.set($event)"
                 />
                 <div class="upload-create__map-actions">
                   <button mat-button type="button" (click)="cancelMap()">Cancelar</button>
                   <button
                     mat-flat-button
                     type="button"
-                    [disabled]="!selection.point"
+                    [disabled]="!selection.point || mapGpsPending()"
                     (click)="confirmMap()"
                   >
                     Usar ponto selecionado
@@ -382,6 +384,7 @@
           submitting() ||
           !online() ||
           gpsPending() ||
+          readingLocations() ||
           files().length === 0 ||
           !selectedPropertyId ||
           !selectedTalhaoId ||

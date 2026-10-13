@@ -49,6 +49,19 @@ void main() {
     }
   });
 
+  test(
+    'rejects TIFF and DNG containers regardless of their filename',
+    () async {
+      final tiffHeader = Uint8List.fromList([0x49, 0x49, 0x2a, 0, 8, 0, 0, 0]);
+      for (final name in ['misleading.jpg', 'image.tif', 'image.dng']) {
+        await expectLater(
+          imageExtension(image(tiffHeader, name, 'image/jpeg')),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+
   test('rejects empty and oversized batches before accessing files', () async {
     expect(await validateUploadFiles([]), isNotNull);
     expect(

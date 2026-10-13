@@ -8,3 +8,4 @@ export * from "./audit";
 export * from "./inference";
 export * from "./users";
 export * from "./health";
+export * from "./image-metadata";

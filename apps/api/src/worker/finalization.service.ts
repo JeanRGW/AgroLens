@@ -12,7 +12,7 @@ import {
 import { StorageService } from '../storage/storage.service';
 import { sanitizeError } from '../common/sanitize-error';
 import { ImageProcessingService } from '../image-processing/image-processing.service';
-import { uploadFiles, objectDeletionJobs } from '../database/schema';
+import { uploadFiles, uploadImages, objectDeletionJobs } from '../database/schema';
 import { Inject } from '@nestjs/common';
 import { DATABASE_CONNECTION, type DatabaseConnection } from '../database/database.constants';
 
@@ -244,6 +244,15 @@ export class FinalizationService {
 
     // 3. Probe/decode image bytes (ignores client-provided content type)
     const probe = await this.imageProcessingService.probeImage(buffer);
+    if (probe.location?.warnings.length) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'image_location_warning',
+          imageId: original.imageId,
+          warnings: probe.location.warnings,
+        }),
+      );
+    }
 
     // 4. Generate preview
     const preview = await this.imageProcessingService.generatePreview(buffer);
@@ -283,6 +292,21 @@ export class FinalizationService {
           height: probe.height,
         })
         .where(eq(uploadFiles.id, original.id));
+      const inputSource = original.locationSource;
+      const coordinates = probe.location?.coordinates;
+      const useEmbedded =
+        inputSource === 'file' ||
+        (inputSource === 'device' && !!coordinates) ||
+        (inputSource == null && original.latitude === null);
+      if (useEmbedded)
+        await tx
+          .update(uploadImages)
+          .set({
+            latitude: coordinates?.latitude ?? null,
+            longitude: coordinates?.longitude ?? null,
+            locationSource: coordinates ? ('file' as const) : ('none' as const),
+          })
+          .where(eq(uploadImages.id, original.imageId));
       if (originalObjectKey !== original.objectKey) {
         // Wait out every issued PUT URL so a late client retry cannot recreate
         // staging bytes after cleanup has already finished.

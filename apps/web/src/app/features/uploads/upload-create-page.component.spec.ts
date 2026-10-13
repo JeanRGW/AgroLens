@@ -1,4 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { LocationPickerComponent } from '../../shared/components/location-picker.component';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -10,6 +12,8 @@ import { CatalogsService } from '../../core/services/catalogs.service';
 import { UploadCreateService } from '../../core/services/upload-create.service';
 import { UploadDetail } from '../../shared/models/upload-record';
 import { isMobileCameraDevice, UploadCreatePageComponent } from './upload-create-page.component';
+import { ImageMetadataService } from '../../core/services/image-metadata.service';
+import { normalizeImageLocation, type ImageLocation } from '@agrolens/contracts';
 
 describe('UploadCreatePageComponent online uploads', () => {
   let fixture: ComponentFixture<UploadCreatePageComponent>;
@@ -19,6 +23,7 @@ describe('UploadCreatePageComponent online uploads', () => {
   let online: jasmine.Spy;
   let auth: AuthService;
   let api: jasmine.SpyObj<ApiService>;
+  let metadata: jasmine.SpyObj<ImageMetadataService>;
   const user = { id: 'u', email: 'u@test', fullName: 'User', role: 'user' };
 
   beforeEach(async () => {
@@ -49,6 +54,8 @@ describe('UploadCreatePageComponent online uploads', () => {
       { id: 'e', name: 'Stage', cropTypeId: 'c', userId: 'u', createdAt: '' },
     ]);
     uploads = jasmine.createSpyObj('UploadCreateService', ['createUpload']);
+    metadata = jasmine.createSpyObj('ImageMetadataService', ['extract']);
+    metadata.extract.and.resolveTo(normalizeImageLocation(null));
     api = jasmine.createSpyObj('ApiService', ['get', 'post']);
     api.post.and.returnValue(of({ accessToken: 'token', user }));
     api.get.and.returnValue(of({ user }));
@@ -61,6 +68,7 @@ describe('UploadCreatePageComponent online uploads', () => {
         { provide: ApiService, useValue: api },
         { provide: CatalogsService, useValue: catalogs },
         { provide: UploadCreateService, useValue: uploads },
+        { provide: ImageMetadataService, useValue: metadata },
         { provide: MatSnackBar, useValue: { open: () => undefined } },
         provideRouter([]),
       ],
@@ -78,12 +86,12 @@ describe('UploadCreatePageComponent online uploads', () => {
     component.selectedEstadioId = 'e';
     component.setUseGps(false);
     component.cancelMap();
-    select(new File(['image'], 'photo.png', { type: 'image/png' }));
+    await select(new File(['image'], 'photo.png', { type: 'image/png' }));
     component.onLocationSelected({ latitude: -25.4, longitude: -51.4 });
   });
 
-  function select(...files: File[]) {
-    component.onFilesSelected({ target: { files, value: '' } } as unknown as Event);
+  async function select(...files: File[]) {
+    await component.onFilesSelected({ target: { files, value: '' } } as unknown as Event);
   }
 
   it('loads all catalogs online and sends metadata and original bytes directly', async () => {
@@ -148,7 +156,7 @@ describe('UploadCreatePageComponent online uploads', () => {
     await component.onSubmit();
     const first = uploads.createUpload.calls.mostRecent().args[0];
     component.removeFile(0);
-    select(new File(['other'], 'photo.png', { type: 'image/png' }));
+    await select(new File(['other'], 'photo.png', { type: 'image/png' }));
     component.onLocationSelected({ latitude: -25.4, longitude: -51.4 });
     await component.onSubmit();
     expect(uploads.createUpload.calls.mostRecent().args[0].clientUploadId).not.toBe(
@@ -188,7 +196,9 @@ describe('UploadCreatePageComponent online uploads', () => {
   });
 
   it('confirms unlocated images and sends an explicit null coordinate pair', async () => {
-    component.imageLocations.set([{ latitude: null, longitude: null }]);
+    component.selectedImages.update((images) =>
+      images.map((image) => ({ ...image, location: null, locationSource: 'file' })),
+    );
     const confirm = spyOn(component['dialog'], 'open').and.returnValue({
       afterClosed: () => of(true),
     } as never);
@@ -200,14 +210,19 @@ describe('UploadCreatePageComponent online uploads', () => {
   });
 
   it('rejects unsupported images before transferring', async () => {
-    component.files.set([new File(['heic'], 'photo.heic', { type: 'image/heic' })]);
+    component.selectedImages.update((images) =>
+      images.map((image) => ({
+        ...image,
+        file: new File(['heic'], 'photo.heic', { type: 'image/heic' }),
+      })),
+    );
     await component.onSubmit();
     expect(uploads.createUpload).not.toHaveBeenCalled();
     expect(component.error()).toContain('HEIC');
   });
 
   it('normalizes untyped camera images and preserves their original bytes', async () => {
-    select(new File(['camera'], 'capture.JPG', { lastModified: 123 }));
+    await select(new File(['camera'], 'capture.JPG', { lastModified: 123 }));
     component.onLocationSelected({ latitude: -25.4, longitude: -51.4 });
     await component.onSubmit();
     const [request, files] = uploads.createUpload.calls.mostRecent().args;
@@ -229,16 +244,18 @@ describe('UploadCreatePageComponent online uploads', () => {
 
   it('does not reuse an old location for newly added images', () => {
     select(new File(['new'], 'new.png', { type: 'image/png' }));
-    expect(component.imageLocations()[1]).toEqual({ latitude: null, longitude: null });
+    expect(component.selectedImages()[1].location).toBeNull();
     component.onLocationSelected({ latitude: -20, longitude: -41 });
-    expect(component.imageLocations()[0]).toEqual({ latitude: -25.4, longitude: -51.4 });
-    expect(component.imageLocations()[1]).toEqual({ latitude: -20, longitude: -41 });
+    expect(component.selectedImages()[0].location).toEqual({ latitude: -25.4, longitude: -51.4 });
+    expect(component.selectedImages()[1].location).toEqual({ latitude: -20, longitude: -41 });
   });
 
-  it('waits for fresh GPS and applies it only to the selected images', () => {
+  it('requests GPS only when explicitly applied to imported unlocated images', async () => {
     const gps = spyOn(navigator.geolocation, 'getCurrentPosition');
     component.setUseGps(true);
-    select(new File(['new'], 'new.png', { type: 'image/png' }));
+    await select(new File(['new'], 'new.png', { type: 'image/png' }));
+    expect(gps).not.toHaveBeenCalled();
+    component.applyCurrentLocation();
     expect(component.gpsPending()).toBeTrue();
     expect(component.missingLocationCount()).toBe(0);
     expect(gps.calls.mostRecent().args[2]).toEqual({
@@ -250,34 +267,87 @@ describe('UploadCreatePageComponent online uploads', () => {
       .mostRecent()
       .args[0]({ coords: { latitude: -20, longitude: -41 } } as GeolocationPosition);
     expect(component.gpsPending()).toBeFalse();
-    expect(component.imageLocations()).toEqual([
+    expect(component.selectedImages().map((image) => image.location)).toEqual([
       { latitude: -25.4, longitude: -51.4 },
       { latitude: -20, longitude: -41 },
     ]);
   });
 
-  it('reports GPS permission failure and ignores cancelled requests', () => {
+  it('reports GPS permission failure and ignores cancelled requests', async () => {
     const gps = spyOn(navigator.geolocation, 'getCurrentPosition');
     component.setUseGps(true);
-    select(new File(['new'], 'new.png', { type: 'image/png' }));
+    await select(new File(['new'], 'new.png', { type: 'image/png' }));
+    component.applyCurrentLocation();
     gps.calls.mostRecent().args[1]?.({ code: 1 } as GeolocationPositionError);
     expect(component.gpsError()).toContain('Permita');
     component.applyCurrentLocation();
     const success = gps.calls.mostRecent().args[0];
     component.setUseGps(false);
     success({ coords: { latitude: -20, longitude: -41 } } as GeolocationPosition);
-    expect(component.imageLocations()[1]).toEqual({ latitude: null, longitude: null });
+    expect(component.selectedImages()[1].location).toBeNull();
   });
 
   it('applies only confirmed map points to the intended image', () => {
     component.openMap(0);
     component.onMapDraftSelected({ latitude: -20, longitude: -41 });
     component.cancelMap();
-    expect(component.imageLocations()[0]).toEqual({ latitude: -25.4, longitude: -51.4 });
+    expect(component.selectedImages()[0].location).toEqual({ latitude: -25.4, longitude: -51.4 });
     component.openMap(0);
     component.onMapDraftSelected({ latitude: -20, longitude: -41 });
     component.confirmMap();
-    expect(component.imageLocations()[0]).toEqual({ latitude: -20, longitude: -41 });
+    expect(component.selectedImages()[0].location).toEqual({ latitude: -20, longitude: -41 });
+  });
+
+  it('keeps the manual-mode map visible after confirmation and cancellation without a toggle', async () => {
+    component.setUseGps(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.directive(LocationPickerComponent))).not.toBeNull();
+    const buttons = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'));
+    expect(
+      buttons.some((button) => /Selecionar no mapa|Ocultar mapa/.test(button.textContent ?? '')),
+    ).toBeFalse();
+    expect(component.visibleMapSelection()?.point).toBeNull();
+    component.onMapDraftSelected({ latitude: 1, longitude: 2 });
+    component.confirmMap();
+    expect(component.visibleMapSelection()).not.toBeNull();
+    component.openMap(0);
+    expect(component.visibleMapSelection()?.file).toBe(component.files()[0]);
+    component.cancelMap();
+    expect(component.visibleMapSelection()).not.toBeNull();
+    expect(component.visibleMapSelection()?.point).toBeNull();
+    component.setUseGps(true);
+    expect(component.visibleMapSelection()).toBeNull();
+  });
+
+  it('ignores GPS from a cancelled image selection when the persistent picker is reused', async () => {
+    await select(new File(['photo'], 'second.jpg', { type: 'image/jpeg' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    component.openMap(0);
+    fixture.detectChanges();
+    const picker = component.locationPicker!;
+    const gps = spyOn(navigator.geolocation, 'getCurrentPosition');
+    picker.locateUser();
+    const cancelled = gps.calls.mostRecent().args[0];
+    expect(component.mapGpsPending()).toBeTrue();
+    component.cancelMap();
+    component.openMap(1);
+    fixture.detectChanges();
+    expect(component.locationPicker).toBe(picker);
+    expect(picker.locating()).toBeFalse();
+    cancelled({ coords: { latitude: 1, longitude: 2 } } as GeolocationPosition);
+    expect(component.mapSelection()?.point).toBeNull();
+    component.confirmMap();
+    expect(component.selectedImages()[1].location).toBeNull();
+    picker.locateUser();
+    gps.calls
+      .mostRecent()
+      .args[0]({ coords: { latitude: 3, longitude: 4, accuracy: 5 } } as GeolocationPosition);
+    component.confirmMap();
+    expect(component.selectedImages()[1].location).toEqual({ latitude: 3, longitude: 4 });
   });
 
   it('offers native camera capture only on mobile platforms', () => {
@@ -286,5 +356,111 @@ describe('UploadCreatePageComponent online uploads', () => {
     expect(isMobileCameraDevice('iPhone', 'iPhone', 5)).toBeTrue();
     expect(isMobileCameraDevice('Macintosh', 'MacIntel', 5)).toBeTrue();
     expect(isMobileCameraDevice('Macintosh', 'MacIntel', 0)).toBeFalse();
+  });
+
+  it('keeps image cards photo-only and moves location details into the map panel', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const card = (fixture.nativeElement as HTMLElement).querySelector('.preview-item')!;
+    expect(card.textContent).not.toContain('-25.4');
+    expect(card.textContent).not.toContain('Localização manual');
+    expect(card.querySelector('small')).toBeNull();
+    const button = card.querySelector<HTMLButtonElement>('.preview-location')!;
+    expect(button.getAttribute('aria-label')).toContain('Localização manual');
+    button.click();
+    fixture.detectChanges();
+    expect(component.selectedMapImage()?.file).toBe(component.files()[0]);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.upload-create__map-panel')
+        ?.textContent,
+    ).toContain('Localização manual');
+  });
+
+  it('shows Localizar only for missing locations and uses the same control while reading', async () => {
+    component.selectedImages.update((images) =>
+      images.map((image) => ({ ...image, location: null, locationSource: 'file' })),
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const page = fixture.nativeElement as HTMLElement;
+    expect(page.querySelector('.preview-location')?.textContent).toContain('Localizar');
+    component.selectedImages.update((images) =>
+      images.map((image) => ({ ...image, readingLocation: true })),
+    );
+    fixture.detectChanges();
+    expect(page.querySelector('.preview-location')?.getAttribute('aria-busy')).toBe('true');
+    expect(page.querySelector('.preview-location')?.textContent).not.toContain('Localizar');
+  });
+
+  it('uses independent file GPS for imports without asking for device GPS', async () => {
+    const gps = spyOn(navigator.geolocation, 'getCurrentPosition');
+    component.setUseGps(true);
+    metadata.extract.and.resolveTo(
+      normalizeImageLocation({ 'drone-dji': { GpsLatitude: -20, GpsLongitude: -41 } }),
+    );
+    await select(new File(['drone'], 'drone.jpg', { type: 'image/jpeg' }));
+    expect(component.selectedImages()[1].location).toEqual({ latitude: -20, longitude: -41 });
+    expect(component.selectedImages()[1].locationSource).toBe('file');
+    expect(gps).not.toHaveBeenCalled();
+  });
+
+  it('never overwrites a manual choice with delayed file metadata', async () => {
+    let resolve!: (metadata: ImageLocation) => void;
+    metadata.extract.and.returnValue(new Promise((done) => (resolve = done)));
+    const file = new File(['drone'], 'drone.jpg', { type: 'image/jpeg' });
+    const pending = select(file);
+    component.onLocationSelected({ latitude: 1, longitude: 2 }, file);
+    resolve(normalizeImageLocation({ 'drone-dji': { GpsLatitude: 3, GpsLongitude: 4 } }));
+    await pending;
+    expect(component.selectedImages()[1].location).toEqual({ latitude: 1, longitude: 2 });
+    expect(component.selectedImages()[1].locationSource).toBe('manual');
+  });
+
+  it('allows confirmed GPS to replace file coordinates without removing location', async () => {
+    metadata.extract.and.resolveTo(
+      normalizeImageLocation({ 'drone-dji': { GpsLatitude: 3, GpsLongitude: 4 } }),
+    );
+    await select(new File(['photo'], 'drone.jpg', { type: 'image/jpeg' }));
+    component.openMap(1);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button')).some(
+        (button) => button.textContent?.trim() === 'Sem localização',
+      ),
+    ).toBeFalse();
+    const picker = fixture.debugElement.query(By.directive(LocationPickerComponent))
+      .componentInstance as LocationPickerComponent;
+    expect(picker.gpsButtonEnabled).toBeTrue();
+    const gps = spyOn(navigator.geolocation, 'getCurrentPosition');
+    picker.locateUser();
+    component.confirmMap();
+    expect(component.selectedImages()[1].locationSource).toBe('file');
+    gps.calls
+      .mostRecent()
+      .args[0]({ coords: { latitude: 1, longitude: 2, accuracy: 5 } } as GeolocationPosition);
+    expect(component.selectedImages()[1].location).toEqual({ latitude: 3, longitude: 4 });
+    component.confirmMap();
+    expect(component.selectedImages()[1].location).toEqual({ latitude: 1, longitude: 2 });
+    await component.onSubmit();
+    expect(uploads.createUpload.calls.mostRecent().args[0].files[1]).toEqual(
+      jasmine.objectContaining({ latitude: 1, longitude: 2, locationSource: 'manual' }),
+    );
+  });
+
+  it('ignores metadata from a file removed before parsing completes', async () => {
+    let resolve!: (metadata: ImageLocation) => void;
+    metadata.extract.and.returnValue(new Promise((done) => (resolve = done)));
+    const pending = select(new File(['photo'], 'drone.jpg', { type: 'image/jpeg' }));
+    component.removeFile(1);
+    resolve(normalizeImageLocation({ 'drone-dji': { GpsLatitude: 3, GpsLongitude: 4 } }));
+    await pending;
+    expect(component.selectedImages().map((image) => image.location)).toEqual([
+      { latitude: -25.4, longitude: -51.4 },
+    ]);
+    expect(component.readingLocations()).toBeFalse();
   });
 });
