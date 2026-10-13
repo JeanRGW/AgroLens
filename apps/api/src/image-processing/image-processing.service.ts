@@ -54,14 +54,15 @@ export class ImageProcessingService {
             : null;
     if (!contentType)
       throw new BadRequestException('Use JPEG, PNG or WebP. TIFF and DNG are not supported.');
+    const pixelLimit = this.pixelLimit(contentType);
     if (
       !metadata.width ||
       !metadata.height ||
-      this.maxInputPixels <= 0 ||
-      metadata.width * metadata.height > this.maxInputPixels
+      pixelLimit <= 0 ||
+      metadata.width * metadata.height > pixelLimit
     ) {
       throw new BadRequestException(
-        `Image exceeds maximum pixel count of ${this.maxInputPixels} or has invalid dimensions`,
+        `Image exceeds maximum pixel count of ${pixelLimit} or has invalid dimensions`,
       );
     }
     const tags: Record<string, unknown> = {};
@@ -102,9 +103,16 @@ export class ImageProcessingService {
       location,
     };
   }
-  async generatePreview(buffer: Buffer): Promise<PreviewResult> {
+  private pixelLimit(contentType: AllowedContentType): number {
+    return contentType === 'image/jpeg'
+      ? this.maxInputPixels
+      : Math.min(this.maxInputPixels, 40_000_000);
+  }
+
+  async generatePreview(buffer: Buffer, contentType?: AllowedContentType): Promise<PreviewResult> {
     if (this.maxInputPixels <= 0) throw new BadRequestException('Invalid pixel limit');
-    const result = await sharp(buffer, { limitInputPixels: this.maxInputPixels })
+    const detectedType = contentType ?? (await this.probeImage(buffer)).contentType;
+    const result = await sharp(buffer, { limitInputPixels: this.pixelLimit(detectedType) })
       .timeout({ seconds: 30 })
       .autoOrient()
       .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })

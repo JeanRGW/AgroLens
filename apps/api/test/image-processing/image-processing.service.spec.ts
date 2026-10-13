@@ -7,6 +7,55 @@ describe('ImageProcessingService', () => {
   const image = () => sharp({ create: { width: 4, height: 3, channels: 3, background: 'white' } });
   const xmp =
     '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:drone-dji="http://www.uav.com/drone-dji/1.0/" drone-dji:GpsLatitude="-25.4" drone-dji:GpsLongitude="-51.4"/></rdf:RDF></x:xmpmeta>';
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'checks the format-specific cap from %s headers before decoding',
+    async (format) => {
+      const buffer = await image().toFormat(format).toBuffer();
+      const metadata = await sharp(buffer).metadata();
+      jest
+        .spyOn(sharp.prototype, 'metadata')
+        .mockResolvedValue({ ...metadata, width: 10_000, height: 5_000 });
+      const decode = jest.spyOn(sharp.prototype, 'toBuffer');
+      if (format === 'jpeg') {
+        await expect(service.probeImage(buffer)).resolves.toMatchObject({
+          contentType: 'image/jpeg',
+          width: 10_000,
+        });
+      } else {
+        await expect(service.probeImage(buffer)).rejects.toThrow('40000000');
+        await expect(service.generatePreview(buffer)).rejects.toThrow('40000000');
+      }
+      expect(decode).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'preserves lower configured limits for %s',
+    async (format) => {
+      const config = { get: jest.fn().mockReturnValue(8) };
+      const bounded = new ImageProcessingService(
+        config as unknown as import('@nestjs/config').ConfigService,
+      );
+      const buffer = await image().toFormat(format).toBuffer();
+      await expect(bounded.probeImage(buffer)).rejects.toThrow();
+      await expect(bounded.generatePreview(buffer, `image/${format}`)).rejects.toThrow();
+    },
+  );
+
+  it.each(['image/png', 'image/webp'] as const)(
+    'also enforces the cap in the preview decoder for %s',
+    async (contentType) => {
+      const buffer = await image().jpeg().toBuffer();
+      // Change header dimensions only: the pixel guard must reject before raster allocation.
+      const sof = buffer.indexOf(Buffer.from([0xff, 0xc0]));
+      expect(sof).toBeGreaterThan(0);
+      buffer.writeUInt16BE(5000, sof + 5);
+      buffer.writeUInt16BE(10000, sof + 7);
+      await expect(service.generatePreview(buffer, contentType)).rejects.toThrow(/pixel limit/i);
+    },
+  );
   it.each(['jpeg', 'png', 'webp'] as const)(
     'reads DJI GPS from %s and preserves original bytes',
     async (format) => {

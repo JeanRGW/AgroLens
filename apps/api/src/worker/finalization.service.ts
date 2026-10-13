@@ -255,7 +255,7 @@ export class FinalizationService {
     }
 
     // 4. Generate preview
-    const preview = await this.imageProcessingService.generatePreview(buffer);
+    const preview = await this.imageProcessingService.generatePreview(buffer, probe.contentType);
 
     // Client PUT URLs target staging only. Persist the exact bytes we validated
     // under a server-owned key before exposing the upload as ready.

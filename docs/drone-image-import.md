@@ -37,7 +37,11 @@ not deleted by these changes.
 
 ## Limits and deployment
 
-Defaults: 100 files per upload, 100 MiB per original and 120 million input pixels.
+Defaults: 100 files per upload and 100 MiB per original. JPEG imports allow up to
+120 million pixels (`IMAGE_MAX_INPUT_PIXELS`); PNG/WebP are capped at the lower
+of that setting and 40 million pixels, checked before preview decoding. Preview
+decoding uses the same format-specific limit. Keep finalization concurrency at 1
+for the shipped 1 GiB backend; higher concurrency needs a reviewed memory budget.
 Inference retains separate 25 MiB / 40-million-pixel limits. Existing environment
 and proxy overrides must be aligned. No ExifTool, Perl or LibRaw is required.
 
