@@ -2,125 +2,163 @@ import { BadRequestException } from '@nestjs/common';
 import sharp from 'sharp';
 import { ImageProcessingService } from '../../src/image-processing/image-processing.service';
 
-// 1x1 red PNG (base64-encoded minimal valid PNG)
-const VALID_PNG_BUFFER = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  'base64',
-);
-
-// 1x1 white JPEG (generated at module load time via sharp)
-let VALID_JPEG_BUFFER: Buffer;
-beforeAll(async () => {
-  VALID_JPEG_BUFFER = await sharp({
-    create: { width: 1, height: 1, channels: 3, background: { r: 255, g: 255, b: 255 } },
-  })
-    .jpeg()
-    .toBuffer();
-});
-
 describe('ImageProcessingService', () => {
-  let service: ImageProcessingService;
+  const service = new ImageProcessingService();
+  const image = () => sharp({ create: { width: 4, height: 3, channels: 3, background: 'white' } });
+  const xmp =
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:drone-dji="http://www.uav.com/drone-dji/1.0/" drone-dji:GpsLatitude="-25.4" drone-dji:GpsLongitude="-51.4"/></rdf:RDF></x:xmpmeta>';
+  afterEach(() => jest.restoreAllMocks());
 
-  beforeEach(() => {
-    service = new ImageProcessingService();
-  });
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'checks the format-specific cap from %s headers before decoding',
+    async (format) => {
+      const buffer = await image().toFormat(format).toBuffer();
+      const metadata = await sharp(buffer).metadata();
+      jest
+        .spyOn(sharp.prototype, 'metadata')
+        .mockResolvedValue({ ...metadata, width: 10_000, height: 5_000 });
+      const decode = jest.spyOn(sharp.prototype, 'toBuffer');
+      if (format === 'jpeg') {
+        await expect(service.probeImage(buffer)).resolves.toMatchObject({
+          contentType: 'image/jpeg',
+          width: 10_000,
+        });
+      } else {
+        await expect(service.probeImage(buffer)).rejects.toThrow('40000000');
+        await expect(service.generatePreview(buffer)).rejects.toThrow('40000000');
+      }
+      expect(decode).not.toHaveBeenCalled();
+    },
+  );
 
-  it('passes configured limitInputPixels to Sharp for probe and preview', async () => {
-    const config = { get: jest.fn().mockReturnValue(0) } as any;
-    const configured = new ImageProcessingService(config);
-    await expect(configured.probeImage(VALID_PNG_BUFFER)).rejects.toThrow(BadRequestException);
-    await expect(configured.generatePreview(VALID_PNG_BUFFER)).rejects.toThrow();
-    expect(config.get).toHaveBeenCalledWith('IMAGE_MAX_INPUT_PIXELS', 40000000);
-  });
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'preserves lower configured limits for %s',
+    async (format) => {
+      const config = { get: jest.fn().mockReturnValue(8) };
+      const bounded = new ImageProcessingService(
+        config as unknown as import('@nestjs/config').ConfigService,
+      );
+      const buffer = await image().toFormat(format).toBuffer();
+      await expect(bounded.probeImage(buffer)).rejects.toThrow();
+      await expect(bounded.generatePreview(buffer, `image/${format}`)).rejects.toThrow();
+    },
+  );
 
-  describe('probeImage', () => {
-    it('should reject empty buffer', async () => {
-      await expect(service.probeImage(Buffer.alloc(0))).rejects.toThrow(BadRequestException);
-    });
-
-    it('should reject non-image buffer', async () => {
-      const notAnImage = Buffer.from('this is not an image');
-      await expect(service.probeImage(notAnImage)).rejects.toThrow(BadRequestException);
-    });
-
-    // For a real JPEG test, we'd need a minimal valid JPEG buffer
-    // This tests that the service handles corrupt data gracefully
-    it('should reject corrupt JPEG header', async () => {
-      // Minimal invalid JPEG-like buffer
-      const corruptJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x01]);
-      await expect(service.probeImage(corruptJpeg)).rejects.toThrow();
-    });
-
-    // ── Success path with valid small image buffers ─────────────────
-    it('should successfully probe a valid PNG buffer', async () => {
-      const result = await service.probeImage(VALID_PNG_BUFFER);
-      expect(result.contentType).toBe('image/png');
-      expect(result.width).toBeGreaterThan(0);
-      expect(result.height).toBeGreaterThan(0);
-      expect(result.format).toBe('png');
-    });
-
-    it('should successfully probe a valid JPEG buffer', async () => {
-      const result = await service.probeImage(VALID_JPEG_BUFFER);
-      expect(result.contentType).toBe('image/jpeg');
-      expect(result.width).toBeGreaterThan(0);
-      expect(result.height).toBeGreaterThan(0);
-      expect(result.format).toBe('jpeg');
-    });
-
-    it('should return correct dimensions from probed image', async () => {
-      const result = await service.probeImage(VALID_PNG_BUFFER);
-      expect(result.width).toBe(1);
-      expect(result.height).toBe(1);
-    });
-  });
-
-  describe('generatePreview', () => {
-    it('should reject empty buffer', async () => {
-      await expect(service.generatePreview(Buffer.alloc(0))).rejects.toThrow();
-    });
-
-    it('should reject non-image buffer', async () => {
-      await expect(service.generatePreview(Buffer.from('not an image'))).rejects.toThrow();
-    });
-
-    // ── Success path ────────────────────────────────────────────────
-    it('should generate a JPEG preview from valid PNG', async () => {
-      const result = await service.generatePreview(VALID_PNG_BUFFER);
-      expect(result.buffer).toBeInstanceOf(Buffer);
-      expect(result.buffer.length).toBeGreaterThan(0);
-      expect(result.contentType).toBe('image/jpeg');
-      expect(result.width).toBe(1);
-      expect(result.height).toBe(1);
-    });
-
-    it('should generate a JPEG preview from valid JPEG', async () => {
-      const result = await service.generatePreview(VALID_JPEG_BUFFER);
-      expect(result.buffer).toBeInstanceOf(Buffer);
-      expect(result.buffer.length).toBeGreaterThan(0);
-      expect(result.contentType).toBe('image/jpeg');
-    });
-
-    it('should resize larger images to fit within max dimensions', async () => {
-      // Create a 2000x1000 test image using sharp
-      // This test verifies the resize behavior without external dependencies
-      const largeBuffer = await sharp({
-        create: {
-          width: 2000,
-          height: 1000,
-          channels: 3,
-          background: { r: 255, g: 0, b: 0 },
-        },
-      })
-        .png()
+  it.each(['image/png', 'image/webp'] as const)(
+    'also enforces the cap in the preview decoder for %s',
+    async (contentType) => {
+      const buffer = await image().jpeg().toBuffer();
+      // Change header dimensions only: the pixel guard must reject before raster allocation.
+      const sof = buffer.indexOf(Buffer.from([0xff, 0xc0]));
+      expect(sof).toBeGreaterThan(0);
+      buffer.writeUInt16BE(5000, sof + 5);
+      buffer.writeUInt16BE(10000, sof + 7);
+      await expect(service.generatePreview(buffer, contentType)).rejects.toThrow(/pixel limit/i);
+    },
+  );
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'reads DJI GPS from %s and preserves original bytes',
+    async (format) => {
+      const buffer = await image().withXmp(xmp).toFormat(format).toBuffer();
+      const original = Buffer.from(buffer);
+      const probe = await service.probeImage(buffer);
+      expect(probe).toMatchObject({ contentType: `image/${format}`, format, width: 4, height: 3 });
+      expect(probe.location?.coordinates).toEqual({
+        latitude: -25.4,
+        longitude: -51.4,
+        source: 'dji-xmp',
+      });
+      const preview = await service.generatePreview(buffer);
+      expect(preview).toMatchObject({ width: 4, height: 3, contentType: 'image/jpeg' });
+      expect(buffer).toEqual(original);
+    },
+  );
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'reads EXIF hemisphere references from %s',
+    async (format) => {
+      const buffer = await image()
+        .withExif({
+          IFD3: {
+            GPSLatitude: '25/1 24/1 0/1',
+            GPSLatitudeRef: 'S',
+            GPSLongitude: '51/1 24/1 0/1',
+            GPSLongitudeRef: 'W',
+          },
+        })
+        .toFormat(format)
         .toBuffer();
-
-      const result = await service.generatePreview(largeBuffer);
-      // Should be resized to fit within 1200x1200
-      expect(result.width).toBeLessThanOrEqual(1200);
-      expect(result.height).toBeLessThanOrEqual(1200);
-      // Aspect ratio preserved: 2000:1000 = 2:1
-      expect(result.width / result.height).toBeCloseTo(2, 0);
-    });
+      expect((await service.probeImage(buffer)).location?.coordinates).toEqual({
+        latitude: -25.4,
+        longitude: -51.4,
+        source: 'exif',
+      });
+    },
+  );
+  it('uses XMP even when the WebP EXIF segment is unreadable', async () => {
+    const buffer = await image()
+      .withExif({ IFD0: { Model: 'test' } })
+      .withXmp(xmp)
+      .webp()
+      .toBuffer();
+    const offset = buffer.indexOf(Buffer.from('Exif\0\0'));
+    expect(offset).toBeGreaterThan(0);
+    // Damage only the TIFF signature, leaving the WebP and XMP intact.
+    buffer.fill(0, offset + 6, offset + 10);
+    const probe = await service.probeImage(buffer);
+    expect(probe.location?.coordinates?.source).toBe('dji-xmp');
+    expect(probe.location?.warnings).toContain('metadata-unreadable');
+  });
+  it('allows images without location and tolerates invalid optional GPS', async () => {
+    expect(
+      (await service.probeImage(await image().jpeg().toBuffer())).location?.coordinates,
+    ).toBeNull();
+    const probe = await service.probeImage(
+      await image().withXmp(xmp.replace('-25.4', 'invalid')).jpeg().toBuffer(),
+    );
+    expect(probe.location?.warnings).toContain('invalid-gps');
+  });
+  it('rejects TIFF containers instead of accepting DNG thumbnails', async () => {
+    await expect(service.probeImage(await image().tiff().toBuffer())).rejects.toThrow(
+      'TIFF and DNG',
+    );
+  });
+  it('rejects recognizable DJI R-JPEG payloads', async () => {
+    const jpeg = await image()
+      .withExif({ IFD0: { Model: 'M4T' } })
+      .jpeg()
+      .toBuffer();
+    // Visible-light photos from the same thermal-capable drone remain supported.
+    expect((await service.probeImage(jpeg)).contentType).toBe('image/jpeg');
+    const buffer = Buffer.concat([
+      jpeg.subarray(0, 2),
+      Buffer.from([255, 228, 0, 4, 0, 0]),
+      jpeg.subarray(2),
+    ]);
+    await expect(service.probeImage(buffer)).rejects.toThrow('R-JPEG');
+  });
+  it.each([Buffer.alloc(0), Buffer.from('not an image'), Buffer.from([255, 216, 255, 224, 0, 1])])(
+    'rejects invalid image bytes',
+    async (buffer) => {
+      await expect(service.probeImage(buffer)).rejects.toThrow(BadRequestException);
+      await expect(service.generatePreview(buffer)).rejects.toThrow();
+    },
+  );
+  it('honors configured pixel bounds', async () => {
+    const config = { get: jest.fn().mockReturnValue(0) };
+    const bounded = new ImageProcessingService(
+      config as unknown as import('@nestjs/config').ConfigService,
+    );
+    const buffer = await image().png().toBuffer();
+    await expect(bounded.probeImage(buffer)).rejects.toThrow();
+    await expect(bounded.generatePreview(buffer)).rejects.toThrow();
+    expect(config.get).toHaveBeenCalledWith('IMAGE_MAX_INPUT_PIXELS', 120000000);
+  });
+  it('fits previews within 1200 pixels', async () => {
+    const buffer = await sharp({
+      create: { width: 2000, height: 1000, channels: 3, background: 'white' },
+    })
+      .jpeg()
+      .toBuffer();
+    expect(await service.generatePreview(buffer)).toMatchObject({ width: 1200, height: 600 });
   });
 });

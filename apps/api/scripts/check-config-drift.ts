@@ -9,7 +9,7 @@ export const composeBackendServices = {
 } as const;
 
 const schemaKeys = Object.keys(envSchemaShape.shape);
-const externallyOwned = new Set(['INFERENCE_MODEL_DOWNLOAD_ORIGINS']);
+const externallyOwned = new Set(['INFERENCE_MODEL_DOWNLOAD_ORIGINS', 'INFERENCE_IMAGE_MAX_PIXELS']);
 const exampleOnly = new Set([
   'ADMIN_EMAIL',
   'ADMIN_PASSWORD',
@@ -106,10 +106,7 @@ export function validateConfiguration(root = resolve(__dirname, '../../..')): vo
   );
   validateCompose(
     'deploy/docker-compose.dev.yml',
-    composeConfig(
-      resolve(deploy, 'docker-compose.dev.yml'),
-      resolve(backend, '.env.example'),
-    ),
+    composeConfig(resolve(deploy, 'docker-compose.dev.yml'), resolve(backend, '.env.example')),
     composeBackendServices.development,
   );
   validateCompose(

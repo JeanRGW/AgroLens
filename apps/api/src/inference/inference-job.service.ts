@@ -124,6 +124,13 @@ export class InferenceJobService {
     if (filtered.length === 0) {
       throw new BadRequestException('No original images found in the upload');
     }
+    if (
+      filtered.some((file) => file.sizeBytes !== null && file.sizeBytes > this.tempMaxFileSizeBytes)
+    ) {
+      throw new BadRequestException(
+        'Selected images exceed the inference size limit. Import preserves originals; inference requires smaller RGB images.',
+      );
+    }
 
     const jobId = randomUUID();
     const expiresAt = new Date(Date.now() + this.jobRetentionDays * 24 * 60 * 60 * 1000);

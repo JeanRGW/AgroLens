@@ -5,6 +5,15 @@ export const SOURCE_LABELS: Record<string, string> = {
   phone: 'Celular',
   mixed: 'Misto',
 };
+export function getLocationSourceLabel(source?: string | null): string {
+  const labels: Record<string, string> = {
+    file: 'Localização do arquivo',
+    device: 'GPS do dispositivo',
+    manual: 'Localização manual',
+    none: 'Sem localização',
+  };
+  return labels[source ?? 'none'] ?? labels['none'];
+}
 
 export function getSourceLabel(source: UploadSource | string): string {
   return SOURCE_LABELS[source] ?? source;

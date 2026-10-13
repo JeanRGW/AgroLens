@@ -22,6 +22,6 @@ export const storageEnvShape = {
     .number()
     .int()
     .positive()
-    .default(100 * 1024 * 1024), // 100 MB
+    .default(100 * 1024 * 1024),
   UPLOAD_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900), // 15 min
 };

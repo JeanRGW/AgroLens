@@ -262,7 +262,13 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
   readonly mapVisible = signal(navigator.onLine);
   private readonly updateOnline = () => {
     this.online.set(navigator.onLine);
-    if (!navigator.onLine) this.mapVisible.set(false);
+    if (!navigator.onLine) {
+      this.mapVisible.set(false);
+    } else if (!this.mapToggleEnabled) {
+      this.mapVisible.set(true);
+      if (this.initTimerId !== null) clearTimeout(this.initTimerId);
+      this.initTimerId = setTimeout(() => this.initMap(), 0);
+    }
   };
 
   manualLat: number | null = null;
@@ -285,12 +291,7 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
 
   ngOnDestroy(): void {
     this.destroyed = true;
-    this.locationRequest++;
-    if (this.locating()) {
-      this.locating.set(false);
-      this.locatingChange.emit(false);
-    }
-    if (this.locationTimer) clearTimeout(this.locationTimer);
+    this.cancelLocationRequest();
     window.removeEventListener('online', this.updateOnline);
     window.removeEventListener('offline', this.updateOnline);
     if (this.initTimerId !== null) {
@@ -301,6 +302,16 @@ export class LocationPickerComponent implements AfterViewInit, OnDestroy, OnChan
     }
     this.map?.remove();
     this.map = null;
+  }
+
+  cancelLocationRequest(): void {
+    this.locationRequest++;
+    if (this.locationTimer) clearTimeout(this.locationTimer);
+    this.locationTimer = null;
+    if (this.locating()) {
+      this.locating.set(false);
+      this.locatingChange.emit(false);
+    }
   }
 
   ngOnChanges(_changes: SimpleChanges): void {

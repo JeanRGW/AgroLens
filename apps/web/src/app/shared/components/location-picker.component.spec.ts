@@ -14,12 +14,13 @@ class FormHost {
 
 describe('LocationPickerComponent offline GPS', () => {
   let geolocation: jasmine.Spy;
+  let online: jasmine.Spy;
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [LocationPickerComponent, FormHost],
       providers: [provideNoopAnimations()],
     });
-    spyOnProperty(navigator, 'onLine', 'get').and.returnValue(false);
+    online = spyOnProperty(navigator, 'onLine', 'get').and.returnValue(false);
     geolocation = spyOn(navigator.geolocation, 'getCurrentPosition');
   });
 
@@ -86,6 +87,75 @@ describe('LocationPickerComponent offline GPS', () => {
     callback({ coords: { latitude: 1, longitude: 2, accuracy: 3 } } as GeolocationPosition);
     expect(selected).not.toHaveBeenCalled();
   });
+
+  it('cancels pending GPS callbacks and timeout without preventing a fresh request', fakeAsync(() => {
+    const fixture = TestBed.createComponent(LocationPickerComponent);
+    const picker = fixture.componentInstance;
+    const selected = jasmine.createSpy('selected');
+    picker.locationSelected.subscribe(selected);
+    picker.locateUser();
+    const previous = geolocation.calls.mostRecent().args;
+    picker.cancelLocationRequest();
+    expect(picker.locating()).toBeFalse();
+    tick(25000);
+    expect(picker.locationError()).toBe('');
+    picker.locateUser();
+    previous[0]({ coords: { latitude: 1, longitude: 2 } } as GeolocationPosition);
+    previous[1]?.({ code: 1 } as GeolocationPositionError);
+    expect(selected).not.toHaveBeenCalled();
+    expect(picker.locating()).toBeTrue();
+    geolocation.calls
+      .mostRecent()
+      .args[0]({ coords: { latitude: 3, longitude: 4, accuracy: 5 } } as GeolocationPosition);
+    expect(selected).toHaveBeenCalledOnceWith({ latitude: 3, longitude: 4 });
+    fixture.destroy();
+  }));
+
+  it('initializes a non-toggleable map after reconnecting from an offline start', fakeAsync(() => {
+    const fixture = TestBed.createComponent(LocationPickerComponent);
+    fixture.componentRef.setInput('mapToggleEnabled', false);
+    fixture.detectChanges();
+    tick(100);
+    expect(fixture.componentInstance.mapVisible()).toBeFalse();
+    online.and.returnValue(true);
+    window.dispatchEvent(new Event('online'));
+    fixture.detectChanges();
+    tick(0);
+    expect(fixture.componentInstance.mapVisible()).toBeTrue();
+    expect(fixture.nativeElement.querySelector('.leaflet-container')).not.toBeNull();
+    fixture.destroy();
+  }));
+
+  it('restores and resizes an existing non-toggleable map on reconnect', fakeAsync(() => {
+    online.and.returnValue(true);
+    const fixture = TestBed.createComponent(LocationPickerComponent);
+    fixture.componentRef.setInput('mapToggleEnabled', false);
+    fixture.detectChanges();
+    tick(300);
+    const map = (fixture.componentInstance as unknown as { map: { invalidateSize(): void } }).map;
+    const resize = spyOn(map, 'invalidateSize').and.callThrough();
+    online.and.returnValue(false);
+    window.dispatchEvent(new Event('offline'));
+    expect(fixture.componentInstance.mapVisible()).toBeFalse();
+    online.and.returnValue(true);
+    window.dispatchEvent(new Event('online'));
+    fixture.detectChanges();
+    tick(0);
+    expect(fixture.componentInstance.mapVisible()).toBeTrue();
+    expect(resize).toHaveBeenCalled();
+    fixture.destroy();
+  }));
+
+  it('does not reopen a toggleable map after reconnecting', fakeAsync(() => {
+    const fixture = TestBed.createComponent(LocationPickerComponent);
+    fixture.detectChanges();
+    tick(100);
+    online.and.returnValue(true);
+    window.dispatchEvent(new Event('online'));
+    tick(0);
+    expect(fixture.componentInstance.mapVisible()).toBeFalse();
+    fixture.destroy();
+  }));
 
   it('does not submit the enclosing upload form when GPS is requested', () => {
     const fixture = TestBed.createComponent(FormHost);

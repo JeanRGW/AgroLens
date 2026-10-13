@@ -33,9 +33,7 @@ export function validateUploadImages(
       throw new Error('Converta fotos HEIC/HEIF para JPEG, PNG ou WebP antes de adicioná-las.');
     }
     if (!file.type) {
-      throw new Error(
-        'O dispositivo não informou o formato da imagem. Use um arquivo com extensão .jpg, .jpeg, .png ou .webp.',
-      );
+      throw new Error('O dispositivo não informou o formato da imagem. Use JPEG, PNG ou WebP.');
     }
     throw new Error('Use imagens JPEG, PNG ou WebP. O formato informado não é compatível.');
   });

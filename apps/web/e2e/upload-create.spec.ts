@@ -6,7 +6,7 @@
  *   - Activity date via calendar picker
  *   - Confirmed map point in manual location mode
  *   - File selection via Playwright setInputFiles
- *   - Local queue save followed by immediate online sync
+ *   - Persistent manual-mode map and compact location control
  *   - Full upload pipeline: init → presigned PUT → complete → poll
  *   - Completion card with link to detail
  *
@@ -146,8 +146,13 @@ test.describe('Upload creation via UI', () => {
     await page.mouse.click(mapBox.x + mapBox.width / 2, mapBox.y + mapBox.height / 2);
     await expect(locationCard.locator('.coordinates')).toBeVisible();
     await locationCard.getByRole('button', { name: 'Usar ponto selecionado' }).click();
-    await expect(locationCard.locator('app-location-picker')).toHaveCount(0);
-    await expect(page.locator('.image-location')).not.toContainText('Sem localização');
+    await expect(locationCard.locator('app-location-picker')).toBeVisible();
+    await expect(
+      locationCard.getByRole('button', { name: 'Usar ponto selecionado' }),
+    ).toBeDisabled();
+    const locationButton = page.locator('.preview-item .preview-location');
+    await expect(locationButton).toHaveAttribute('aria-label', /Localização manual/);
+    await expect(locationButton).not.toContainText('Localizar');
 
     // ── Submit ───────────────────────────────────────────────────────
     const submitBtn = page.getByRole('button', { name: /Criar Upload/ });

@@ -29,6 +29,7 @@ import {
   findOriginalFileForIndex,
   formatFileSize,
   getSourceLabel,
+  getLocationSourceLabel,
   hasValidCoordinates,
   mapDisplayUrlsToResolvedMap,
   openMapCoordinates,
@@ -181,6 +182,16 @@ import {
                   Ver no mapa
                 </button>
               </div>
+              <div class="info-row">
+                <span class="info-label">Origem da localização</span>
+                <span>{{ locationSourceLabel(selectedOriginal()?.locationSource) }}</span>
+              </div>
+              @if (selectedOriginal()?.locationSource === 'file') {
+                <p>
+                  Coordenadas de captura do drone/câmera; não representam a posição do objeto
+                  fotografado.
+                </p>
+              }
 
               <div class="info-row">
                 <span class="info-label">Data de atividade</span>
@@ -411,6 +422,7 @@ export class UploadDetailPageComponent implements OnInit {
   readonly displayEntries = signal<string[]>([]);
 
   readonly getSourceLabel = getSourceLabel;
+  readonly locationSourceLabel = getLocationSourceLabel;
 
   readonly canDelete = computed(() => {
     const user = this.authService.user();

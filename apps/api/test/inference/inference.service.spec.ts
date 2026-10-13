@@ -480,6 +480,27 @@ describe('InferenceModelService and InferenceJobService', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('createJob', () => {
+    it('rejects sealed upload originals exceeding the inference size limit', async () => {
+      mockInferenceRepo.findModelById.mockResolvedValue(makeModel());
+      mockUploadsRepo.findByIdAnyStatus.mockResolvedValue(makeUpload());
+      mockUploadsRepo.findFilesByUploadId.mockResolvedValue([
+        {
+          id: 'large',
+          imageId: 'large-image',
+          variant: 'original',
+          contentType: 'image/jpeg',
+          sizeBytes: 26 * 1024 * 1024,
+          observedEtag: 'sealed',
+        },
+      ]);
+      await expect(
+        jobService.createJob(
+          { modelId: 'model-uuid-1', uploadId: 'upload-uuid-1' },
+          makeCurrentUser(),
+        ),
+      ).rejects.toThrow('inference size limit');
+      expect(mockInferenceRepo.createUploadJobWithFence).not.toHaveBeenCalled();
+    });
     it('should reject if model not found', async () => {
       mockInferenceRepo.findModelById.mockResolvedValue(undefined);
       await expect(
@@ -509,6 +530,7 @@ describe('InferenceModelService and InferenceJobService', () => {
           variant: 'original',
           imageId: '00000000-0000-4000-8000-000000000000',
           objectKey: 'uploads/u1/0/original.jpg',
+          contentType: 'image/jpeg',
           observedEtag: 'etag-0',
           sizeBytes: 100,
         },
@@ -517,6 +539,7 @@ describe('InferenceModelService and InferenceJobService', () => {
           variant: 'original',
           imageId: '00000000-0000-4000-8000-000000000001',
           objectKey: 'uploads/u1/1/original.jpg',
+          contentType: 'image/jpeg',
           observedEtag: 'etag-1',
           sizeBytes: 100,
         },
@@ -552,6 +575,7 @@ describe('InferenceModelService and InferenceJobService', () => {
           variant: 'original',
           imageId: '00000000-0000-4000-8000-000000000000',
           objectKey: 'uploads/u1/0/original.jpg',
+          contentType: 'image/jpeg',
           observedEtag: 'etag-0',
           sizeBytes: 100,
         },
@@ -560,6 +584,7 @@ describe('InferenceModelService and InferenceJobService', () => {
           variant: 'original',
           imageId: '00000000-0000-4000-8000-000000000001',
           objectKey: 'uploads/u1/1/original.jpg',
+          contentType: 'image/jpeg',
           observedEtag: 'etag-1',
           sizeBytes: 100,
         },
@@ -587,6 +612,7 @@ describe('InferenceModelService and InferenceJobService', () => {
           variant: 'original',
           imageId: '00000000-0000-4000-8000-000000000000',
           objectKey: 'uploads/u1/0/original.jpg',
+          contentType: 'image/jpeg',
           observedEtag: 'etag-0',
           sizeBytes: 100,
         },
@@ -595,6 +621,7 @@ describe('InferenceModelService and InferenceJobService', () => {
           variant: 'original',
           imageId: '00000000-0000-4000-8000-000000000001',
           objectKey: 'uploads/u1/1/original.jpg',
+          contentType: 'image/jpeg',
           observedEtag: 'etag-1',
           sizeBytes: 100,
         },
@@ -603,6 +630,7 @@ describe('InferenceModelService and InferenceJobService', () => {
           variant: 'original',
           imageId: '00000000-0000-4000-8000-000000000002',
           objectKey: 'uploads/u1/2/original.jpg',
+          contentType: 'image/jpeg',
           observedEtag: 'etag-2',
           sizeBytes: 100,
         },

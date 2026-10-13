@@ -2,6 +2,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('production proxy contract', () => {
+  it('keeps the inference pixel limit independently configurable', () => {
+    const compose = readFileSync(
+      resolve(__dirname, '../../../../deploy/production/docker-compose.prod.yml'),
+      'utf8',
+    );
+    expect(compose).toContain(
+      'INFERENCE_IMAGE_MAX_PIXELS: ${INFERENCE_IMAGE_MAX_PIXELS:-40000000}',
+    );
+    expect(compose).not.toContain('INFERENCE_IMAGE_MAX_PIXELS: ${IMAGE_MAX_INPUT_PIXELS}');
+  });
   it('uses host Caddy and loopback-only upstreams', () => {
     const config = readFileSync(
       resolve(__dirname, '../../../../deploy/production/Caddyfile.example'),

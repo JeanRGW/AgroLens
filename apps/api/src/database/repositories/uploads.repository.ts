@@ -1,6 +1,17 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { eq, and, isNull, inArray, asc, desc, sql, getTableColumns, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  or,
+  isNull,
+  inArray,
+  asc,
+  desc,
+  sql,
+  getTableColumns,
+  type SQL,
+} from 'drizzle-orm';
 import { DATABASE_CONNECTION, type DatabaseConnection } from '../database.constants';
 import { deriveUploadObjectKeys, namedError } from '../database.utils';
 import {
@@ -17,6 +28,7 @@ import {
   auditEvents,
 } from '../schema';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
+import type { LocationSource } from '@agrolens/contracts';
 
 export type Upload = InferSelectModel<typeof uploads> & { propertyId: string };
 export type NewUpload = InferInsertModel<typeof uploads>;
@@ -24,6 +36,7 @@ export type UploadFile = InferSelectModel<typeof uploadFiles> & {
   uploadId: string;
   latitude: number | null;
   longitude: number | null;
+  locationSource?: LocationSource | null;
 };
 export type NewUploadFile = InferInsertModel<typeof uploadFiles>;
 
@@ -32,6 +45,7 @@ const fileColumns = {
   uploadId: uploadImages.uploadId,
   latitude: uploadImages.latitude,
   longitude: uploadImages.longitude,
+  locationSource: uploadImages.locationSource,
 };
 
 const uploadColumns = { ...getTableColumns(uploads), propertyId: talhoes.propertyId };
@@ -123,6 +137,7 @@ export class UploadsRepository {
       imageId: string;
       latitude: number | null;
       longitude: number | null;
+      locationSource: LocationSource;
       objectKey: (uploadId: string, imageId: string) => string;
       contentType: string;
       sizeBytes: number | null;
@@ -172,6 +187,7 @@ export class UploadsRepository {
           uploadId: upload.id,
           latitude: file.latitude,
           longitude: file.longitude,
+          locationSource: file.locationSource,
         }));
         await tx.insert(uploadImages).values(images);
         await tx.insert(uploadFiles).values(
@@ -188,11 +204,12 @@ export class UploadsRepository {
     });
   }
 
-  async renewDraft(id: string): Promise<Upload | undefined> {
+  async renewDraft(id: string, initRequestHash?: string): Promise<Upload | undefined> {
     const [row] = await this.db
       .update(uploads)
       .set({
         status: 'draft',
+        ...(initRequestHash ? { initRequestHash } : {}),
         errorMessage: null,
         updatedAt: new Date(),
       })
@@ -201,6 +218,9 @@ export class UploadsRepository {
           eq(uploads.id, id),
           inArray(uploads.status, ['draft', 'failed']),
           isNull(uploads.deletedAt),
+          initRequestHash
+            ? or(isNull(uploads.initRequestHash), eq(uploads.initRequestHash, initRequestHash))
+            : undefined,
         ),
       )
       .returning(uploadReturningColumns);

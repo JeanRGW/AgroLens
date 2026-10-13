@@ -12,6 +12,7 @@ import {
   AccessRepository,
   AuditRepository,
   type Upload,
+  type UploadFile,
 } from '../database/repositories';
 import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
 import { assertOwnerOrAdmin } from '../auth/auth.service';
@@ -33,10 +34,58 @@ import {
   CONTENT_TYPE_TO_EXTENSION,
   type AllowedContentType,
 } from '../image-processing/image-processing.service';
+import type { FileDescriptorDto, LocationSource } from '@agrolens/contracts';
+import { createHash } from 'node:crypto';
 import { UploadQueryService, buildUploadSearchCondition } from './upload-query.service';
 import { isUniqueViolation } from '../database/database.utils';
 
 export { buildUploadSearchCondition };
+
+type NormalizedUploadInit = Omit<UploadInitDto, 'files'> & {
+  files: Array<FileDescriptorDto & { locationSource: LocationSource }>;
+};
+
+export function normalizeUploadRequest(dto: UploadInitDto): NormalizedUploadInit {
+  return {
+    ...dto,
+    files: dto.files.map((file) => {
+      const locationSource = file.locationSource ?? (file.latitude === null ? 'file' : 'device');
+      return {
+        ...file,
+        locationSource,
+        latitude: locationSource === 'file' ? null : file.latitude,
+        longitude: locationSource === 'file' ? null : file.longitude,
+      };
+    }),
+  };
+}
+
+export function uploadRequestHash(dto: NormalizedUploadInit): string {
+  const files = dto.files
+    .map((file) => {
+      return {
+        imageId: file.imageId,
+        contentType: file.contentType,
+        locationSource: file.locationSource,
+        latitude: file.latitude,
+        longitude: file.longitude,
+      };
+    })
+    .sort((a, b) => a.imageId.localeCompare(b.imageId));
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        propertyId: dto.propertyId,
+        talhaoId: dto.talhaoId,
+        cropTypeId: dto.cropTypeId,
+        estadioId: dto.estadioId ?? null,
+        source: dto.source,
+        activityDate: dto.activityDate.toISOString(),
+        files,
+      }),
+    )
+    .digest('hex');
+}
 
 @Injectable()
 export class UploadsService {
@@ -69,10 +118,11 @@ export class UploadsService {
   // ── Upload init (idempotent by user_id + client_upload_id) ─────────
 
   async initUpload(
-    dto: UploadInitDto,
+    input: UploadInitDto,
     currentUser: AuthenticatedUser,
   ): Promise<UploadInitResponse> {
     const userId = currentUser.sub;
+    const dto = normalizeUploadRequest(input);
 
     // Validate file count
     if (dto.files.length > this.maxFiles) {
@@ -96,12 +146,13 @@ export class UploadsService {
     }
 
     const fileDescriptors = dto.files;
+    const requestHash = uploadRequestHash(dto);
 
     // Check idempotency: existing upload with same (userId, clientUploadId)?
     const existing = await this.uploadsRepository.findByClientUploadId(userId, dto.clientUploadId);
 
     if (existing) {
-      return this.handleExistingUpload(existing, dto, fileDescriptors);
+      return this.handleExistingUpload(existing, dto, requestHash, input);
     }
 
     await this.validateCatalogReferences(dto);
@@ -111,6 +162,7 @@ export class UploadsService {
       created = await this.uploadsRepository.createWithFiles(
         {
           clientUploadId: dto.clientUploadId,
+          initRequestHash: requestHash,
           userId,
           talhaoId: dto.talhaoId,
           cropTypeId: dto.cropTypeId,
@@ -123,6 +175,7 @@ export class UploadsService {
           imageId: file.imageId,
           latitude: file.latitude,
           longitude: file.longitude,
+          locationSource: file.locationSource,
           objectKey: (uploadId: string, imageId: string) =>
             `staging/uploads/${userId}/${uploadId}/${imageId}/original.${CONTENT_TYPE_TO_EXTENSION[file.contentType as AllowedContentType]}`,
           contentType: file.contentType,
@@ -144,7 +197,7 @@ export class UploadsService {
       throw error;
     }
     const upload = created.upload;
-    if (!created.created) return this.handleExistingUpload(upload, dto, fileDescriptors);
+    if (!created.created) return this.handleExistingUpload(upload, dto, requestHash, input);
 
     // Generate presigned upload URLs for originals
     const files = await this.generateUploadInstructions(upload, fileDescriptors);
@@ -193,15 +246,11 @@ export class UploadsService {
    */
   private async handleExistingUpload(
     existing: Upload,
-    dto: UploadInitDto,
-    fileDescriptors: {
-      imageId: string;
-      latitude: number | null;
-      longitude: number | null;
-      contentType: string;
-      sizeBytes?: number;
-    }[],
+    dto: NormalizedUploadInit,
+    requestHash: string,
+    input: UploadInitDto,
   ): Promise<UploadInitResponse> {
+    const fileDescriptors = dto.files;
     // If upload is in a terminal or in-progress state, return current status without new URLs
     if (existing.status === 'finalizing' || existing.status === 'ready') {
       const files = await this.uploadsRepository.findFilesByUploadId(existing.id);
@@ -222,34 +271,23 @@ export class UploadsService {
       };
     }
 
-    // For draft or failed: check if metadata/file descriptors match
-    const metadataChanged =
-      existing.talhaoId !== dto.talhaoId ||
-      (!existing.estadioId && existing.cropTypeId !== dto.cropTypeId) ||
-      existing.estadioId !== (dto.estadioId ?? null) ||
-      existing.source !== dto.source ||
-      existing.activityDate.getTime() !== dto.activityDate.getTime();
-
     const existingFiles = await this.uploadsRepository.findFilesByUploadId(existing.id);
     const existingOriginals = existingFiles.filter((f) => f.variant === 'original');
     const existingById = new Map(existingOriginals.map((file) => [file.imageId, file]));
 
+    const requestMatches = existing.initRequestHash
+      ? existing.initRequestHash === requestHash
+      : this.matchesHistoricalRequest(existing, input, existingById);
     const filesChanged =
       existingById.size !== fileDescriptors.length ||
       fileDescriptors.some((descriptor) => {
         const file = existingById.get(descriptor.imageId);
         return (
-          !file ||
-          file.latitude !== descriptor.latitude ||
-          file.longitude !== descriptor.longitude ||
-          !file.objectKey.endsWith(
-            `original.${CONTENT_TYPE_TO_EXTENSION[descriptor.contentType as AllowedContentType]}`,
-          ) ||
-          (descriptor.sizeBytes !== undefined && file.sizeBytes !== descriptor.sizeBytes)
+          !file || (descriptor.sizeBytes !== undefined && file.sizeBytes !== descriptor.sizeBytes)
         );
       });
 
-    if (metadataChanged || filesChanged) {
+    if (!requestMatches || filesChanged) {
       throw new ConflictException(
         'A draft upload with this clientUploadId already exists with different metadata or file descriptors. ' +
           'Use a different clientUploadId or wait for the existing upload to be finalized.',
@@ -299,12 +337,12 @@ export class UploadsService {
       }
     }
 
-    const renewed = await this.uploadsRepository.renewDraft(existing.id);
+    const renewed = await this.uploadsRepository.renewDraft(existing.id, requestHash);
     if (!renewed) {
       const current = await this.uploadsRepository.findById(existing.id);
       if (!current) throw new NotFoundException('Upload not found');
       if (current.status === 'finalizing' || current.status === 'ready') {
-        return this.handleExistingUpload(current, dto, fileDescriptors);
+        return this.handleExistingUpload(current, dto, requestHash, input);
       }
       throw new ConflictException('Upload changed while retrying; retry initialization');
     }
@@ -314,6 +352,33 @@ export class UploadsService {
       status: existing.status === 'failed' ? 'draft' : existing.status,
       files: instructions,
     };
+  }
+
+  private matchesHistoricalRequest(
+    existing: Upload,
+    dto: UploadInitDto,
+    files: Map<string, UploadFile>,
+  ): boolean {
+    return (
+      existing.talhaoId === dto.talhaoId &&
+      (existing.estadioId != null || existing.cropTypeId === dto.cropTypeId) &&
+      existing.estadioId === (dto.estadioId ?? null) &&
+      existing.source === dto.source &&
+      existing.activityDate.getTime() === dto.activityDate.getTime() &&
+      dto.files.every((descriptor) => {
+        const file = files.get(descriptor.imageId);
+        return (
+          file != null &&
+          file.latitude === descriptor.latitude &&
+          file.longitude === descriptor.longitude &&
+          (descriptor.locationSource === undefined ||
+            file.locationSource === descriptor.locationSource) &&
+          file.objectKey.endsWith(
+            `original.${CONTENT_TYPE_TO_EXTENSION[descriptor.contentType as AllowedContentType]}`,
+          )
+        );
+      })
+    );
   }
 
   private toMutationRecord(upload: Upload): UploadMutationResponse {

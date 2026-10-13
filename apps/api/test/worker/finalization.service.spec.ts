@@ -6,6 +6,7 @@ import type { Upload, UploadFile } from '../../src/database/repositories';
 import { StorageService } from '../../src/storage/storage.service';
 import { ImageProcessingService } from '../../src/image-processing/image-processing.service';
 import { DATABASE_CONNECTION } from '../../src/database/database.constants';
+import { normalizeImageLocation } from '@agrolens/contracts';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -13,6 +14,7 @@ function makeUpload(overrides: Partial<Upload> = {}): Upload {
   return {
     id: 'upload-uuid-1',
     clientUploadId: 'client-upload-1',
+    initRequestHash: null,
     userId: 'user-uuid-1',
     propertyId: 'prop-uuid-1',
     talhaoId: 'talhao-uuid-1',
@@ -212,6 +214,55 @@ describe('FinalizationService', () => {
         'token-1',
       );
     });
+
+    it.each(['file', 'device', 'manual', 'none'] as const)(
+      'resolves embedded metadata without losing the %s location choice',
+      async (source) => {
+        const upload = makeUpload();
+        const original = makeUploadFile({
+          locationSource: source,
+          latitude: source === 'none' ? null : -22.9,
+          longitude: source === 'none' ? null : -43.1,
+        });
+        const location = normalizeImageLocation({
+          'drone-dji': { GpsLatitude: -25.4, GpsLongitude: -51.4 },
+        });
+        mockJobsRepository.claimFinalizationJob.mockResolvedValue({
+          id: 'job-1',
+          uploadId: upload.id,
+          attempts: 1,
+          lockToken: 'token-1',
+        });
+        mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(upload);
+        mockUploadsRepository.findFilesByUploadId.mockResolvedValue([original]);
+        mockStorageService.headObject.mockResolvedValue({ exists: true, contentLength: 1024 });
+        mockStorageService.getObjectBufferBounded.mockResolvedValue(Buffer.from('original'));
+        mockStorageService.putObject.mockResolvedValue({ etag: 'sealed' });
+        mockImageProcessingService.probeImage.mockResolvedValue({
+          contentType: 'image/jpeg',
+          width: 2,
+          height: 3,
+          format: 'jpeg',
+          location,
+        });
+        mockImageProcessingService.generatePreview.mockResolvedValue({
+          buffer: Buffer.from('preview'),
+          contentType: 'image/jpeg',
+          width: 2,
+          height: 3,
+        });
+        await service.processNextJob();
+        if (source === 'file' || source === 'device') {
+          expect(mockDb.set).toHaveBeenCalledWith({
+            latitude: -25.4,
+            longitude: -51.4,
+            locationSource: 'file',
+          });
+        } else {
+          expect(mockDb.set.mock.calls.some(([data]) => 'latitude' in data)).toBe(false);
+        }
+      },
+    );
 
     it('should fail job when original object is missing', async () => {
       const upload = makeUpload();

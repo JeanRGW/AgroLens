@@ -73,9 +73,15 @@ cp .env.example .env
 
 Set all secrets (`JWT_SECRET`, `S3_SECRET_KEY`, `DATABASE_URL`, `ADMIN_*`, `INFERENCE_API_KEY` when applicable). Never commit `.env`.
 
-Keep Caddy's PUT limits in `Caddyfile.example` aligned with `UPLOAD_MAX_FILE_SIZE_BYTES` (100 MiB for staged uploads), `INFERENCE_TEMP_MAX_FILE_SIZE_BYTES` (25 MiB for inference images), and `INFERENCE_MODEL_MAX_SIZE_BYTES` (500 MiB for models). These path-style `/<bucket>/...` limits apply before Garage stores a body; requests that bypass host Caddy do not get them.
+Keep Caddy's PUT limits in `Caddyfile.example` aligned with `UPLOAD_MAX_FILE_SIZE_BYTES` (100 MiB for staged uploads), `INFERENCE_TEMP_MAX_FILE_SIZE_BYTES` (25 MiB for inference images), and `INFERENCE_MODEL_MAX_SIZE_BYTES` (500 MiB for models). These path-style `/<bucket>/...` limits apply before Garage stores a body; requests that bypass host Caddy do not get them. Import allows up to 120 million pixels for high-resolution JPEGs; inference retains its separate 40-million-pixel limit.
 
 Worker model downloads use the internal `S3_ENDPOINT`, normally `http://garage:3900`. Set `INFERENCE_MODEL_DOWNLOAD_ORIGINS` to that origin. **When upgrading an existing deployment**, replace an allowlist containing only the public S3 origin before restarting backend and inference together. Browser/device signed URLs continue to use `S3_PUBLIC_ENDPOINT`.
+
+`IMAGE_MAX_INPUT_PIXELS` limits backend photo imports (120 million by default).
+`INFERENCE_IMAGE_MAX_PIXELS` independently limits inference (40 million by default).
+**When upgrading**, copy any custom inference limit previously set through
+`IMAGE_MAX_INPUT_PIXELS` into `INFERENCE_IMAGE_MAX_PIXELS`; the import setting no
+longer controls inference. Set the two limits according to your memory budget.
 
 ### 3. Validate compose config
 

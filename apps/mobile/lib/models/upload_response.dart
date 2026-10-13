@@ -107,6 +107,7 @@ class UploadFileInfo {
   final String? objectKey;
   final String contentType;
   final int? sizeBytes;
+  final String? locationSource;
 
   const UploadFileInfo({
     required this.id,
@@ -117,6 +118,7 @@ class UploadFileInfo {
     this.objectKey,
     required this.contentType,
     this.sizeBytes,
+    this.locationSource,
   });
 
   factory UploadFileInfo.fromJson(Map<String, dynamic> json) {
@@ -129,6 +131,7 @@ class UploadFileInfo {
       objectKey: json['objectKey'] as String?,
       contentType: json['contentType'] as String,
       sizeBytes: json['sizeBytes'] as int?,
+      locationSource: json['locationSource'] as String?,
     );
   }
 }

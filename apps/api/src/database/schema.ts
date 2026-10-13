@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { LocationSource } from '@agrolens/contracts';
 import {
   pgTable,
   uuid,
@@ -169,6 +170,7 @@ export const uploads = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     clientUploadId: text('client_upload_id').notNull(),
+    initRequestHash: text('init_request_hash'),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id),
@@ -231,9 +233,14 @@ export const uploadImages = pgTable(
       .references(() => uploads.id, { onDelete: 'cascade' }),
     latitude: doublePrecision('latitude'),
     longitude: doublePrecision('longitude'),
+    locationSource: text('location_source').$type<LocationSource>(),
   },
   (table) => [
     index('upload_images_upload_id_idx').on(table.uploadId, table.id),
+    check(
+      'upload_images_location_source_check',
+      sql`${table.locationSource} IS NULL OR ${table.locationSource} IN ('file', 'device', 'manual', 'none')`,
+    ),
     check(
       'upload_images_coordinates_check',
       sql`(${table.latitude} IS NULL AND ${table.longitude} IS NULL) OR (${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} BETWEEN -90 AND 90 AND ${table.longitude} BETWEEN -180 AND 180)`,
