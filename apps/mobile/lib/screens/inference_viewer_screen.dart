@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/inference.dart';
 import '../services/inference_service.dart';
 import '../utils/save_inference_export.dart';
+import '../utils/detection_filters.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/custom_scaffold.dart';
 
@@ -42,7 +43,9 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
       _labels = true,
       _boxes = true,
       _exporting = false;
-  double _confidence = 0;
+  double _confidence = 0.25;
+  bool _suppressOverlaps = false, _original = false;
+  double _iou = 0.5;
   final Set<int> _hidden = {};
   int _request = 0;
   Timer? _poll;
@@ -53,13 +56,20 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
   Size _viewport = Size.zero;
   final _transform = TransformationController();
   final _exportButtonKey = GlobalKey();
+  bool get _usingReview => !_original && _result?.reviewedDetections != null;
+  List<Detection> _processed(InferenceResult result) =>
+      !_original && result.reviewedDetections != null
+      ? result.reviewedDetections!
+      : filterDetections(
+          result.detections,
+          minConfidence: _confidence,
+          suppressOverlaps: _suppressOverlaps,
+          iouThreshold: _iou,
+        );
+  List<Detection> get _processedCurrent =>
+      _result == null ? [] : _processed(_result!);
   List<Detection> get _visible =>
-      _result?.detections
-          .where(
-            (d) => d.confidence >= _confidence && !_hidden.contains(d.classId),
-          )
-          .toList() ??
-      [];
+      _processedCurrent.where((d) => !_hidden.contains(d.classId)).toList();
   @override
   void initState() {
     super.initState();
@@ -142,6 +152,7 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
       _imageError = null;
       _imageLoading = image.status == 'completed';
       _hidden.clear();
+      _original = false;
     });
     if (image.status != 'completed') return;
     try {
@@ -230,30 +241,61 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
   }
 
   Future<void> _export(String format) async {
+    final original = format.startsWith('original-');
+    format = format.replaceFirst('original-', '');
+    final confidence = _confidence, iou = _iou, suppress = _suppressOverlaps;
+    final originalView = _original;
+    final hidden = Set<int>.of(_hidden);
+    List<Detection> exported(InferenceResult result) => original
+        ? result.detections
+        : (!originalView && result.reviewedDetections != null
+                  ? result.reviewedDetections!
+                  : filterDetections(
+                      result.detections,
+                      minConfidence: confidence,
+                      suppressOverlaps: suppress,
+                      iouThreshold: iou,
+                    ))
+              .where((box) => !hidden.contains(box.classId))
+              .toList();
     setState(() => _exporting = true);
     try {
       // Fetch all completed results so exports are not limited to visited images.
       final results = <InferenceResult>[];
       for (final image in _job!.images.where((i) => i.status == 'completed')) {
-        results.add(
-          _visited[image.id] ??
-              await widget.service.image(widget.jobId, image.id),
-        );
+        results.add(await widget.service.image(widget.jobId, image.id));
         if (!mounted) return;
       }
       final String content;
       if (format == 'json') {
         content = const JsonEncoder.withIndent('  ').convert({
           'jobId': widget.jobId,
-          'images': results.map((r) => r.json).toList(),
+          'mode': original ? 'original' : 'current',
+          'filters': original
+              ? null
+              : {
+                  'minConfidence': confidence,
+                  'suppressOverlaps': suppress,
+                  'iouThreshold': iou,
+                  'showOriginal': originalView,
+                  'excludedClassIds': hidden.toList()..sort(),
+                },
+          'images': results
+              .map(
+                (r) => {
+                  ...r.json,
+                  'detections': exported(r).map((d) => d.toJson()).toList(),
+                },
+              )
+              .toList(),
         });
       } else {
-        String cell(Object value) =>
-            '"${value.toString().replaceAll('"', '""')}"';
+        String cell(Object? value) =>
+            '"${(value ?? '').toString().replaceAll('"', '""')}"';
         content = [
-          'imageId,classId,className,confidence,xCenter,yCenter,width,height',
+          'imageId,classId,className,confidence,xCenter,yCenter,width,height,resultMode,minConfidence,overlapIoU,excludedClassIds',
           for (final result in results)
-            for (final d in result.detections)
+            for (final d in exported(result))
               [
                 result.id,
                 d.classId,
@@ -263,6 +305,20 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
                 d.yCenter,
                 d.width,
                 d.height,
+                original
+                    ? 'original'
+                    : !originalView && result.reviewedDetections != null
+                    ? 'reviewed'
+                    : 'filtered',
+                original || (!originalView && result.reviewedDetections != null)
+                    ? null
+                    : confidence,
+                !original &&
+                        (originalView || result.reviewedDetections == null) &&
+                        suppress
+                    ? iou
+                    : null,
+                original ? '[]' : jsonEncode(hidden.toList()..sort()),
               ].map(cell).join(','),
         ].join('\r\n');
       }
@@ -270,7 +326,7 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
       final exportBox = _exportButtonKey.currentContext?.findRenderObject();
       if (exportBox is! RenderBox || !exportBox.hasSize) return;
       final message = await saveInferenceExport(
-        'inference-${widget.jobId}.$format',
+        'inference-${widget.jobId}-${original ? 'original' : 'current'}.$format',
         content,
         sharePositionOrigin:
             exportBox.localToGlobal(Offset.zero) & exportBox.size,
@@ -312,8 +368,22 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
               icon: const Icon(Icons.download, color: Colors.white),
               onSelected: _export,
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'json', child: Text('Exportar JSON')),
-                PopupMenuItem(value: 'csv', child: Text('Exportar CSV')),
+                PopupMenuItem(
+                  value: 'json',
+                  child: Text('JSON do resultado atual'),
+                ),
+                PopupMenuItem(
+                  value: 'csv',
+                  child: Text('CSV do resultado atual'),
+                ),
+                PopupMenuItem(
+                  value: 'original-json',
+                  child: Text('JSON original'),
+                ),
+                PopupMenuItem(
+                  value: 'original-csv',
+                  child: Text('CSV original'),
+                ),
               ],
             ),
           ),
@@ -490,32 +560,80 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
               ),
             ),
             const SizedBox(height: 16),
-            Text('Confiança mínima: ${(_confidence * 100).round()}%'),
-            Slider(
-              value: _confidence,
-              onChanged: (value) => setState(() => _confidence = value),
-            ),
+            if (_result?.reviewedDetections != null)
+              SwitchListTile(
+                title: const Text('Ver original'),
+                subtitle: const Text(
+                  'Revisões podem ser editadas no painel web.',
+                ),
+                value: _original,
+                onChanged: (value) => setState(() {
+                  _original = value;
+                  _confidence = 0.25;
+                  _suppressOverlaps = false;
+                  _iou = 0.5;
+                  _hidden.clear();
+                }),
+              ),
+            if (_usingReview)
+              const Text(
+                'Resultado revisado. Filtros automáticos não são reaplicados.',
+              ),
+            if (!_usingReview) ...[
+              Text('Confiança mínima: ${(_confidence * 100).round()}%'),
+              Slider(
+                min: 0.25,
+                value: _confidence,
+                onChanged: (value) => setState(() => _confidence = value),
+              ),
+              CheckboxListTile(
+                title: const Text('Reduzir detecções duplicadas'),
+                value: _suppressOverlaps,
+                onChanged: (value) =>
+                    setState(() => _suppressOverlaps = value ?? false),
+              ),
+              if (_suppressOverlaps) ...[
+                Text('Limite de sobreposição: ${(_iou * 100).round()}%'),
+                Slider(
+                  min: 0.1,
+                  max: 0.9,
+                  divisions: 16,
+                  value: _iou,
+                  onChanged: (value) => setState(() => _iou = value),
+                ),
+                const Text(
+                  'Um limite menor remove mais caixas da mesma classe.',
+                ),
+              ],
+              TextButton(
+                onPressed: () => setState(() {
+                  _confidence = 0.25;
+                  _suppressOverlaps = false;
+                  _iou = 0.5;
+                  _hidden.clear();
+                }),
+                child: const Text('Restaurar filtros'),
+              ),
+            ],
             Text(
-              '${_visible.length} detecções visíveis',
+              '${_visible.length} caixas · ${_result?.detections.length ?? 0} detecções originais',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            for (final id
-                in (_result?.detections
-                          .map((d) => d.classId)
-                          .toSet()
-                          .toList() ??
-                      <int>[])
-                  ..sort())
+            for (final id in ([
+              ...?_result?.detections,
+              ...?_result?.reviewedDetections,
+            ].map((d) => d.classId).toSet().toList())..sort())
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 activeColor: detectionColor(id),
                 title: Text(
-                  _result!.detections
-                      .firstWhere((d) => d.classId == id)
-                      .className,
+                  [
+                    ..._result!.detections,
+                    ...?_result!.reviewedDetections,
+                  ].firstWhere((d) => d.classId == id).className,
                 ),
                 subtitle: Text(
-                  '${_result!.detections.where((d) => d.classId == id && d.confidence >= _confidence).length} detecções',
+                  '${_processedCurrent.where((d) => d.classId == id).length} caixas',
                 ),
                 value: !_hidden.contains(id),
                 onChanged: (value) => setState(() {
@@ -526,14 +644,14 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
                   }
                 }),
               ),
-            if (_result != null && _result!.detections.isEmpty)
+            if (_result != null && _processedCurrent.isEmpty)
               const Text('Nenhum objeto detectado nesta imagem.'),
             ExpansionTile(
               title: const Text('Resumo das imagens visualizadas'),
               children: [
                 ListTile(
                   title: Text(
-                    '${_visited.length} imagens · ${_visited.values.fold<int>(0, (total, r) => total + r.detections.length)} detecções',
+                    '${_visited.length} imagens · ${_visited.values.fold<int>(0, (total, r) => total + _processed(r).length)} caixas (filtros automáticos)',
                   ),
                 ),
               ],
@@ -569,7 +687,8 @@ class DetectionPainter extends CustomPainter {
       if (!labels) continue;
       final text = TextPainter(
         text: TextSpan(
-          text: '${d.className} ${(d.confidence * 100).round()}%',
+          text:
+              '${d.className} ${d.confidence == null ? 'Manual' : '${(d.confidence! * 100).round()}%'}',
           style: TextStyle(
             color: Colors.white,
             fontSize: 14 / scale,

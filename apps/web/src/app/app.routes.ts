@@ -4,6 +4,7 @@ import { authGuard } from './core/guards/auth.guard';
 import { inferenceEnabledGuard } from './core/guards/inference-enabled.guard';
 import type { LabelingPageComponent } from './features/labeling/labeling-page.component';
 import type { UploadCreatePageComponent } from './features/uploads/upload-create-page.component';
+import type { InferenceViewerPageComponent } from './features/inference/inference-viewer-page.component';
 
 export const routes: Routes = [
   {
@@ -83,6 +84,7 @@ export const routes: Routes = [
       },
       {
         path: 'inference/:jobId',
+        canDeactivate: [(component: InferenceViewerPageComponent) => component.canDeactivate()],
         canMatch: [inferenceEnabledGuard],
         loadComponent: () =>
           import('./features/inference/inference-viewer-page.component').then(

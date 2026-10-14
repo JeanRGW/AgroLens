@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
+import { configureJsonBodyParsing } from './common/http-body-parsing';
 import { AppModule } from './app.module';
 import { runMigrations } from './cli/migrate';
 import { resolveTrustProxy } from './config/env.schema';
@@ -31,6 +32,7 @@ async function bootstrap() {
 
     const port = configService.get<number>('PORT', 3000);
     const apiPrefix = configService.get<string>('API_PREFIX', 'api');
+    configureJsonBodyParsing(app, apiPrefix);
     const corsOrigins = configService.get<string[]>('CORS_ORIGINS', []);
     const swaggerEnabled = configService.get<boolean>('SWAGGER_ENABLED', false);
 

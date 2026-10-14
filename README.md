@@ -108,6 +108,7 @@ cd deploy/production && docker compose -f docker-compose.prod.yml --env-file .en
 
 - [Architecture and client responsibilities](docs/architecture.md)
 - [Drone image imports, GPS extraction, and public sample validation](docs/drone-image-import.md)
+- [Detection filters and manual inference reviews](docs/inference-review.md)
 - [Backend](apps/api/README.md), [web](apps/web/README.md), [mobile](apps/mobile/README.md), and [inference](services/inference/README.md)
 - [Production deployment](deploy/production/README.md) and [backup/restore](docs/operations/backup-restore.md)
 - [Cross-app E2E](docs/testing/cross-app-e2e.md) and [contributing](CONTRIBUTING.md)

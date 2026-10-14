@@ -22,6 +22,13 @@
       "when": 1791814462992,
       "tag": "0002_photo_location_extraction",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791862454472,
+      "tag": "0003_inference_review_snapshots",
+      "breakpoints": true
     }
   ]
 }

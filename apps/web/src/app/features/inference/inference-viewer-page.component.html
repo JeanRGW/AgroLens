@@ -6,7 +6,11 @@
   >
     <div class="page-actions">
       <a mat-stroked-button routerLink="/inference"><mat-icon>arrow_back</mat-icon>Voltar</a>
-      <button mat-flat-button [matMenuTriggerFor]="exportMenu" [disabled]="!job() || exporting()">
+      <button
+        mat-flat-button
+        [matMenuTriggerFor]="exportMenu"
+        [disabled]="!job() || exporting() || editing() || savingReview()"
+      >
         <mat-icon>download</mat-icon>{{ exporting() ? 'Exportando…' : 'Exportar' }}
       </button>
       <mat-menu #exportMenu="matMenu">
@@ -14,6 +18,8 @@
         <button mat-menu-item (click)="exportCsv()">
           <mat-icon>description</mat-icon>Exportar CSV
         </button>
+        <button mat-menu-item (click)="exportJson(true)">JSON original</button>
+        <button mat-menu-item (click)="exportCsv(true)">CSV original</button>
       </mat-menu>
     </div>
   </app-page-header>
@@ -65,7 +71,7 @@
               <span class="image-index">{{ img.imageIndex + 1 }}</span>
               <span class="image-info">
                 <span class="image-filename">{{ img.fileName }}</span>
-                <span class="image-sub">{{ img.detectionCount }} detecções</span>
+                <span class="image-sub">{{ img.detectionCount }} detecções originais</span>
                 <span class="cell-badge image-status" [class]="statusBadgeClass(img.status)">{{
                   statusLabel(img.status)
                 }}</span>
@@ -88,6 +94,47 @@
           }
         </div>
         <div class="viewer-toolbar" role="group" aria-label="Controles da imagem">
+          @if (!editing()) {
+            <button
+              mat-stroked-button
+              [disabled]="
+                imageResult()?.status !== 'completed' ||
+                !imageDecoded() ||
+                exporting() ||
+                savingReview()
+              "
+              (click)="beginReview()"
+            >
+              <mat-icon>edit</mat-icon>{{ usingReview() ? 'Editar revisão' : 'Editar resultado' }}
+            </button>
+            @if (
+              imageResult()?.reviewedDetections !== null &&
+              imageResult()?.reviewedDetections !== undefined
+            ) {
+              <button mat-button [disabled]="savingReview()" (click)="toggleOriginal()">
+                {{ showOriginal() ? 'Ver revisão' : 'Ver original' }}
+              </button>
+              <button mat-button [disabled]="savingReview()" (click)="saveReview(true)">
+                Restaurar original
+              </button>
+            }
+          } @else {
+            <button mat-flat-button [disabled]="savingReview()" (click)="saveReview()">
+              {{ savingReview() ? 'Salvando…' : 'Salvar alterações' }}
+            </button>
+            <button mat-button [disabled]="savingReview()" (click)="discardReview()">
+              Cancelar
+            </button>
+            <button
+              mat-icon-button
+              aria-label="Desfazer edição"
+              matTooltip="Desfazer edição"
+              [disabled]="!undoHistory().length || savingReview()"
+              (click)="undoReview()"
+            >
+              <mat-icon>undo</mat-icon>
+            </button>
+          }
           <div class="zoom-controls">
             <button
               mat-icon-button
@@ -133,7 +180,7 @@
             mat-button
             class="overlay-toggle"
             [attr.aria-pressed]="showAllDetections()"
-            [disabled]="!imageDecoded()"
+            [disabled]="!imageDecoded() || editing()"
             (click)="toggleAllDetections()"
           >
             <mat-icon>{{ showAllDetections() ? 'visibility' : 'visibility_off' }}</mat-icon
@@ -170,7 +217,18 @@
                 (load)="onImageLoad()"
                 (error)="onImageError()"
               />
-              @if (imageDecoded()) {
+              @if (imageDecoded() && editing()) {
+                <app-detection-editor
+                  [attr.inert]="savingReview() ? '' : null"
+                  [boxes]="draft()"
+                  [selectedIndex]="selectedBox()"
+                  [adding]="addingBox()"
+                  [addClass]="addClass()"
+                  (boxesChange)="changeDraft($event)"
+                  (selectedIndexChange)="selectedBox.set($event)"
+                  (added)="addingBox.set(false)"
+                />
+              } @else if (imageDecoded()) {
                 <div class="detection-overlay" aria-hidden="true">
                   @for (det of visibleDetections(); track $index) {
                     <div
@@ -181,7 +239,11 @@
                     >
                       <span class="detection-tag"
                         >{{ det.className }}
-                        <strong>{{ (det.confidence * 100).toFixed(0) }}%</strong></span
+                        <strong>{{
+                          det.confidence === null
+                            ? 'Manual'
+                            : (det.confidence * 100).toFixed(0) + '%'
+                        }}</strong></span
                       >
                     </div>
                   }
@@ -234,18 +296,125 @@
             ></div>
           } @else if (imageResult(); as result) {
             <div class="visible-count" aria-live="polite">
-              <strong>{{ visibleDetections().length }}</strong
-              ><span>de {{ result.detections?.length || 0 }} detecções visíveis</span>
+              <strong>{{ selectedDetections().length }}</strong
+              ><span>caixas · {{ result.detections?.length || 0 }} detecções originais</span>
             </div>
+            @if (reviewError()) {
+              <p role="alert" class="filter-notice">{{ reviewError() }}</p>
+            }
+            @if (usingReview() && !editing()) {
+              <p class="filter-notice">
+                Resultado revisado. Filtros automáticos não são reaplicados.
+              </p>
+            }
+            @if (editing()) {
+              <fieldset class="review-controls" [disabled]="savingReview()">
+                <legend>Revisar caixas</legend>
+                <p>
+                  Selecione uma caixa para mover ou usar as alças. Caixas adicionadas ou modificadas
+                  são marcadas como Manual. A revisão expira com esta execução.
+                </p>
+                <label
+                  >Classe para novas caixas
+                  <select [ngModel]="addClassId()" (ngModelChange)="addClassId.set(+$event)">
+                    @for (cls of modelClasses(); track cls.id) {
+                      <option [ngValue]="cls.id">{{ cls.name }}</option>
+                    }
+                  </select>
+                </label>
+                <button
+                  mat-stroked-button
+                  [disabled]="!addClass() || savingReview() || draft().length >= 1000"
+                  [attr.aria-pressed]="addingBox()"
+                  (click)="addingBox.set(!addingBox())"
+                >
+                  <mat-icon>add_box</mat-icon
+                  >{{ addingBox() ? 'Cancelar desenho' : 'Adicionar caixa' }}
+                </button>
+                @if (selectedBox() !== null) {
+                  @let box = draft()[selectedBox()!];
+                  @if (box) {
+                    <label
+                      >Classe da caixa selecionada<select
+                        [ngModel]="box.classId"
+                        (ngModelChange)="changeBoxClass(+$event)"
+                      >
+                        @for (cls of modelClasses(); track cls.id) {
+                          <option [ngValue]="cls.id">{{ cls.name }}</option>
+                        }
+                      </select></label
+                    >
+                    <div class="box-fields">
+                      <label
+                        >Centro X<input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.001"
+                          [ngModel]="box.xCenter"
+                          (ngModelChange)="updateBox('xCenter', $event)"
+                      /></label>
+                      <label
+                        >Centro Y<input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.001"
+                          [ngModel]="box.yCenter"
+                          (ngModelChange)="updateBox('yCenter', $event)"
+                      /></label>
+                      <label
+                        >Largura<input
+                          type="number"
+                          min="0.0001"
+                          max="1"
+                          step="0.001"
+                          [ngModel]="box.width"
+                          (ngModelChange)="updateBox('width', $event)"
+                      /></label>
+                      <label
+                        >Altura<input
+                          type="number"
+                          min="0.0001"
+                          max="1"
+                          step="0.001"
+                          [ngModel]="box.height"
+                          (ngModelChange)="updateBox('height', $event)"
+                      /></label>
+                    </div>
+                    <button mat-button [disabled]="savingReview()" (click)="deleteBox()">
+                      <mat-icon>delete</mat-icon>Excluir caixa
+                    </button>
+                  }
+                }
+                <div class="review-box-list" aria-label="Caixas da revisão">
+                  @for (box of draft(); track $index; let i = $index) {
+                    <button
+                      type="button"
+                      [class.selected]="selectedBox() === i"
+                      [attr.aria-pressed]="selectedBox() === i"
+                      (click)="selectedBox.set(i); addingBox.set(false)"
+                    >
+                      {{ i + 1 }} · {{ box.className }} ·
+                      {{
+                        box.confidence === null ? 'Manual' : (box.confidence * 100).toFixed(0) + '%'
+                      }}
+                    </button>
+                  }
+                </div>
+              </fieldset>
+            }
             @if (result.status === 'failed') {
               <p class="filter-notice">
                 {{ result.errorMessage || 'A inferência falhou para esta imagem.' }}
               </p>
             } @else if (result.status !== 'completed') {
               <p class="filter-notice">Aguardando o resultado da inferência.</p>
-            } @else if (!result.detections?.length) {
+            } @else if (
+              !result.detections?.length && !result.reviewedDetections?.length && !editing()
+            ) {
               <p class="filter-notice">Nenhuma detecção encontrada nesta imagem.</p>
-            } @else {
+            } @else if (!editing()) {
               <div class="section-label">Classes nesta imagem</div>
               <div class="class-filter-list">
                 @for (entry of currentImageClassCounts(); track entry[0]) {
@@ -263,19 +432,43 @@
                   </div>
                 }
               </div>
-              <div class="confidence-label">
-                <label for="confidence-thumb">Confiança mínima</label
-                ><strong>{{ (minConfidence() * 100).toFixed(0) }}%</strong>
-              </div>
-              <mat-slider [min]="0.25" [max]="1" [step]="0.05" discrete
-                ><input
-                  id="confidence-thumb"
-                  matSliderThumb
-                  [ngModel]="minConfidence()"
-                  (ngModelChange)="minConfidence.set($event)"
-              /></mat-slider>
-              <div class="slider-scale"><span>25%</span><span>100%</span></div>
-              @if (!visibleDetections().length) {
+              @if (!usingReview()) {
+                <div class="confidence-label">
+                  <label for="confidence-thumb">Confiança mínima</label
+                  ><strong>{{ (minConfidence() * 100).toFixed(0) }}%</strong>
+                </div>
+                <mat-slider [min]="0.25" [max]="1" [step]="0.05" discrete
+                  ><input
+                    id="confidence-thumb"
+                    matSliderThumb
+                    [ngModel]="minConfidence()"
+                    (ngModelChange)="minConfidence.set($event)"
+                /></mat-slider>
+                <div class="slider-scale"><span>25%</span><span>100%</span></div>
+                <mat-checkbox
+                  [checked]="suppressOverlaps()"
+                  (change)="suppressOverlaps.set($event.checked)"
+                  >Reduzir detecções duplicadas</mat-checkbox
+                >
+                @if (suppressOverlaps()) {
+                  <div class="confidence-label">
+                    <label for="overlap-thumb">Limite de sobreposição</label
+                    ><strong>{{ (iouThreshold() * 100).toFixed(0) }}%</strong>
+                  </div>
+                  <mat-slider [min]="0.1" [max]="0.9" [step]="0.05" discrete
+                    ><input
+                      id="overlap-thumb"
+                      matSliderThumb
+                      [ngModel]="iouThreshold()"
+                      (ngModelChange)="iouThreshold.set($event)"
+                  /></mat-slider>
+                  <p class="filter-notice">
+                    Mantém a caixa de maior confiança da mesma classe. Um limite menor remove mais
+                    caixas.
+                  </p>
+                }
+              }
+              @if (!selectedDetections().length || !showAllDetections()) {
                 <p class="filter-notice">
                   {{
                     showAllDetections()
@@ -294,6 +487,9 @@
 
           <details class="aggregate-summary">
             <summary>Resumo das imagens visualizadas</summary>
+            <p class="filter-notice">
+              Totais após filtros automáticos ou revisão salva, incluindo todas as classes.
+            </p>
             <p class="visited-count">
               {{ visitedImageCount() }} de {{ detail.images.length }} imagens carregadas
             </p>

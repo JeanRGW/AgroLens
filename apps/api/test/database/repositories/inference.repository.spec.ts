@@ -144,6 +144,60 @@ describe('InferenceRepository', () => {
     models = new InferenceModelsRepository(db as any, new ConfigService());
   });
 
+  describe('saveReview', () => {
+    const stamp = new Date('2026-10-13T00:00:00Z');
+    beforeEach(() => txMock.mockImplementation(async (fn) => fn(db)));
+    it('locks the job/image and changes only the reviewed snapshot and timestamp', async () => {
+      push([{ id: 'job-1', expiresAt: null }]);
+      push([
+        rawImageRow({ status: 'completed', updatedAt: stamp, detections: [{ confidence: 0.9 }] }),
+      ]);
+      push([rawImageRow({ reviewedDetections: [] })]);
+      await repo.saveReview('job-1', 'img-1', stamp, [], 'owner');
+      expect(db.for).toHaveBeenNthCalledWith(1, 'update');
+      expect(db.for).toHaveBeenNthCalledWith(2, 'update');
+      expect(db.set).toHaveBeenCalledWith({ reviewedDetections: [], updatedAt: expect.any(Date) });
+      expect(db.values).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'inference_review_save', actorUserId: 'owner' }),
+      );
+    });
+    it('rejects stale edits before any write', async () => {
+      push([{ expiresAt: null }]);
+      push([rawImageRow({ status: 'completed', updatedAt: new Date(stamp.getTime() + 1) })]);
+      await expect(repo.saveReview('job-1', 'img-1', stamp, [], 'owner')).rejects.toThrow(
+        'changed',
+      );
+      expect(db.update).not.toHaveBeenCalled();
+    });
+    it('rejects expired jobs and incomplete images', async () => {
+      push([{ expiresAt: new Date(0) }]);
+      await expect(repo.saveReview('job-1', 'img-1', stamp, [], 'owner')).rejects.toThrow(
+        'expired',
+      );
+      push([{ expiresAt: null }]);
+      push([rawImageRow({ status: 'running' })]);
+      await expect(repo.saveReview('job-1', 'img-1', stamp, [], 'owner')).rejects.toThrow(
+        'completed',
+      );
+      expect(db.update).not.toHaveBeenCalled();
+    });
+    it('advances the concurrency timestamp even within the same millisecond', async () => {
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(stamp.getTime());
+      try {
+        push([{ expiresAt: null }]);
+        push([rawImageRow({ status: 'completed', updatedAt: stamp })]);
+        push([rawImageRow()]);
+        await repo.saveReview('job-1', 'img-1', stamp, null, 'owner');
+        expect(db.set).toHaveBeenCalledWith({
+          reviewedDetections: null,
+          updatedAt: new Date(stamp.getTime() + 1),
+        });
+      } finally {
+        clock.mockRestore();
+      }
+    });
+  });
+
   // ═══════════════════════════════════════════════════════════════════
   //  Model CRUD
   // ═══════════════════════════════════════════════════════════════════

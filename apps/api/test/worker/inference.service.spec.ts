@@ -43,6 +43,7 @@ function makeImage(overrides: Partial<InferenceJobImage> = {}): InferenceJobImag
     height: null,
     status: 'queued',
     detections: null,
+    reviewedDetections: null,
     inferenceMs: null,
     attempts: 1,
     errorMessage: null,
