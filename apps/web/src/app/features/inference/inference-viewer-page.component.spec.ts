@@ -205,7 +205,7 @@ describe('InferenceViewerPageComponent', () => {
     it('seeds review from all processed classes even if a class is hidden', async () => {
       await loadBoxes([corn, { ...corn, classId: 1, className: 'weed' }]);
       component.toggleClassFilter('weed', false);
-      component.beginReview();
+      await component.beginReview();
       expect(component.draft().length).toBe(2);
       component.selectedBox.set(0);
       component.updateBox('xCenter', 0.6);
@@ -217,9 +217,39 @@ describe('InferenceViewerPageComponent', () => {
       expect(component.draft().length).toBe(1);
       expect(component.imageResult()!.detections!.length).toBe(2);
     });
+    it('confirms before editing from the original view and starts from the original base', async () => {
+      await loadBoxes([corn]);
+      component.imageResult.set({
+        ...component.imageResult()!,
+        reviewedDetections: [{ ...corn, confidence: null, width: 0.4 }],
+      });
+      component.toggleOriginal();
+      const confirm = spyOn(
+        component as unknown as { confirm(message: string): Promise<boolean> },
+        'confirm',
+      ).and.resolveTo(false);
+      await component.beginReview();
+      expect(confirm).toHaveBeenCalled();
+      expect(component.editing()).toBeFalse();
+      confirm.and.resolveTo(true);
+      await component.beginReview();
+      expect(component.editing()).toBeTrue();
+      expect(component.draft()).toEqual([corn]);
+    });
+    it('starts editing without prompting when no saved review exists', async () => {
+      await loadBoxes([corn]);
+      component.toggleOriginal();
+      const confirm = spyOn(
+        component as unknown as { confirm(message: string): Promise<boolean> },
+        'confirm',
+      );
+      await component.beginReview();
+      expect(confirm).not.toHaveBeenCalled();
+      expect(component.editing()).toBeTrue();
+    });
     it('saves empty reviews and does not refilter manual boxes', async () => {
       await loadBoxes();
-      component.beginReview();
+      await component.beginReview();
       component.changeDraft([]);
       inference.saveReview.and.resolveTo({
         reviewedDetections: [],
@@ -240,7 +270,7 @@ describe('InferenceViewerPageComponent', () => {
     });
     it('retains the draft on stale-save failure and protects unsaved navigation', async () => {
       await loadBoxes();
-      component.beginReview();
+      await component.beginReview();
       component.changeDraft([]);
       inference.saveReview.and.rejectWith(
         new Error('This result changed. Reload before saving your review.'),
@@ -261,7 +291,7 @@ describe('InferenceViewerPageComponent', () => {
       const refresh = deferred<InferenceJobImageResult>();
       inference.getImage.and.returnValue(refresh.promise);
       const pending = component.loadImage(component.job()!.images[0], true);
-      component.beginReview();
+      await component.beginReview();
       component.selectedBox.set(0);
       component.updateBox('xCenter', 0.6);
       const draft = component.draft();
@@ -297,7 +327,7 @@ describe('InferenceViewerPageComponent', () => {
       const refresh = deferred<InferenceJobImageResult>();
       inference.getImage.and.returnValue(refresh.promise);
       const pending = component.loadImage(component.job()!.images[0], true);
-      component.beginReview();
+      await component.beginReview();
       refresh.reject(new Error('late network failure'));
       await pending;
       expect(component.imageResult()).toBe(original);
@@ -306,7 +336,7 @@ describe('InferenceViewerPageComponent', () => {
     });
     it('does not replace the draft revision from mutable image state and resets it for a new draft', async () => {
       await loadBoxes([corn]);
-      component.beginReview();
+      await component.beginReview();
       component.imageResult.set({
         ...component.imageResult()!,
         updatedAt: '2026-10-13T00:00:01.000Z',
@@ -318,14 +348,14 @@ describe('InferenceViewerPageComponent', () => {
       inference.saveReview.calls.reset();
       await component.saveReview();
       expect(inference.saveReview).not.toHaveBeenCalled();
-      component.beginReview();
+      await component.beginReview();
       inference.saveReview.and.resolveTo({
         reviewedDetections: [corn],
         updatedAt: '2026-10-13T00:00:02.000Z',
       });
       await component.saveReview();
       expect(inference.saveReview.calls.mostRecent().args[3]).toBe('2026-10-13T00:00:01.000Z');
-      component.beginReview();
+      await component.beginReview();
       await component.saveReview();
       expect(inference.saveReview.calls.mostRecent().args[3]).toBe('2026-10-13T00:00:02.000Z');
     });

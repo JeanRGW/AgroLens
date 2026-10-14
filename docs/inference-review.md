@@ -18,7 +18,9 @@ separate reviewed box list; it never rewrites the original model detections.
 ## Web editing
 
 Choose **Editar resultado** to copy the processed result (all classes, including
-hidden classes) into a draft. Automatic filters are frozen during editing.
+hidden classes) into a draft. Starting an edit while **Ver original** is active
+asks for confirmation and builds the draft from the original detections;
+saving then replaces the saved review. Automatic filters are frozen during editing.
 Select boxes on the image or in the box list; delete, draw, move, resize with
 corner handles, change classes, or adjust normalized coordinates with inputs.
 Undo retains up to 50 changes. Cancel leaves the saved result untouched.

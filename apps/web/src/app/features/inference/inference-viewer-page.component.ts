@@ -459,15 +459,21 @@ export class InferenceViewerPageComponent implements OnInit {
     this.reviewError.set('');
     return true;
   }
-  beginReview(): void {
+  async beginReview(): Promise<void> {
     const result = this.imageResult();
     if (!result || result.status !== 'completed' || this.savingReview() || this.editing()) return;
+    if (
+      this.showOriginal() &&
+      result.reviewedDetections != null &&
+      !(await this.confirm('Editar a partir do original substituirá a revisão salva. Continuar?'))
+    )
+      return;
     // Fence refreshes already in flight, and bind the draft to the revision it was copied from.
     this.imageRequest++;
     this.loadingImage.set(false);
     this.draftExpectedUpdatedAt = new Date(result.updatedAt).toISOString();
     // Seed all classes, not just boxes currently visible on the overlay.
-    const draft = this.processedDetections().map((box) => ({ ...box }));
+    const draft = this.processedResult(result, this.showOriginal()).map((box) => ({ ...box }));
     this.initialDraft = JSON.stringify(draft);
     this.draft.set(draft);
     this.undoHistory.set([]);
