@@ -34,7 +34,7 @@ const geometry = (r: Rect) => ({
     @for (box of boxes(); track $index; let i = $index) {
       <button
         type="button"
-        class="box"
+        class="box label-box"
         [class.selected]="selectedIndex() === i"
         [attr.data-index]="i"
         [attr.aria-label]="'Selecionar caixa ' + (i + 1) + ': ' + box.className"
@@ -43,8 +43,12 @@ const geometry = (r: Rect) => ({
         [style.top.%]="(box.yCenter - box.height / 2) * 100"
         [style.width.%]="box.width * 100"
         [style.height.%]="box.height * 100"
+        [style.--box-color]="classColors().get(box.className) ?? '#007f91'"
         (click)="selectedIndexChange.emit(i)"
       >
+        @if (showClassNames()) {
+          <span class="box-name label-tag">{{ box.className }}</span>
+        }
         @if (selectedIndex() === i) {
           @for (corner of corners; track corner) {
             <span class="handle" [class]="'handle ' + corner" [attr.data-mode]="corner"></span>
@@ -76,7 +80,7 @@ const geometry = (r: Rect) => ({
     }
     .box {
       position: absolute;
-      border: 2px solid #007f91;
+      border: 2px solid var(--box-color, #007f91);
       background: #007f9110;
       padding: 0;
       cursor: move;
@@ -88,6 +92,16 @@ const geometry = (r: Rect) => ({
     }
     .box:focus-visible {
       outline: 3px solid #fff;
+    }
+    .box-name {
+      color: #fff;
+      background: #163d36;
+      font-size: 11px;
+      padding: 2px 4px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
     }
     .handle {
       position: absolute;
@@ -129,6 +143,10 @@ export class DetectionEditorComponent {
   readonly boxes = input.required<ReviewedDetection[]>();
   readonly selectedIndex = input<number | null>(null);
   readonly adding = input(false);
+  readonly classColors = input<Map<string, string>>(new Map());
+  readonly showClassNames = input(false);
+  readonly selectWhileAdding = input(false);
+  readonly disabled = input(false);
   readonly addClass = input<InferenceModelClass | null>(null);
   readonly boxesChange = output<ReviewedDetection[]>();
   readonly selectedIndexChange = output<number | null>();
@@ -152,16 +170,17 @@ export class DetectionEditorComponent {
     };
   }
   start(event: PointerEvent): void {
-    if (event.button !== 0 || this.gesture) return;
+    if (event.button !== 0 || this.gesture || this.disabled()) return;
     const target = (event.target as HTMLElement).closest<HTMLElement>('[data-index]');
     const index = target ? Number(target.dataset['index']) : null;
     if (!this.adding() && index === null) {
       this.selectedIndexChange.emit(null);
       return;
     }
-    if (this.adding() && !this.addClass()) return;
+    const adding = this.adding() && !(this.selectWhileAdding() && index !== null);
+    if (adding && !this.addClass()) return;
     event.preventDefault();
-    const mode = this.adding() ? 'add' : ((event.target as HTMLElement).dataset['mode'] ?? 'move');
+    const mode = adding ? 'add' : ((event.target as HTMLElement).dataset['mode'] ?? 'move');
     this.gesture = {
       pointerId: event.pointerId,
       start: this.point(event),

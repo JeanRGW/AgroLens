@@ -1,27 +1,29 @@
 import { NgStyle } from '@angular/common';
-import { Component, ElementRef, input, OnDestroy, output, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  computed,
+  input,
+  OnDestroy,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
-import { YoloLabel } from '@agrolens/contracts';
+import type { ReviewedDetection, YoloLabel } from '@agrolens/contracts';
+import { DetectionEditorComponent } from '../../inference/detection-editor.component';
 
-export interface LabelCreateEvent {
-  classId: number;
-  className: string;
-  xCenter: number;
-  yCenter: number;
-  width: number;
-  height: number;
-}
+export type LabelCreateEvent = YoloLabel;
 
 @Component({
   selector: 'app-image-canvas',
   standalone: true,
-  imports: [NgStyle, MatIconModule],
+  imports: [NgStyle, MatIconModule, DetectionEditorComponent],
   template: `
     <div class="canvas-host">
       @if (loadingImage()) {
-        <div class="canvas-loading">
-          <mat-icon>hourglass_empty</mat-icon>
-          <span>Carregando imagem...</span>
+        <div class="canvas-state">
+          <mat-icon>hourglass_empty</mat-icon><span>Carregando imagem...</span>
         </div>
       } @else if (imageUrl()) {
         <img
@@ -33,31 +35,36 @@ export interface LabelCreateEvent {
           (error)="imageError.emit()"
           draggable="false"
         />
-
-        <div class="overlay" (mousedown)="startDrawing($event)">
-          @for (label of labels(); track $index) {
-            <button
-              type="button"
-              class="label-box"
-              [class.selected]="selectedLabelIndex() === $index"
-              [style.border-color]="getLabelColor(label)"
-              [style.background-color]="getLabelColor(label) + '26'"
-              [style.--label-color]="getLabelColor(label)"
-              [ngStyle]="getLabelStyle(label)"
-              (click)="pickLabel($index, $event)"
+        <div class="overlay" [ngStyle]="planeStyle()">
+          @for (label of previewLabels(); track $index) {
+            <div
+              class="suggestion"
+              [style.left.%]="(label.xCenter - label.width / 2) * 100"
+              [style.top.%]="(label.yCenter - label.height / 2) * 100"
+              [style.width.%]="label.width * 100"
+              [style.height.%]="label.height * 100"
             >
-              <span class="label-tag">{{ getLabelClassName(label) }}</span>
-            </button>
+              <span>IA · {{ label.className }}</span>
+            </div>
           }
-
-          @if (draftRect()) {
-            <div class="draft-box" [ngStyle]="getDraftStyle()"></div>
+          @if (planeStyle()) {
+            <app-detection-editor
+              [boxes]="editorBoxes()"
+              [selectedIndex]="selectedLabelIndex()"
+              [adding]="true"
+              [addClass]="addClass()"
+              [selectWhileAdding]="true"
+              [disabled]="disabled()"
+              [classColors]="classColors()"
+              [showClassNames]="true"
+              (selectedIndexChange)="labelPick.emit($event ?? -1)"
+              (boxesChange)="onBoxesChange($event)"
+            />
           }
         </div>
       } @else {
-        <div class="canvas-empty">
-          <mat-icon>image</mat-icon>
-          <span>Selecione uma imagem para iniciar.</span>
+        <div class="canvas-state">
+          <mat-icon>image</mat-icon><span>Selecione uma imagem para iniciar.</span>
         </div>
       }
     </div>
@@ -73,7 +80,6 @@ export interface LabelCreateEvent {
       border-radius: 12px;
       overflow: hidden;
     }
-
     .label-image {
       display: block;
       width: 100%;
@@ -81,66 +87,25 @@ export interface LabelCreateEvent {
       object-fit: contain;
       user-select: none;
     }
-
     .overlay {
       position: absolute;
-      inset: 0;
       cursor: crosshair;
-      overflow: hidden;
       z-index: 1;
     }
-
-    .label-box {
+    .suggestion {
       position: absolute;
-      border: 2px solid;
-      border-radius: 2px;
-      color: #fff;
-      font-size: 11px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      padding: 0;
-      text-align: left;
-      background: transparent;
-      cursor: pointer;
-      transition: box-shadow 0.15s;
-    }
-
-    .label-box:hover {
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
-    }
-
-    .label-box.selected {
-      box-shadow:
-        0 0 0 3px #fff,
-        0 0 0 5px var(--label-color);
-      z-index: 2;
-    }
-
-    .label-tag {
-      position: absolute;
-      top: 0;
-      left: 0;
-      background: var(--label-color);
-      color: #fff;
-      padding: 1px 6px;
-      border-bottom-right-radius: 6px;
-      font-weight: 600;
-      font-size: 10px;
-      letter-spacing: 0.3px;
-      line-height: 1.4;
-    }
-
-    .draft-box {
-      position: absolute;
-      border: 2px dashed #90caf9;
-      background: rgba(144, 202, 249, 0.2);
-      border-radius: 2px;
+      border: 2px dashed #fdd835;
+      background: #fdd8350d;
       pointer-events: none;
+      box-sizing: border-box;
     }
-
-    .canvas-loading,
-    .canvas-empty {
+    .suggestion span {
+      background: #fdd835;
+      color: #202616;
+      font-size: 10px;
+      padding: 1px 4px;
+    }
+    .canvas-state {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -149,9 +114,7 @@ export interface LabelCreateEvent {
       gap: 10px;
       color: rgba(255, 255, 255, 0.6);
     }
-
-    .canvas-loading mat-icon,
-    .canvas-empty mat-icon {
+    .canvas-state mat-icon {
       font-size: 36px;
       width: 36px;
       height: 36px;
@@ -159,208 +122,74 @@ export interface LabelCreateEvent {
   `,
 })
 export class ImageCanvasComponent implements OnDestroy {
-  imageUrl = input<string | null>(null);
-  labels = input<YoloLabel[]>([]);
-  selectedLabelIndex = input<number | null>(null);
-  classColors = input<Map<string, string>>(new Map());
-  classes = input<string[]>([]);
-  selectedClass = input<string>('objeto');
-  loadingImage = input<boolean>(false);
-
-  imageLoad = output<HTMLImageElement>();
-  imageError = output<void>();
-  labelPick = output<number>();
-  labelCreate = output<LabelCreateEvent>();
-
+  readonly imageUrl = input<string | null>(null);
+  readonly labels = input<YoloLabel[]>([]);
+  readonly previewLabels = input<YoloLabel[]>([]);
+  readonly selectedLabelIndex = input<number | null>(null);
+  readonly classColors = input<Map<string, string>>(new Map());
+  readonly classes = input<string[]>([]);
+  readonly selectedClass = input('objeto');
+  readonly loadingImage = input(false);
+  readonly disabled = input(false);
+  readonly imageLoad = output<HTMLImageElement>();
+  readonly imageError = output<void>();
+  readonly labelPick = output<number>();
+  readonly labelCreate = output<LabelCreateEvent>();
+  readonly labelsChange = output<YoloLabel[]>();
   readonly imageEl = viewChild<ElementRef<HTMLImageElement>>('labelImage');
-
-  readonly draftRect = signal<{ x: number; y: number; width: number; height: number } | null>(null);
-
-  private drawStartPoint: { x: number; y: number } | null = null;
-
-  private imageNaturalWidth = 0;
-  private imageNaturalHeight = 0;
-  private contentOffsetX = 0;
-  private contentOffsetY = 0;
-  private contentWidth = 0;
-  private contentHeight = 0;
-  private containerWidth = 0;
-  private containerHeight = 0;
-
-  ngOnDestroy(): void {
-    this.cancelDrawing();
-  }
-
-  getLabelStyle(label: YoloLabel): Record<string, string> {
-    const halfW = label.width / 2;
-    const halfH = label.height / 2;
-    const safeX = Math.max(halfW, Math.min(1 - halfW, label.xCenter));
-    const safeY = Math.max(halfH, Math.min(1 - halfH, label.yCenter));
-    const left =
-      ((this.contentOffsetX + (safeX - halfW) * this.contentWidth) / this.containerWidth) * 100;
-    const top =
-      ((this.contentOffsetY + (safeY - halfH) * this.contentHeight) / this.containerHeight) * 100;
-    const w = ((label.width * this.contentWidth) / this.containerWidth) * 100;
-    const h = ((label.height * this.contentHeight) / this.containerHeight) * 100;
-    return { left: `${left}%`, top: `${top}%`, width: `${w}%`, height: `${h}%` };
-  }
-
-  getLabelClassName(label: YoloLabel): string {
-    return this.classes()[label.classId] || label.className || 'objeto';
-  }
-
-  getLabelColor(label: YoloLabel): string {
-    const name = this.getLabelClassName(label);
-    return this.classColors().get(name) || '#666';
-  }
-
-  getDraftStyle(): Record<string, string> {
-    const draft = this.draftRect();
-    if (!draft) {
-      return {};
-    }
-    return {
-      left: `${this.contentOffsetX + draft.x}px`,
-      top: `${this.contentOffsetY + draft.y}px`,
-      width: `${draft.width}px`,
-      height: `${draft.height}px`,
-    };
-  }
+  readonly planeStyle = signal<Record<string, string> | null>(null);
+  readonly editorBoxes = computed<ReviewedDetection[]>(() =>
+    this.labels().map((label) => ({ ...label, confidence: null })),
+  );
+  readonly addClass = computed(() => ({
+    id: Math.max(0, this.classes().indexOf(this.selectedClass())),
+    name: this.selectedClass(),
+  }));
+  private resizeObserver: ResizeObserver | null = null;
 
   onImageLoad(): void {
-    const imgRef = this.imageEl();
-    if (!imgRef) return;
-    const img = imgRef.nativeElement;
-    this.imageNaturalWidth = img.naturalWidth;
-    this.imageNaturalHeight = img.naturalHeight;
+    const image = this.imageEl()?.nativeElement;
+    if (!image) return;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = new ResizeObserver(() => this.computeContentRect());
+    this.resizeObserver.observe(image);
     this.computeContentRect();
-    this.imageLoad.emit(img);
+    this.imageLoad.emit(image);
   }
 
   private computeContentRect(): void {
-    const imgRef = this.imageEl();
-    if (!imgRef) return;
-    const img = imgRef.nativeElement;
-    this.containerWidth = img.clientWidth;
-    this.containerHeight = img.clientHeight;
-    const scale =
-      Math.min(
-        this.containerWidth / this.imageNaturalWidth,
-        this.containerHeight / this.imageNaturalHeight,
-      ) || 1;
-    this.contentWidth = this.imageNaturalWidth * scale;
-    this.contentHeight = this.imageNaturalHeight * scale;
-    this.contentOffsetX = (this.containerWidth - this.contentWidth) / 2;
-    this.contentOffsetY = (this.containerHeight - this.contentHeight) / 2;
+    const image = this.imageEl()?.nativeElement;
+    if (!image?.naturalWidth || !image.naturalHeight) return;
+    const scale = Math.min(
+      image.clientWidth / image.naturalWidth,
+      image.clientHeight / image.naturalHeight,
+    );
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+    this.planeStyle.set({
+      left: `${(image.clientWidth - width) / 2}px`,
+      top: `${(image.clientHeight - height) / 2}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+    });
   }
 
-  startDrawing(event: MouseEvent): void {
-    if (event.button !== 0) {
-      return;
-    }
-    this.computeContentRect();
-    const point = this.getRelativePoint(event);
-    this.drawStartPoint = point;
-    this.labelPick.emit(-1);
-    this.draftRect.set({ x: point.x, y: point.y, width: 0, height: 0 });
-
-    document.addEventListener('mousemove', this.onDragMove);
-    document.addEventListener('mouseup', this.onDragEnd);
-  }
-
-  private onDragMove = (event: MouseEvent): void => {
-    if (!this.drawStartPoint) {
-      return;
-    }
-    const point = this.getRelativePoint(event);
-    const x = Math.min(this.drawStartPoint.x, point.x);
-    const y = Math.min(this.drawStartPoint.y, point.y);
-    const width = Math.abs(point.x - this.drawStartPoint.x);
-    const height = Math.abs(point.y - this.drawStartPoint.y);
-    this.draftRect.set({ x, y, width, height });
-  };
-
-  private onDragEnd = (): void => {
-    document.removeEventListener('mousemove', this.onDragMove);
-    document.removeEventListener('mouseup', this.onDragEnd);
-
-    if (!this.drawStartPoint) {
-      return;
-    }
-    const draft = this.draftRect();
-    this.drawStartPoint = null;
-    this.draftRect.set(null);
-
-    if (!draft || draft.width < 8 || draft.height < 8) {
-      return;
-    }
-
-    const className = this.selectedClass();
-    const classId = this.getClassIndex(className);
-
-    const xCenter = this.clampNormalized((draft.x + draft.width / 2) / this.contentWidth);
-    const yCenter = this.clampNormalized((draft.y + draft.height / 2) / this.contentHeight);
-    const width = this.clampNormalized(draft.width / this.contentWidth);
-    const height = this.clampNormalized(draft.height / this.contentHeight);
-
-    const safeXCenter = this.clampCenterWithinBounds(xCenter, width);
-    const safeYCenter = this.clampCenterWithinBounds(yCenter, height);
-
-    this.labelCreate.emit({
+  onBoxesChange(boxes: ReviewedDetection[]): void {
+    if (this.disabled()) return;
+    const labels = boxes.map(({ classId, className, xCenter, yCenter, width, height }) => ({
       classId,
       className,
-      xCenter: safeXCenter,
-      yCenter: safeYCenter,
+      xCenter,
+      yCenter,
       width,
       height,
-    });
-  };
-
-  cancelDrawing(): void {
-    document.removeEventListener('mousemove', this.onDragMove);
-    document.removeEventListener('mouseup', this.onDragEnd);
-    this.drawStartPoint = null;
-    this.draftRect.set(null);
+    }));
+    if (labels.length === this.labels().length + 1)
+      this.labelCreate.emit(labels[labels.length - 1]);
+    else this.labelsChange.emit(labels);
   }
 
-  pickLabel(index: number, event: MouseEvent): void {
-    event.stopPropagation();
-    this.labelPick.emit(index);
-  }
-
-  private getClassIndex(className: string): number {
-    const cls = this.classes();
-    const existing = cls.indexOf(className);
-    return existing >= 0 ? existing : 0;
-  }
-
-  private getRelativePoint(event: MouseEvent): { x: number; y: number } {
-    const imgRef = this.imageEl();
-    if (!imgRef) return { x: 0, y: 0 };
-    const rect = imgRef.nativeElement.getBoundingClientRect();
-    const x = this.clampWithin(
-      event.clientX - rect.left - this.contentOffsetX,
-      0,
-      this.contentWidth,
-    );
-    const y = this.clampWithin(
-      event.clientY - rect.top - this.contentOffsetY,
-      0,
-      this.contentHeight,
-    );
-    return { x, y };
-  }
-
-  private clampWithin(value: number, min: number, max: number): number {
-    return Math.min(Math.max(value, min), max);
-  }
-
-  private clampNormalized(value: number): number {
-    return Math.min(Math.max(value, 0), 1);
-  }
-
-  private clampCenterWithinBounds(center: number, size: number): number {
-    const half = size / 2;
-    return this.clampWithin(center, half, 1 - half);
+  ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
   }
 }

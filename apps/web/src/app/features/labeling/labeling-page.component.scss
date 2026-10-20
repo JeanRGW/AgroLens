@@ -38,6 +38,7 @@
 }
 
 .editor-main {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -145,6 +146,22 @@
   border-radius: 50%;
 }
 
+.inference-status {
+  display: block;
+  font-size: 10px;
+  color: var(--agri-text-muted);
+}
+.save-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--agri-surface);
+  border: 1px solid var(--agri-border);
+  border-radius: 10px;
+}
+
 .shortcuts-help {
   background: var(--agri-surface);
   border: 1px solid var(--agri-border);
@@ -209,7 +226,9 @@
   }
 
   .right-sidebar {
-    display: none;
+    grid-column: 2;
+    position: static;
+    max-height: none;
   }
 }
 
@@ -221,6 +240,9 @@
   .left-sidebar {
     position: static;
     max-height: none;
+  }
+  .right-sidebar {
+    grid-column: 1;
   }
 
   .toolbar-row {

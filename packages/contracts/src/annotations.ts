@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { timestampDateSchema, timestampStringSchema } from "./common";
 
 export const yoloLabelSchema = z.object({
   classId: z.number().int().min(0),
@@ -16,6 +17,7 @@ export type YoloLabel = z.infer<typeof yoloLabelSchema>;
  * Accepts flexible label data for YOLO, COCO, or custom annotation formats.
  */
 export const upsertAnnotationSchema = z.object({
+  expectedUpdatedAt: timestampDateSchema.nullable().optional(),
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),
   classes: z.array(z.string()),
@@ -42,6 +44,7 @@ export const imageAnnotationSchema = z.object({
 export type ImageAnnotation = z.infer<typeof imageAnnotationSchema>;
 
 export const saveAnnotationInputSchema = z.object({
+  expectedUpdatedAt: timestampStringSchema.nullable().optional(),
   imageId: z.string().uuid(),
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),

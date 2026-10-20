@@ -17,9 +17,60 @@ import {
   initModelSchema,
   createUserSchema,
   listUsersQuerySchema,
+  listJobsQuerySchema,
+  upsertAnnotationSchema,
+  saveAnnotationInputSchema,
 } from "../dist/index.js";
 
 describe("Contracts Schema Validation", () => {
+  test("inference job listing validates an optional upload filter", () => {
+    const uploadId = "550e8400-e29b-41d4-a716-446655440000";
+    assert.deepEqual(listJobsQuerySchema.parse({ uploadId }), {
+      uploadId,
+      limit: 20,
+      offset: 0,
+    });
+    assert.throws(() => listJobsQuerySchema.parse({ uploadId: "invalid" }));
+  });
+
+  test("annotation versions distinguish an absent annotation from a legacy save", () => {
+    const payload = {
+      imageWidth: 100,
+      imageHeight: 80,
+      classes: ["weed"],
+      labels: [],
+    };
+    assert.equal(
+      upsertAnnotationSchema.parse(payload).expectedUpdatedAt,
+      undefined,
+    );
+    assert.equal(
+      upsertAnnotationSchema.parse({ ...payload, expectedUpdatedAt: null })
+        .expectedUpdatedAt,
+      null,
+    );
+    const version = "2026-10-14T10:00:00.000Z";
+    assert.equal(
+      upsertAnnotationSchema
+        .parse({ ...payload, expectedUpdatedAt: version })
+        .expectedUpdatedAt.toISOString(),
+      version,
+    );
+    assert.equal(
+      saveAnnotationInputSchema.parse({
+        ...payload,
+        imageId: "550e8400-e29b-41d4-a716-446655440000",
+        expectedUpdatedAt: version,
+      }).expectedUpdatedAt,
+      version,
+    );
+    assert.throws(() =>
+      upsertAnnotationSchema.parse({
+        ...payload,
+        expectedUpdatedAt: "not-a-date",
+      }),
+    );
+  });
   test("model initialization needs only a name, with optional description", () => {
     assert.deepEqual(initModelSchema.parse({ name: "Weeds — October 2026" }), {
       name: "Weeds — October 2026",

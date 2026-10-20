@@ -74,11 +74,13 @@ export class AnnotationsController {
   @Put(':imageId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Upsert annotation for a specific image (last-write-wins)',
+    summary: 'Upsert annotation for a specific image with an optional version check',
     description:
       'Creates or replaces the annotation for the given image. ' +
       'Only the upload owner or an admin may modify annotations. ' +
-      'The payload must include imageWidth, imageHeight, classes (string array), and labels (object or array).',
+      'The payload must include imageWidth, imageHeight, classes (string array), and labels (object or array). ' +
+      'Pass expectedUpdatedAt to reject stale saves, or null to require that no annotation exists. ' +
+      'Omitting expectedUpdatedAt preserves last-write-wins behavior for existing clients.',
   })
   @ApiParam({ name: 'uploadId', description: 'Upload UUID', format: 'uuid' })
   @ApiParam({ name: 'imageId', description: 'Upload image UUID', format: 'uuid' })
@@ -87,6 +89,7 @@ export class AnnotationsController {
       type: 'object',
       required: ['imageWidth', 'imageHeight', 'classes', 'labels'],
       properties: {
+        expectedUpdatedAt: { type: 'string', format: 'date-time', nullable: true },
         imageWidth: { type: 'integer', example: 1920 },
         imageHeight: { type: 'integer', example: 1080 },
         classes: { type: 'array', items: { type: 'string' } },
@@ -110,6 +113,7 @@ export class AnnotationsController {
     description: 'Forbidden: only owner or admin can modify annotations',
   })
   @ApiResponse({ status: 404, description: 'Upload not found or not accessible' })
+  @ApiResponse({ status: 409, description: 'Annotation changed since the client loaded it' })
   async upsertAnnotation(
     @Param('uploadId', ParseUUIDPipe) uploadId: string,
     @Param('imageId', ParseUUIDPipe) imageId: string,

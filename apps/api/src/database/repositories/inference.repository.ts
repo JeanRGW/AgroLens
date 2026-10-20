@@ -131,9 +131,11 @@ export class InferenceRepository {
     userId: string,
     limit: number,
     offset: number,
+    uploadId?: string,
   ): Promise<{ jobs: InferenceJob[]; total: number }> {
     const where = and(
       eq(inferenceJobs.userId, userId),
+      uploadId ? eq(inferenceJobs.uploadId, uploadId) : undefined,
       or(isNull(inferenceJobs.expiresAt), gte(inferenceJobs.expiresAt, new Date())),
     );
     const jobs = await this.db

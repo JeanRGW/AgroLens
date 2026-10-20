@@ -39,6 +39,21 @@ describe('DetectionEditorComponent gestures', () => {
     ]);
     expect(fixture.componentInstance.boxes()[0].confidence).toBe(0.9);
   });
+  for (const color of [null, '#e53935']) {
+    it(`keeps selected borders white with ${color ?? 'default'} box colors`, () => {
+      const { fixture } = setup();
+      if (color) fixture.componentRef.setInput('classColors', new Map([['corn', color]]));
+      fixture.detectChanges();
+      const element = fixture.nativeElement.querySelector('.box') as HTMLElement;
+      expect(getComputedStyle(element).borderTopColor).toBe('rgb(255, 255, 255)');
+      fixture.componentRef.setInput('selectedIndex', null);
+      fixture.detectChanges();
+      expect(getComputedStyle(element).borderTopColor).toBe(
+        color ? 'rgb(229, 57, 53)' : 'rgb(0, 127, 145)',
+      );
+      fixture.destroy();
+    });
+  }
   it('resizes from a corner and preserves the opposite corner', () => {
     const { fixture, plane, changed, pointer } = setup();
     pointer(fixture.nativeElement.querySelector('.nw'), 'pointerdown', 400, 400);

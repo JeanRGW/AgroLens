@@ -2,7 +2,7 @@
   <app-page-header
     eyebrow="Rotulagem"
     title="Anotação YOLO"
-    subtitle="Desenhe caixas delimitadoras nas imagens para treinar modelos de detecção."
+    subtitle="Desenhe rótulos ou gere sugestões com IA. Revise as caixas antes de salvar."
   />
 
   <section class="labeling-page">
@@ -147,6 +147,7 @@
               savingAnnotation() ||
               loadingAnnotation() ||
               annotationLoadError() ||
+              !imageReady() ||
               !selectedImageUrl()
             "
           >
@@ -168,16 +169,25 @@
           <button
             mat-flat-button
             color="accent"
-            [routerLink]="['/inference']"
-            [queryParams]="{ uploadId: selectedUploadId(), imageId: selectedImage()?.imageId }"
-            [disabled]="!selectedUploadId()"
-            matTooltip="Executa inferência nesta imagem"
+            (click)="toggleAiAssist()"
+            [attr.aria-expanded]="showAiAssist()"
+            [disabled]="!selectedUploadId() || editorDisabled()"
+            matTooltip="Gerar sugestões de rótulos com um modelo"
           >
             <mat-icon>psychology</mat-icon>
-            Inferir
+            Rotular com IA
           </button>
         </div>
       </div>
+
+      @if (annotationSaveConflict()) {
+        <div class="save-conflict" role="alert">
+          A anotação foi alterada em outra sessão. Seu rascunho foi mantido.
+          <button mat-stroked-button (click)="reloadConflictedAnnotation()">
+            Recarregar anotação
+          </button>
+        </div>
+      }
 
       <div class="shortcuts-help">
         <button
@@ -215,6 +225,8 @@
           <app-image-canvas
             [imageUrl]="selectedImageUrl()"
             [labels]="labels()"
+            [previewLabels]="previewLabels()"
+            [disabled]="editorDisabled()"
             [selectedLabelIndex]="selectedLabelIndex()"
             [classColors]="classColors()"
             [classes]="classes()"
@@ -224,6 +236,7 @@
             (imageError)="refreshImageUrl()"
             (labelPick)="onPickLabel($event)"
             (labelCreate)="onLabelCreate($event)"
+            (labelsChange)="onLabelsChange($event)"
           />
         }
       </div>
@@ -258,6 +271,20 @@
                 />
               }
               <span class="thumb-index">#{{ item.index }}</span>
+              @switch (inferenceStates().get(item.imageId)) {
+                @case ('queued') {
+                  <span class="inference-status">Na fila</span>
+                }
+                @case ('running') {
+                  <span class="inference-status">Processando</span>
+                }
+                @case ('completed') {
+                  <span class="inference-status">Sugestões prontas</span>
+                }
+                @case ('failed') {
+                  <span class="inference-status">Inferência falhou</span>
+                }
+              }
               @if (annotatedIndexes().has(item.imageId)) {
                 <span class="status-dot" title="Anotada"></span>
               }
@@ -284,8 +311,10 @@
         [selectedLabelIndex]="selectedLabelIndex()"
         [classColors]="classColors()"
         [classes]="classes()"
+        [disabled]="editorDisabled()"
         (selectLabel)="onPickLabel($event)"
         (removeLabel)="removeLabelAt($event)"
+        (labelChange)="onLabelUpdate($event)"
       />
     </aside>
   </section>

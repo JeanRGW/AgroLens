@@ -56,7 +56,7 @@ export class AnnotationsService {
   }
 
   /**
-   * Upsert (last-write-wins) annotation for an upload image.
+   * Upsert an annotation, optionally checking the version loaded by the client.
    */
   async upsertAnnotation(
     uploadId: string,
@@ -79,14 +79,17 @@ export class AnnotationsService {
     }
 
     await this.assertImageInUpload(uploadId, imageId);
-    return this.annotationsRepository.upsert({
-      imageId,
-      imageWidth: dto.imageWidth,
-      imageHeight: dto.imageHeight,
-      classes: dto.classes,
-      labels: dto.labels,
-      updatedByUserId: currentUser.sub,
-    });
+    return this.annotationsRepository.upsert(
+      {
+        imageId,
+        imageWidth: dto.imageWidth,
+        imageHeight: dto.imageHeight,
+        classes: dto.classes,
+        labels: dto.labels,
+        updatedByUserId: currentUser.sub,
+      },
+      dto.expectedUpdatedAt,
+    );
   }
 
   private async assertImageInUpload(uploadId: string, imageId: string): Promise<void> {

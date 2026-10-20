@@ -19,7 +19,7 @@ double intersectionOverUnion(Detection a, Detection b) {
 
 List<Detection> filterDetections(
   List<Detection> boxes, {
-  double minConfidence = 0.25,
+  double minConfidence = 0.05,
   bool suppressOverlaps = false,
   double iouThreshold = 0.5,
 }) {

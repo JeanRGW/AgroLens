@@ -22,9 +22,13 @@ export class InferenceService {
     return firstValueFrom(this.api.get<InferenceModelSummary[]>('/inference/models'));
   }
 
-  listJobs(limit = 20, offset = 0): Promise<InferenceJobListResponse> {
+  listJobs(limit = 20, offset = 0, uploadId?: string): Promise<InferenceJobListResponse> {
     return firstValueFrom(
-      this.api.get<InferenceJobListResponse>('/inference/jobs', { limit, offset }),
+      this.api.get<InferenceJobListResponse>('/inference/jobs', {
+        limit,
+        offset,
+        ...(uploadId ? { uploadId } : {}),
+      }),
     );
   }
 

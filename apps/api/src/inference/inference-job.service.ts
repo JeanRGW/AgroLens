@@ -373,6 +373,7 @@ export class InferenceJobService {
       currentUser.sub,
       dto.limit,
       dto.offset,
+      dto.uploadId,
     );
 
     return {
