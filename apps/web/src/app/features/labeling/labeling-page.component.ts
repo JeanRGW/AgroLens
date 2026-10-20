@@ -559,7 +559,7 @@ export class LabelingPageComponent implements OnInit {
     const image = this.selectedImage();
     if (!uploadId || !image || this.editorDisabled()) return;
     this.showAiAssist.set(true);
-    const ref = this.dialog.open<AiAssistPanelComponent, AiAssistDialogData, ApplyPredictions>(
+    const ref = this.dialog.open<AiAssistPanelComponent, AiAssistDialogData>(
       AiAssistPanelComponent,
       {
         id: 'ai-labeling',
@@ -581,14 +581,15 @@ export class LabelingPageComponent implements OnInit {
       },
     );
     ref.componentInstance.statesChange.subscribe((states) => this.inferenceStates.set(states));
+    ref.componentInstance.previewChange.subscribe((preview) => this.predictionPreview.set(preview));
+    ref.componentInstance.apply.subscribe((predictions) => void this.applyPredictions(predictions));
     ref.beforeClosed().subscribe(() => {
       const runId = ref.componentInstance.selectedRunId();
       if (runId) this.aiRuns.set(uploadId, runId);
     });
-    ref.afterClosed().subscribe((predictions) => {
+    ref.afterClosed().subscribe(() => {
       this.showAiAssist.set(false);
       this.predictionPreview.set(null);
-      if (predictions) void this.applyPredictions(predictions);
     });
   }
 

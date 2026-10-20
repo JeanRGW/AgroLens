@@ -1,6 +1,7 @@
 import { TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { HttpErrorResponse } from '@angular/common/http';
+import { MatDialogRef } from '@angular/material/dialog';
 import type { InferenceJobDetail, InferenceJobImageResult } from '@agrolens/contracts';
 import { InferenceService } from '../../../core/services/inference.service';
 import { AnnotationsService } from '../../../core/services/annotations.service';
@@ -184,6 +185,20 @@ describe('AiAssistPanelComponent', () => {
     expect(panel.predictions()).toEqual([]);
     expect(panel.result()?.detections).toEqual(result.detections);
     expect(apply).not.toHaveBeenCalled();
+    fixture.destroy();
+  }));
+
+  it('emits apply once and closes the dialog without a duplicate payload', fakeAsync(() => {
+    const close = jasmine.createSpy('close');
+    TestBed.overrideProvider(MatDialogRef, { useValue: { close } });
+    const { fixture, panel } = setup();
+    panel.result.set(result);
+    const apply = jasmine.createSpy('apply');
+    panel.apply.subscribe(apply);
+    panel.applyPredictions('append');
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledWith();
     fixture.destroy();
   }));
 

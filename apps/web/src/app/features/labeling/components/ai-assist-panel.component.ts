@@ -70,10 +70,9 @@ export class AiAssistPanelComponent {
   private readonly inference = inject(InferenceService);
   private readonly annotations = inject(AnnotationsService);
   private readonly destroyRef = inject(DestroyRef);
-  readonly dialogRef = inject<MatDialogRef<AiAssistPanelComponent, ApplyPredictions>>(
-    MatDialogRef,
-    { optional: true },
-  );
+  readonly dialogRef = inject<MatDialogRef<AiAssistPanelComponent>>(MatDialogRef, {
+    optional: true,
+  });
   readonly data = inject<AiAssistDialogData>(MAT_DIALOG_DATA, { optional: true });
   readonly uploadId = input<string>(this.data?.uploadId ?? '');
   readonly imageId = input<string | null>(this.data?.imageId ?? null);
@@ -362,14 +361,7 @@ export class AiAssistPanelComponent {
       height: result.height,
       mode,
     });
-    this.dialogRef?.close({
-      uploadId: this.uploadId(),
-      imageId: imageId!,
-      detections: this.predictions(),
-      width: result.width,
-      height: result.height,
-      mode,
-    });
+    this.dialogRef?.close();
     this.showPreview.set(false);
   }
 

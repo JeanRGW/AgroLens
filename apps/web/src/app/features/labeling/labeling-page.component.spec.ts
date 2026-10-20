@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import type { ApplyPredictions } from './components/ai-assist-panel.component';
 import { AuthService } from '../../core/services/auth.service';
@@ -380,5 +380,39 @@ describe('LabelingPageComponent', () => {
     component.toggleAiAssist();
     expect(component.predictionPreview()).toBeNull();
     expect(component.inferenceStates().size).toBe(0);
+  });
+
+  it('wires panel previews and applies predictions through the dialog outputs only', async () => {
+    annotations.getAnnotation.and.resolveTo(null);
+    await component.loadCurrentAnnotation();
+    const statesChange = new Subject<Map<string, string>>();
+    const previewChange = new Subject<ApplyPredictions | null>();
+    const apply = new Subject<ApplyPredictions>();
+    const afterClosed = new Subject<void>();
+    spyOn(component['dialog'], 'open').and.returnValue({
+      componentInstance: {
+        statesChange,
+        previewChange,
+        apply,
+        selectedRunId: () => null,
+      },
+      beforeClosed: () => of(undefined),
+      afterClosed: () => afterClosed,
+    } as never);
+
+    component.toggleAiAssist();
+    previewChange.next(prediction);
+    expect(component.predictionPreview()).toEqual(prediction);
+    statesChange.next(new Map([['image-0', 'completed']]));
+    expect(component.inferenceStates().get('image-0')).toBe('completed');
+
+    apply.next(prediction);
+    await Promise.resolve();
+    expect(component.labels().length).toBe(1);
+
+    afterClosed.next();
+    expect(component.showAiAssist()).toBeFalse();
+    expect(component.predictionPreview()).toBeNull();
+    expect(component.labels().length).toBe(1);
   });
 });
