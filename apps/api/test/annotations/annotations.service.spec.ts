@@ -278,6 +278,7 @@ describe('AnnotationsService', () => {
           classes: ['weed', 'crop'],
           updatedByUserId: owner.sub,
         }),
+        undefined,
       );
     });
 
@@ -295,6 +296,22 @@ describe('AnnotationsService', () => {
       );
 
       expect(result).toBeDefined();
+    });
+
+    it('passes the client version through to the atomic repository save', async () => {
+      mockUploadsRepository.findByIdAnyStatus.mockResolvedValue(makeUpload());
+      mockAnnotationsRepository.upsert.mockResolvedValue(makeAnnotation());
+      const expectedUpdatedAt = new Date('2026-10-14T10:00:00Z');
+      await service.upsertAnnotation(
+        'upload-uuid-1',
+        'image-uuid-1',
+        { ...validDto, expectedUpdatedAt },
+        owner,
+      );
+      expect(mockAnnotationsRepository.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ imageId: 'image-uuid-1' }),
+        expectedUpdatedAt,
+      );
     });
 
     it('should overwrite existing annotation (last-write-wins)', async () => {

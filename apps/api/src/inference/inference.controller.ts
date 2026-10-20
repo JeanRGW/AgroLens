@@ -105,6 +105,12 @@ export class InferenceController {
   })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiQuery({
+    name: 'uploadId',
+    required: false,
+    type: String,
+    description: 'Filter jobs for an upload',
+  })
   @ApiResponse({ status: 200, description: 'Paginated job list' })
   async listJobs(
     @Query(new ZodValidationPipe(listJobsQuerySchema)) dto: ListJobsQueryDto,

@@ -829,6 +829,19 @@ describe('InferenceModelService and InferenceJobService', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('listJobs', () => {
+    it('filters resumable runs by upload without changing the user boundary', async () => {
+      mockInferenceRepo.listJobsByUserId.mockResolvedValue({ jobs: [], total: 0 });
+      await jobService.listJobs(
+        { limit: 20, offset: 0, uploadId: 'upload-uuid-1' },
+        makeCurrentUser(),
+      );
+      expect(mockInferenceRepo.listJobsByUserId).toHaveBeenCalledWith(
+        'user-uuid-1',
+        20,
+        0,
+        'upload-uuid-1',
+      );
+    });
     it('should return non-expired jobs for current user', async () => {
       mockInferenceRepo.listJobsByUserId.mockResolvedValue({ jobs: [makeJob()], total: 1 });
 
@@ -838,7 +851,12 @@ describe('InferenceModelService and InferenceJobService', () => {
       expect(result.total).toBe(1);
       expect(result.limit).toBe(20);
       expect(result.offset).toBe(0);
-      expect(mockInferenceRepo.listJobsByUserId).toHaveBeenCalledWith('user-uuid-1', 20, 0);
+      expect(mockInferenceRepo.listJobsByUserId).toHaveBeenCalledWith(
+        'user-uuid-1',
+        20,
+        0,
+        undefined,
+      );
     });
 
     it('returns an already-paginated page without slicing it again', async () => {
@@ -849,7 +867,12 @@ describe('InferenceModelService and InferenceJobService', () => {
       const result = await jobService.listJobs({ limit: 20, offset: 20 }, makeCurrentUser());
       expect(result.jobs.map((job) => job.id)).toEqual(['job-page-2']);
       expect(result.total).toBe(21);
-      expect(mockInferenceRepo.listJobsByUserId).toHaveBeenCalledWith('user-uuid-1', 20, 20);
+      expect(mockInferenceRepo.listJobsByUserId).toHaveBeenCalledWith(
+        'user-uuid-1',
+        20,
+        20,
+        undefined,
+      );
     });
   });
 

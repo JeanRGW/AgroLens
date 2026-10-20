@@ -7,12 +7,13 @@ separate reviewed box list; it never rewrites the original model detections.
 
 - Web and Flutter use the same class-aware, confidence-first greedy NMS behavior
   and shared test fixtures. Duplicate suppression is optional and initially off.
-- Confidence starts at 25%; overlap IoU starts at 50%. Lower overlap thresholds
-  remove more boxes. Different classes and low-IoU contained boxes remain.
+- Confidence starts at 20% and can be lowered to 5%; overlap IoU starts at 50%.
+  Lower overlap thresholds remove more boxes. Different classes and low-IoU
+  contained boxes remain.
 - Overlay visibility does not alter counts or exports. Class checkboxes control
   the current image and export exclusions. Visited-image summaries include all
   classes after processing; list-page counts remain original model counts.
-- The Python predictor still uses confidence 0.25, IoU 0.70 and `max_det=300`.
+- The Python predictor uses confidence 0.05, IoU 0.70 and `max_det=300`.
   Viewer filters cannot recover predictions already removed by that pipeline.
 
 ## Web editing

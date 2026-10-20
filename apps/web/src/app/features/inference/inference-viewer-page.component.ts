@@ -129,7 +129,7 @@ export class InferenceViewerPageComponent implements OnInit {
   readonly zoomPercent = computed(() => Math.round(this.zoom() * 100));
 
   readonly showAllDetections = signal(true);
-  readonly minConfidence = signal(0.25);
+  readonly minConfidence = signal(0.2);
   readonly enabledClasses = signal<Set<string>>(new Set());
   readonly suppressOverlaps = signal(false);
   readonly iouThreshold = signal(0.5);
@@ -413,7 +413,7 @@ export class InferenceViewerPageComponent implements OnInit {
   }
   resetFilters(): void {
     this.showAllDetections.set(true);
-    this.minConfidence.set(0.25);
+    this.minConfidence.set(0.2);
     this.suppressOverlaps.set(false);
     this.iouThreshold.set(0.5);
     this.enabledClasses.set(new Set(this.currentImageClassCounts().map(([name]) => name)));

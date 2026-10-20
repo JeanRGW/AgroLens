@@ -71,6 +71,15 @@ pnpm --filter @agrolens/web e2e
 
 Cross-app mobile-to-web flow is opt-in; see `../../docs/testing/cross-app-e2e.md`. Never commit the credential-bearing artifact or local auth state.
 
+AI-labeling UI tests use mocked API responses and need no credentials or services:
+
+```bash
+pnpm --filter @agrolens/web exec playwright test --config playwright.mock.config.ts
+```
+
+These cover model selection, whole-upload predictions, manual correction, save/reload,
+save conflicts, and downloaded YOLO labels. They do not exercise live model execution.
+
 ## Features
 
 - Auth with session refresh
@@ -78,5 +87,18 @@ Cross-app mobile-to-web flow is opt-in; see `../../docs/testing/cross-app-e2e.md
 - Properties, talhões, cultures, estadios management
 - Admin users, access grants, audit + CSV export
 - Canvas annotation editor with undo/redo and class palette
+- Labeling viewport: 100–800% zoom, fit-to-area reset, draw/pan tools, two-finger
+  pinch and pan, and touch-friendly resize handles. Ctrl/Cmd + wheel zooms at
+  the pointer; ordinary scrolling still scrolls the page. View changes never
+  change saved label coordinates. Failed image loads offer an explicit retry.
+- AI-assisted labeling: choose a detection model and generate suggestions for the current
+  image in a responsive popup with scope cards, an image preview, and confidence controls.
+  Suggestions can also target images without saved annotations or the entire upload. Preview confidence-filtered
+  suggestions, explicitly append or replace the draft, move/resize/reclassify boxes, and save
+  each reviewed image. Predictions never overwrite saved annotations automatically.
+- Reopen inference runs for an upload until their retention expiry; successful images remain
+  available even when others fail. Unsaved manual edits are not persisted across refreshes.
+- Annotation save-version checks prevent stale drafts from silently overwriting newer labels;
+  reloading a conflict requires confirmation before discarding unsaved changes.
 - YOLO export dialog and ZIP download
 - Inference viewer

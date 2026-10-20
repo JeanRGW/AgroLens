@@ -403,6 +403,18 @@ describe('InferenceRepository', () => {
   });
 
   describe('listJobsByUserId', () => {
+    it('applies the upload filter to both the page and total without removing owner or expiry checks', async () => {
+      push([{ id: 'job-1' }]);
+      push([{ total: 1 }]);
+      await repo.listJobsByUserId('u', 20, 0, 'upload-1');
+      const page = new PgDialect().sqlToQuery(db.where.mock.calls[0][0]);
+      const count = new PgDialect().sqlToQuery(db.where.mock.calls[1][0]);
+      expect(page.sql).toContain('"inference_jobs"."upload_id" =');
+      expect(page.sql).toContain('"inference_jobs"."user_id" =');
+      expect(page.sql).toContain('"inference_jobs"."expires_at"');
+      expect(page.params.slice(0, 2)).toEqual(['u', 'upload-1']);
+      expect(count).toEqual(page);
+    });
     it('filters by owner and expiry in both queries and paginates only the rows', async () => {
       push([{ id: 'job-1' }]);
       push([{ total: 21 }]);

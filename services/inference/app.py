@@ -382,7 +382,7 @@ def _predict_image(raw: bytes, model_url: str, model_checksum: str):
         t0 = time.perf_counter()
         results = model.predict(
             img,
-            conf=0.25,
+            conf=0.05,
             iou=0.70,
             max_det=300,
             verbose=False,

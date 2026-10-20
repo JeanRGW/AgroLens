@@ -30,11 +30,13 @@ const geometry = (r: Rect) => ({
     (pointermove)="move($event)"
     (pointerup)="finish($event)"
     (pointercancel)="cancel()"
+    (lostpointercapture)="cancel()"
+    [style.--viewport-scale]="viewportScale()"
   >
     @for (box of boxes(); track $index; let i = $index) {
       <button
         type="button"
-        class="box"
+        class="box label-box"
         [class.selected]="selectedIndex() === i"
         [attr.data-index]="i"
         [attr.aria-label]="'Selecionar caixa ' + (i + 1) + ': ' + box.className"
@@ -43,8 +45,17 @@ const geometry = (r: Rect) => ({
         [style.top.%]="(box.yCenter - box.height / 2) * 100"
         [style.width.%]="box.width * 100"
         [style.height.%]="box.height * 100"
+        [style.--box-color]="classColors().get(box.className) ?? '#007f91'"
         (click)="selectedIndexChange.emit(i)"
       >
+        @if (showClassNames()) {
+          <span
+            class="box-name label-tag"
+            [class.label-below]="box.yCenter - box.height / 2 < 0.06"
+            [class.label-right]="box.xCenter > 0.75"
+            >{{ box.className }}</span
+          >
+        }
         @if (selectedIndex() === i) {
           @for (corner of corners; track corner) {
             <span class="handle" [class]="'handle ' + corner" [attr.data-mode]="corner"></span>
@@ -76,7 +87,7 @@ const geometry = (r: Rect) => ({
     }
     .box {
       position: absolute;
-      border: 2px solid #007f91;
+      border: 2px solid var(--box-color, #007f91);
       background: #007f9110;
       padding: 0;
       cursor: move;
@@ -89,31 +100,67 @@ const geometry = (r: Rect) => ({
     .box:focus-visible {
       outline: 3px solid #fff;
     }
+    .box-name {
+      color: #fff;
+      background: #163d36;
+      font-size: 11px;
+      padding: 2px 4px;
+      position: absolute;
+      bottom: calc(100% + 2px);
+      left: 0;
+      margin-bottom: calc(4px / var(--viewport-scale, 1));
+      white-space: nowrap;
+      transform: scale(calc(1 / var(--viewport-scale, 1)));
+      transform-origin: bottom left;
+      pointer-events: none;
+    }
+    .box-name.label-right {
+      left: auto;
+      right: 0;
+      transform-origin: bottom right;
+    }
+    .box-name.label-below {
+      bottom: auto;
+      top: calc(100% + 2px);
+      margin-bottom: 0;
+      margin-top: calc(4px / var(--viewport-scale, 1));
+      transform-origin: top left;
+    }
+    .box-name.label-below.label-right {
+      transform-origin: top right;
+    }
     .handle {
       position: absolute;
-      width: 12px;
-      height: 12px;
+      width: calc(16px / var(--viewport-scale, 1));
+      height: calc(16px / var(--viewport-scale, 1));
       background: #fff;
       border: 1px solid #007f91;
     }
+    @media (pointer: coarse) {
+      .handle::before {
+        content: '';
+        position: absolute;
+        inset: calc(-8px / var(--viewport-scale, 1));
+      }
+    }
     .nw {
-      left: -6px;
-      top: -6px;
+      left: calc(-8px / var(--viewport-scale, 1));
+      top: calc(-8px / var(--viewport-scale, 1));
       cursor: nwse-resize;
     }
     .ne {
-      right: -6px;
-      top: -6px;
+      right: calc(-8px / var(--viewport-scale, 1));
+      top: calc(-8px / var(--viewport-scale, 1));
       cursor: nesw-resize;
     }
     .sw {
-      left: -6px;
-      bottom: -6px;
+      left: calc(-8px / var(--viewport-scale, 1));
+      bottom: calc(-8px / var(--viewport-scale, 1));
       cursor: nesw-resize;
     }
     .se {
-      right: -6px;
-      bottom: -6px;
+      right: calc(-8px / var(--viewport-scale, 1));
+      bottom: calc(-8px / var(--viewport-scale, 1));
       cursor: nwse-resize;
     }
     .preview {
@@ -129,6 +176,11 @@ export class DetectionEditorComponent {
   readonly boxes = input.required<ReviewedDetection[]>();
   readonly selectedIndex = input<number | null>(null);
   readonly adding = input(false);
+  readonly classColors = input<Map<string, string>>(new Map());
+  readonly showClassNames = input(false);
+  readonly selectWhileAdding = input(false);
+  readonly disabled = input(false);
+  readonly viewportScale = input(1);
   readonly addClass = input<InferenceModelClass | null>(null);
   readonly boxesChange = output<ReviewedDetection[]>();
   readonly selectedIndexChange = output<number | null>();
@@ -152,16 +204,17 @@ export class DetectionEditorComponent {
     };
   }
   start(event: PointerEvent): void {
-    if (event.button !== 0 || this.gesture) return;
+    if (event.button !== 0 || this.gesture || this.disabled()) return;
     const target = (event.target as HTMLElement).closest<HTMLElement>('[data-index]');
     const index = target ? Number(target.dataset['index']) : null;
     if (!this.adding() && index === null) {
       this.selectedIndexChange.emit(null);
       return;
     }
-    if (this.adding() && !this.addClass()) return;
+    const adding = this.adding() && !(this.selectWhileAdding() && index !== null);
+    if (adding && !this.addClass()) return;
     event.preventDefault();
-    const mode = this.adding() ? 'add' : ((event.target as HTMLElement).dataset['mode'] ?? 'move');
+    const mode = adding ? 'add' : ((event.target as HTMLElement).dataset['mode'] ?? 'move');
     this.gesture = {
       pointerId: event.pointerId,
       start: this.point(event),
@@ -173,6 +226,10 @@ export class DetectionEditorComponent {
     this.plane().nativeElement.setPointerCapture(event.pointerId);
   }
   move(event: PointerEvent): void {
+    if (this.disabled()) {
+      this.cancel();
+      return;
+    }
     const g = this.gesture;
     if (!g || event.pointerId !== g.pointerId) return;
     const p = this.point(event);
@@ -204,6 +261,10 @@ export class DetectionEditorComponent {
     this.preview.set(r);
   }
   finish(event: PointerEvent): void {
+    if (this.disabled()) {
+      this.cancel();
+      return;
+    }
     const g = this.gesture;
     if (!g || event.pointerId !== g.pointerId) return;
     const r = this.preview();
@@ -223,9 +284,10 @@ export class DetectionEditorComponent {
     this.cancel();
   }
   cancel(): void {
-    if (this.gesture && this.plane().nativeElement.hasPointerCapture(this.gesture.pointerId))
-      this.plane().nativeElement.releasePointerCapture(this.gesture.pointerId);
+    const gesture = this.gesture;
     this.gesture = null;
     this.preview.set(null);
+    if (gesture && this.plane().nativeElement.hasPointerCapture(gesture.pointerId))
+      this.plane().nativeElement.releasePointerCapture(gesture.pointerId);
   }
 }

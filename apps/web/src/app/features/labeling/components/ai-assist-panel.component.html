@@ -1,0 +1,276 @@
+<div class="assist-dialog">
+  <header class="dialog-header">
+    <div class="ai-mark"><mat-icon>auto_awesome</mat-icon></div>
+    <div class="heading">
+      <span class="eyebrow">Assistente de rotulagem</span>
+      <h2 id="ai-assist-title">Rotular com IA</h2>
+      <p>Um primeiro rascunho. O olhar final é seu.</p>
+    </div>
+    <button
+      mat-icon-button
+      class="close-button"
+      (click)="dialogRef?.close()"
+      aria-label="Fechar assistente"
+    >
+      <mat-icon>close</mat-icon>
+    </button>
+  </header>
+  <mat-dialog-content>
+    <section class="model-section">
+      <div class="section-heading">
+        <h3>Escolha o modelo</h3>
+        <button mat-button (click)="loadModels()" [disabled]="loadingModels() || starting()">
+          <mat-icon>refresh</mat-icon>Atualizar modelos
+        </button>
+      </div>
+      @if (loadingModels()) {
+        <div class="model-skeleton" aria-label="Carregando modelos">
+          <mat-progress-bar mode="indeterminate" />
+        </div>
+      } @else if (!models().length) {
+        <div class="notice">
+          <mat-icon>model_training</mat-icon>
+          <p>
+            Nenhum modelo disponível. Peça a um administrador para ativar um modelo ou continue
+            manualmente.
+          </p>
+        </div>
+      } @else {
+        <mat-form-field appearance="outline" class="model-picker"
+          ><mat-label>Modelo</mat-label
+          ><mat-select
+            [value]="modelId()"
+            (selectionChange)="modelId.set($event.value)"
+            [disabled]="starting()"
+            ><mat-select-trigger
+              ><mat-icon>model_training</mat-icon> {{ selectedModel()?.name }}</mat-select-trigger
+            >
+            @for (model of models(); track model.id) {
+              <mat-option [value]="model.id">{{ model.name }}</mat-option>
+            }
+          </mat-select></mat-form-field
+        >
+        @if (selectedModel(); as model) {
+          <div class="class-chips">
+            <span>Detecta</span>
+            @for (cls of model.classes ?? []; track cls.id) {
+              <span class="class-chip">{{ cls.name }}</span>
+            }
+          </div>
+        }
+      }
+    </section>
+    <section class="scope-section">
+      <div class="section-heading">
+        <h3>Onde aplicar</h3>
+        <span class="image-count">{{ imageIds().length }} imagens no upload</span>
+      </div>
+      <div class="scope-options" role="radiogroup" aria-label="Imagens">
+        @for (option of scopes; track option.value) {
+          <label class="scope-card" [class.selected]="scope() === option.value">
+            <input
+              type="radio"
+              name="ai-scope"
+              [value]="option.value"
+              [checked]="scope() === option.value"
+              (change)="scope.set(option.value)"
+              [disabled]="starting()"
+            />
+            <div class="scope-top">
+              <mat-icon>{{ option.icon }}</mat-icon
+              ><span class="selection-dot"></span>
+            </div>
+            <strong>{{ option.title }}</strong
+            ><small>{{ option.description }}</small>
+          </label>
+        }
+      </div>
+    </section>
+    @if (runs().length) {
+      <details class="history" [open]="!!selectedRunId()">
+        <summary>
+          <mat-icon>history</mat-icon>Retomar uma execução anterior<span>{{ runs().length }}</span>
+        </summary>
+        <mat-form-field appearance="outline" floatLabel="always"
+          ><mat-label>Retomar execução deste upload</mat-label
+          ><mat-select
+            [value]="selectedRunId() ?? ''"
+            (selectionChange)="openRun($event.value)"
+            [disabled]="starting() || loadingJob()"
+          >
+            @for (run of runs(); track run.id) {
+              <mat-option [value]="run.id"
+                >{{ run.modelSnapshot?.name }} · {{ run.createdAt | date: 'short' }} ·
+                {{ run.completedCount }}/{{ run.imageCount }}</mat-option
+              >
+            }
+          </mat-select></mat-form-field
+        >
+        @if (moreRuns()) {
+          <button
+            mat-button
+            (click)="loadRuns(uploadId(), undefined, true)"
+            [disabled]="loadingRuns()"
+          >
+            Mais execuções
+          </button>
+        }
+      </details>
+    }
+    @if (loadingJob() || loadingResult()) {
+      <mat-progress-bar mode="indeterminate" aria-label="Carregando sugestões" />
+    }
+    @if (job(); as run) {
+      <div class="run-status" role="status">
+        <mat-icon>{{ active() ? 'hourglass_top' : 'task_alt' }}</mat-icon>
+        <div>
+          <strong>{{ run.modelSnapshot.name }}</strong>
+          <p>
+            {{ run.completedCount }}/{{ run.imageCount }} imagens concluídas
+            @if (run.failedCount) {
+              · {{ run.failedCount }} falhas
+            }
+          </p>
+        </div>
+      </div>
+      @if (active()) {
+        <mat-progress-bar
+          mode="determinate"
+          [value]="(100 * (run.completedCount + run.failedCount)) / run.imageCount"
+          aria-label="Progresso da inferência"
+        />
+        <p class="hint">Pode fechar esta janela. A inferência continua em segundo plano.</p>
+      }
+      @if (run.errorMessage) {
+        <p role="alert">{{ run.errorMessage }}</p>
+      }
+      @if (currentImageStatus() === 'failed') {
+        <p role="alert">
+          A inferência falhou nesta imagem. Gere outra execução ou rotule manualmente.
+        </p>
+      }
+      @if (!currentImageStatus()) {
+        <p class="hint">
+          A imagem atual não faz parte desta execução. Feche a janela e selecione uma das imagens
+          processadas.
+        </p>
+      }
+    }
+    @if (result(); as image) {
+      <section class="review-section">
+        <div class="section-heading">
+          <h3>Revise as sugestões</h3>
+          <span class="suggestion-count">{{ predictions().length }} caixas</span>
+        </div>
+        <div class="review-grid">
+          <div class="preview-frame">
+            <div class="preview-plane" [style.aspect-ratio]="imageRatio()">
+              <img [src]="imageUrl || image.imageUrl" alt="Prévia das sugestões na imagem atual" />
+              @for (box of predictions(); track $index) {
+                <div
+                  class="suggestion"
+                  [style.left.%]="100 * (box.xCenter - box.width / 2)"
+                  [style.top.%]="100 * (box.yCenter - box.height / 2)"
+                  [style.width.%]="box.width * 100"
+                  [style.height.%]="box.height * 100"
+                >
+                  <span>{{ box.className }}</span>
+                </div>
+              }
+            </div>
+            <span class="preview-caption">Imagem atual · sugestões da IA</span>
+          </div>
+          <div class="review-settings">
+            <label class="confidence"
+              >Confiança mínima<strong>{{ (minConfidence() * 100).toFixed(0) }}%</strong
+              ><input
+                type="range"
+                min="0.05"
+                max="1"
+                step="0.01"
+                [ngModel]="minConfidence()"
+                (ngModelChange)="minConfidence.set(+$event)"
+                aria-label="Confiança mínima"
+            /></label>
+            <p class="hint">Aumente para manter apenas as detecções mais confiáveis.</p>
+            <label class="overlap"
+              ><input
+                type="checkbox"
+                [ngModel]="suppressOverlaps()"
+                (ngModelChange)="suppressOverlaps.set($event)"
+              />Remover sobreposições</label
+            >
+            <fieldset class="apply-mode">
+              <legend>Ao voltar ao editor</legend>
+              <label
+                ><input
+                  type="radio"
+                  name="apply-mode"
+                  [checked]="applyMode() === 'append'"
+                  (change)="applyMode.set('append')"
+                />Adicionar ao rascunho</label
+              ><label
+                ><input
+                  type="radio"
+                  name="apply-mode"
+                  [checked]="applyMode() === 'replace'"
+                  (change)="applyMode.set('replace')"
+                />Substituir rascunho</label
+              >
+            </fieldset>
+          </div>
+        </div>
+        @if (!predictions().length) {
+          <p class="notice">
+            Nenhuma sugestão neste limite. Reduza a confiança ou desenhe manualmente. Seus rótulos
+            serão mantidos.
+          </p>
+        }
+      </section>
+    }
+    @if (error()) {
+      <div class="error" role="alert">
+        <mat-icon>error_outline</mat-icon>
+        <p>{{ error() }}</p>
+        <button mat-button (click)="selectedRunId() ? refreshJob() : loadRuns()">
+          Tentar novamente
+        </button>
+      </div>
+    }
+  </mat-dialog-content>
+  <footer class="dialog-footer">
+    <div class="safety-note">
+      <mat-icon>verified_user</mat-icon
+      ><span>Nada é salvo automaticamente.<small>Você ajusta e salva no editor.</small></span>
+    </div>
+    <div class="footer-actions">
+      <button mat-button (click)="dialogRef?.close()">
+        {{ active() ? 'Continuar no editor' : 'Cancelar' }}
+      </button>
+      @if (result()) {
+        <button
+          mat-button
+          (click)="start()"
+          [disabled]="disabled() || !modelId() || starting() || active() || loadingJob()"
+        >
+          Gerar novamente</button
+        ><button
+          mat-flat-button
+          (click)="applyPredictions(applyMode())"
+          [disabled]="disabled() || !predictions().length || starting()"
+        >
+          <mat-icon>arrow_forward</mat-icon>Usar sugestões
+        </button>
+      } @else {
+        <button
+          mat-flat-button
+          (click)="start()"
+          [disabled]="disabled() || !modelId() || starting() || active() || loadingJob()"
+        >
+          <mat-icon>auto_awesome</mat-icon
+          >{{ starting() ? 'Iniciando…' : active() ? 'Gerando sugestões…' : 'Gerar sugestões' }}
+        </button>
+      }
+    </div>
+  </footer>
+</div>

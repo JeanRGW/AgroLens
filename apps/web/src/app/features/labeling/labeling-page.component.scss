@@ -4,7 +4,7 @@
 
 .labeling-page {
   display: grid;
-  grid-template-columns: 300px 1fr 260px;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
   gap: 16px;
   margin-top: 1rem;
 }
@@ -38,6 +38,7 @@
 }
 
 .editor-main {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -145,6 +146,22 @@
   border-radius: 50%;
 }
 
+.inference-status {
+  display: block;
+  font-size: 10px;
+  color: var(--agri-text-muted);
+}
+.save-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--agri-surface);
+  border: 1px solid var(--agri-border);
+  border-radius: 10px;
+}
+
 .shortcuts-help {
   background: var(--agri-surface);
   border: 1px solid var(--agri-border);
@@ -209,11 +226,16 @@
   }
 
   .right-sidebar {
-    display: none;
+    grid-column: 2;
+    position: static;
+    max-height: none;
   }
 }
 
 @media (max-width: 768px) {
+  .labeling-wrapper {
+    padding: 0.75rem;
+  }
   .labeling-page {
     grid-template-columns: 1fr;
   }
@@ -221,6 +243,14 @@
   .left-sidebar {
     position: static;
     max-height: none;
+    order: 3;
+  }
+  .editor-main {
+    order: 1;
+  }
+  .right-sidebar {
+    grid-column: 1;
+    order: 2;
   }
 
   .toolbar-row {

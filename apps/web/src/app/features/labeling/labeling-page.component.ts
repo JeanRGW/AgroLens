@@ -1,5 +1,6 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -22,6 +23,13 @@ import { UploadDetail, UploadFilters, UploadRecord } from '../../shared/models/u
 import { ImageAnnotation, SaveAnnotationInput, YoloLabel } from '@agrolens/contracts';
 import { extractAnnotationClasses, extractYoloLabels } from '../../shared/utils/record-utils';
 import { compareImageIds } from '../../shared/utils/upload-utils';
+import { predictionLabels } from './prediction-labels';
+import {
+  AiAssistPanelComponent,
+  type ApplyPredictions,
+  type AiAssistDialogData,
+  type PredictionPreview,
+} from './components/ai-assist-panel.component';
 
 import { PageHeaderComponent } from '../../shared/components/page-header.component';
 import { UploadSidebarComponent } from './components/upload-sidebar.component';
@@ -67,7 +75,6 @@ const CLASS_COLOR_PALETTE = [
   selector: 'app-labeling-page',
   standalone: true,
   imports: [
-    RouterLink,
     MatCardModule,
     MatButtonModule,
     MatDialogModule,
@@ -107,6 +114,13 @@ export class LabelingPageComponent implements OnInit {
   readonly savingAnnotation = signal(false);
   readonly exportingYolo = signal(false);
   readonly showShortcuts = signal(false);
+  readonly showAiAssist = signal(false);
+  private readonly aiRuns = new Map<string, string>();
+  readonly predictionPreview = signal<PredictionPreview | null>(null);
+  readonly inferenceStates = signal(new Map<string, string>());
+  readonly imageReady = signal(false);
+  readonly annotationSaveConflict = signal(false);
+  private savedUpdatedAt: string | null | undefined = null;
 
   readonly uploads = signal<UploadRecord[]>([]);
   readonly hasMoreUploads = signal(false);
@@ -224,6 +238,25 @@ export class LabelingPageComponent implements OnInit {
   });
 
   readonly selectedImageUrl = computed(() => this.selectedImage()?.imageUrl ?? null);
+  readonly previewLabels = computed(() => {
+    const preview = this.predictionPreview();
+    if (
+      preview?.uploadId !== this.selectedUploadId() ||
+      preview?.imageId !== this.selectedImage()?.imageId
+    )
+      return [];
+    return predictionLabels(preview.detections, []).labels;
+  });
+  readonly inferenceImageIds = computed(() =>
+    this.selectedUploadImages().map((image) => image.imageId),
+  );
+  readonly editorDisabled = computed(
+    () =>
+      this.savingAnnotation() ||
+      this.loadingAnnotation() ||
+      this.annotationLoadError() ||
+      !this.imageReady(),
+  );
 
   readonly classColors = computed(() => {
     const map = new Map<string, string>();
@@ -391,6 +424,7 @@ export class LabelingPageComponent implements OnInit {
     this.selectedUploadId.set(upload.id);
     this.selectedImageIndex.set(0);
     this.currentUploadDetail.set(null);
+    this.inferenceStates.set(new Map());
     this.retriedImageUrls.clear();
     this.annotatedIndexes.set(new Set());
     this.clearStateAndHistory();
@@ -510,6 +544,136 @@ export class LabelingPageComponent implements OnInit {
     this.retriedImageUrls.delete(`false:${this.selectedImage()?.fileId}`);
     this.imageNaturalWidth = imageElement.naturalWidth || 0;
     this.imageNaturalHeight = imageElement.naturalHeight || 0;
+    this.imageReady.set(this.imageNaturalWidth > 0 && this.imageNaturalHeight > 0);
+  }
+
+  toggleAiAssist(): void {
+    if (this.showAiAssist()) {
+      this.dialog.getDialogById('ai-labeling')?.close();
+      this.showAiAssist.set(false);
+      this.predictionPreview.set(null);
+      this.inferenceStates.set(new Map());
+      return;
+    }
+    const uploadId = this.selectedUploadId();
+    const image = this.selectedImage();
+    if (!uploadId || !image || this.editorDisabled()) return;
+    this.showAiAssist.set(true);
+    const ref = this.dialog.open<AiAssistPanelComponent, AiAssistDialogData>(
+      AiAssistPanelComponent,
+      {
+        id: 'ai-labeling',
+        width: '760px',
+        maxWidth: 'calc(100vw - 24px)',
+        maxHeight: 'calc(100dvh - 24px)',
+        ariaLabelledBy: 'ai-assist-title',
+        autoFocus: 'first-tabbable',
+        restoreFocus: true,
+        data: {
+          uploadId,
+          imageId: image.imageId,
+          imageIds: this.inferenceImageIds(),
+          imageUrl: image.imageUrl,
+          imageWidth: this.imageNaturalWidth,
+          imageHeight: this.imageNaturalHeight,
+          runId: this.aiRuns.get(uploadId),
+        },
+      },
+    );
+    ref.componentInstance.statesChange.subscribe((states) => this.inferenceStates.set(states));
+    ref.componentInstance.previewChange.subscribe((preview) => this.predictionPreview.set(preview));
+    ref.componentInstance.apply.subscribe((predictions) => void this.applyPredictions(predictions));
+    ref.beforeClosed().subscribe(() => {
+      const runId = ref.componentInstance.selectedRunId();
+      if (runId) this.aiRuns.set(uploadId, runId);
+    });
+    ref.afterClosed().subscribe(() => {
+      this.showAiAssist.set(false);
+      this.predictionPreview.set(null);
+    });
+  }
+
+  onLabelsChange(labels: YoloLabel[]): void {
+    if (this.editorDisabled()) return;
+    this.commitLabels(labels);
+  }
+
+  onLabelUpdate(event: { index: number; label: YoloLabel }): void {
+    if (this.editorDisabled() || !this.labels()[event.index]) return;
+    const next = [...this.labels()];
+    next[event.index] = event.label;
+    this.commitLabels(next);
+  }
+
+  async applyPredictions(event: ApplyPredictions): Promise<void> {
+    const generation = this.selectionGeneration;
+    const matches = () =>
+      !this.editorDisabled() &&
+      event.uploadId === this.selectedUploadId() &&
+      event.imageId === this.selectedImage()?.imageId;
+    if (!matches() || !event.detections.length) return;
+    if (event.width !== this.imageNaturalWidth || event.height !== this.imageNaturalHeight) {
+      this.snackBar.open(
+        'As dimensões da inferência não correspondem à imagem. Rotule manualmente ou gere novas sugestões.',
+        'Fechar',
+        { duration: 5000 },
+      );
+      return;
+    }
+    if (event.mode === 'replace' && this.labels().length) {
+      const confirmed = await firstValueFrom(
+        this.dialog
+          .open(ConfirmDialogComponent, {
+            data: {
+              title: 'Substituir rascunho?',
+              message:
+                'As caixas atuais serão substituídas pelas sugestões. Você pode desfazer antes de salvar.',
+              confirmText: 'Substituir',
+            },
+          })
+          .afterClosed(),
+      );
+      if (!confirmed || generation !== this.selectionGeneration || !matches()) return;
+    }
+    const converted = predictionLabels(event.detections, this.classes());
+    this.commitLabels(
+      event.mode === 'append' ? [...this.labels(), ...converted.labels] : converted.labels,
+      converted.classes,
+    );
+    this.predictionPreview.set(null);
+    this.selectedLabelIndex.set(
+      converted.labels.length
+        ? event.mode === 'append'
+          ? this.labels().length - converted.labels.length
+          : 0
+        : null,
+    );
+    this.snackBar.open(
+      'Sugestões aplicadas ao rascunho. Ajuste os rótulos e clique em Salvar.',
+      'Fechar',
+      { duration: 4000 },
+    );
+  }
+
+  async reloadConflictedAnnotation(): Promise<void> {
+    if (this.savingAnnotation()) return;
+    const generation = this.selectionGeneration;
+    if (this.hasUnsavedChanges()) {
+      const confirmed = await firstValueFrom(
+        this.dialog
+          .open(ConfirmDialogComponent, {
+            data: {
+              title: 'Recarregar anotação?',
+              message:
+                'Seu rascunho será descartado e substituído pela anotação salva mais recente.',
+              confirmText: 'Recarregar',
+            },
+          })
+          .afterClosed(),
+      );
+      if (!confirmed || generation !== this.selectionGeneration) return;
+    }
+    await this.loadCurrentAnnotation(++this.selectionGeneration);
   }
 
   async refreshImageUrl(fileId = this.selectedImage()?.fileId, preview = false): Promise<void> {
@@ -529,6 +693,17 @@ export class LabelingPageComponent implements OnInit {
       if (generation !== this.selectionGeneration) return;
       this.snackBar.open('Não foi possível recarregar a imagem.', 'Fechar', { duration: 3000 });
     }
+  }
+
+  onImageError(): void {
+    this.imageReady.set(false);
+    void this.refreshImageUrl();
+  }
+
+  retryImage(): void {
+    const fileId = this.selectedImage()?.fileId;
+    this.retriedImageUrls.delete(`false:${fileId}`);
+    void this.refreshImageUrl(fileId);
   }
 
   refreshThumbnail(index: number): void {
@@ -620,6 +795,12 @@ export class LabelingPageComponent implements OnInit {
   }
 
   private clearStateAndHistory(): void {
+    this.savedUpdatedAt = null;
+    this.annotationSaveConflict.set(false);
+    this.imageNaturalWidth = 0;
+    this.imageNaturalHeight = 0;
+    this.imageReady.set(false);
+    this.predictionPreview.set(null);
     this.savedAnnotation.set(null);
     this.labels.set([]);
     this.selectedLabelIndex.set(null);
@@ -670,7 +851,8 @@ export class LabelingPageComponent implements OnInit {
       !image ||
       this.savingAnnotation() ||
       this.loadingAnnotation() ||
-      this.annotationLoadError()
+      this.annotationLoadError() ||
+      !this.imageReady()
     ) {
       return;
     }
@@ -679,23 +861,35 @@ export class LabelingPageComponent implements OnInit {
     this.savingAnnotation.set(true);
     try {
       const input: SaveAnnotationInput = {
+        expectedUpdatedAt: this.savedUpdatedAt,
         imageId: image.imageId,
         imageWidth: this.imageNaturalWidth,
         imageHeight: this.imageNaturalHeight,
         classes: this.classes(),
         labels: this.labels(),
       };
-      await this.annotationsService.upsertAnnotation(upload.id, input);
+      const saved = await this.annotationsService.upsertAnnotation(upload.id, input);
       if (generation !== this.selectionGeneration) return;
       this.savedAnnotation.set(snapshot);
+      this.savedUpdatedAt = saved?.updatedAt ? new Date(saved.updatedAt).toISOString() : undefined;
+      this.annotationSaveConflict.set(false);
       this.annotatedIndexes.update((set) => {
         const next = new Set(set);
         next.add(image.imageId);
         return next;
       });
       this.snackBar.open('Rótulos salvos com sucesso.', 'Fechar', { duration: 2400 });
-    } catch {
-      this.snackBar.open('Não foi possível salvar os rótulos.', 'Fechar', { duration: 3000 });
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 409) {
+        this.annotationSaveConflict.set(true);
+        this.snackBar.open(
+          'A anotação mudou. Recarregue antes de salvar; seu rascunho foi mantido.',
+          'Fechar',
+          { duration: 5000 },
+        );
+      } else {
+        this.snackBar.open('Não foi possível salvar os rótulos.', 'Fechar', { duration: 3000 });
+      }
     } finally {
       this.savingAnnotation.set(false);
     }
@@ -716,12 +910,27 @@ export class LabelingPageComponent implements OnInit {
       const annotation = await this.annotationsService.getAnnotation(upload.id, image.imageId);
       if (generation !== this.selectionGeneration) return;
       if (!annotation) {
-        this.clearStateAndHistory();
+        this.labels.set([]);
+        this.selectedLabelIndex.set(null);
+        this.history.set([{ classes: [...this.classes()], labels: [] }]);
+        this.historyIndex.set(0);
+        this.savedUpdatedAt = null;
+        this.annotationSaveConflict.set(false);
+        this.annotatedIndexes.update((indexes) => {
+          const next = new Set(indexes);
+          next.delete(image.imageId);
+          return next;
+        });
         this.savedAnnotation.set(this.annotationSnapshot());
         return;
       }
       this.classes.set(this.buildClassesFromAnnotation(annotation));
+      this.savedUpdatedAt = annotation.updatedAt
+        ? new Date(annotation.updatedAt).toISOString()
+        : undefined;
+      this.annotationSaveConflict.set(false);
       this.labels.set(extractYoloLabels(annotation));
+      this.selectedLabelIndex.set(null);
       this.history.set([{ classes: [...this.classes()], labels: [...this.labels()] }]);
       this.historyIndex.set(0);
       this.savedAnnotation.set(this.annotationSnapshot());
@@ -756,8 +965,14 @@ export class LabelingPageComponent implements OnInit {
   }
 
   onKeyDown(event: KeyboardEvent): void {
+    if (this.showAiAssist()) return;
     const target = event.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    if (
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable
+    ) {
       return;
     }
 

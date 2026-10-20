@@ -51,6 +51,9 @@ jobs:
       - name: Check config drift (env schema vs compose files)
         run: pnpm --filter @agrolens/api config:drift
 
+      - name: Test AI labeling and touch gestures with mocked APIs
+        run: pnpm --filter @agrolens/web exec playwright test --config playwright.mock.config.ts
+
   backend-e2e:
     name: Backend API E2E
     runs-on: ubuntu-latest

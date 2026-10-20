@@ -43,7 +43,9 @@ export const setActiveModelSchema = z.object({
 
 export type SetActiveModelDto = z.infer<typeof setActiveModelSchema>;
 
-export const listJobsQuerySchema = pageParamsSchema;
+export const listJobsQuerySchema = pageParamsSchema.extend({
+  uploadId: z.string().uuid().optional(),
+});
 export type ListJobsQueryDto = z.infer<typeof listJobsQuerySchema>;
 
 export interface InferenceJobListResponse {

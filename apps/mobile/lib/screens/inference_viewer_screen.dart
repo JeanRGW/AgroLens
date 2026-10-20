@@ -43,7 +43,7 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
       _labels = true,
       _boxes = true,
       _exporting = false;
-  double _confidence = 0.25;
+  double _confidence = 0.2;
   bool _suppressOverlaps = false, _original = false;
   double _iou = 0.5;
   final Set<int> _hidden = {};
@@ -569,7 +569,7 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
                 value: _original,
                 onChanged: (value) => setState(() {
                   _original = value;
-                  _confidence = 0.25;
+                  _confidence = 0.2;
                   _suppressOverlaps = false;
                   _iou = 0.5;
                   _hidden.clear();
@@ -582,7 +582,7 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
             if (!_usingReview) ...[
               Text('Confiança mínima: ${(_confidence * 100).round()}%'),
               Slider(
-                min: 0.25,
+                min: 0.05,
                 value: _confidence,
                 onChanged: (value) => setState(() => _confidence = value),
               ),
@@ -607,7 +607,7 @@ class _InferenceViewerScreenState extends State<InferenceViewerScreen>
               ],
               TextButton(
                 onPressed: () => setState(() {
-                  _confidence = 0.25;
+                  _confidence = 0.2;
                   _suppressOverlaps = false;
                   _iou = 0.5;
                   _hidden.clear();

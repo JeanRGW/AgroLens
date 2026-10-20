@@ -51,6 +51,16 @@ describe('InferenceService', () => {
       await service.listJobs(10, 5);
       expect(api.get).toHaveBeenCalledWith('/inference/jobs', { limit: 10, offset: 5 });
     });
+
+    it('filters runs for a selected upload', async () => {
+      api.get.and.returnValue(of({ jobs: [], total: 0, limit: 20, offset: 0 }));
+      await service.listJobs(20, 0, 'upload-1');
+      expect(api.get).toHaveBeenCalledWith('/inference/jobs', {
+        limit: 20,
+        offset: 0,
+        uploadId: 'upload-1',
+      });
+    });
   });
 
   describe('getJob', () => {
