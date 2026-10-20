@@ -694,6 +694,17 @@ export class LabelingPageComponent implements OnInit {
     }
   }
 
+  onImageError(): void {
+    this.imageReady.set(false);
+    void this.refreshImageUrl();
+  }
+
+  retryImage(): void {
+    const fileId = this.selectedImage()?.fileId;
+    this.retriedImageUrls.delete(`false:${fileId}`);
+    void this.refreshImageUrl(fileId);
+  }
+
   refreshThumbnail(index: number): void {
     const file = this.currentUploadDetail()?.files.find(
       (file) =>

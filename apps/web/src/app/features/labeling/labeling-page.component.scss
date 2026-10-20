@@ -4,7 +4,7 @@
 
 .labeling-page {
   display: grid;
-  grid-template-columns: 300px 1fr 260px;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
   gap: 16px;
   margin-top: 1rem;
 }
@@ -233,6 +233,9 @@
 }
 
 @media (max-width: 768px) {
+  .labeling-wrapper {
+    padding: 0.75rem;
+  }
   .labeling-page {
     grid-template-columns: 1fr;
   }
@@ -240,9 +243,14 @@
   .left-sidebar {
     position: static;
     max-height: none;
+    order: 3;
+  }
+  .editor-main {
+    order: 1;
   }
   .right-sidebar {
     grid-column: 1;
+    order: 2;
   }
 
   .toolbar-row {

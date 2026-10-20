@@ -30,6 +30,8 @@ const geometry = (r: Rect) => ({
     (pointermove)="move($event)"
     (pointerup)="finish($event)"
     (pointercancel)="cancel()"
+    (lostpointercapture)="cancel()"
+    [style.--viewport-scale]="viewportScale()"
   >
     @for (box of boxes(); track $index; let i = $index) {
       <button
@@ -47,7 +49,12 @@ const geometry = (r: Rect) => ({
         (click)="selectedIndexChange.emit(i)"
       >
         @if (showClassNames()) {
-          <span class="box-name label-tag">{{ box.className }}</span>
+          <span
+            class="box-name label-tag"
+            [class.label-below]="box.yCenter - box.height / 2 < 0.06"
+            [class.label-right]="box.xCenter > 0.75"
+            >{{ box.className }}</span
+          >
         }
         @if (selectedIndex() === i) {
           @for (corner of corners; track corner) {
@@ -99,35 +106,61 @@ const geometry = (r: Rect) => ({
       font-size: 11px;
       padding: 2px 4px;
       position: absolute;
-      top: 0;
+      bottom: calc(100% + 2px);
       left: 0;
+      margin-bottom: calc(4px / var(--viewport-scale, 1));
+      white-space: nowrap;
+      transform: scale(calc(1 / var(--viewport-scale, 1)));
+      transform-origin: bottom left;
       pointer-events: none;
+    }
+    .box-name.label-right {
+      left: auto;
+      right: 0;
+      transform-origin: bottom right;
+    }
+    .box-name.label-below {
+      bottom: auto;
+      top: calc(100% + 2px);
+      margin-bottom: 0;
+      margin-top: calc(4px / var(--viewport-scale, 1));
+      transform-origin: top left;
+    }
+    .box-name.label-below.label-right {
+      transform-origin: top right;
     }
     .handle {
       position: absolute;
-      width: 12px;
-      height: 12px;
+      width: calc(16px / var(--viewport-scale, 1));
+      height: calc(16px / var(--viewport-scale, 1));
       background: #fff;
       border: 1px solid #007f91;
     }
+    @media (pointer: coarse) {
+      .handle::before {
+        content: '';
+        position: absolute;
+        inset: calc(-8px / var(--viewport-scale, 1));
+      }
+    }
     .nw {
-      left: -6px;
-      top: -6px;
+      left: calc(-8px / var(--viewport-scale, 1));
+      top: calc(-8px / var(--viewport-scale, 1));
       cursor: nwse-resize;
     }
     .ne {
-      right: -6px;
-      top: -6px;
+      right: calc(-8px / var(--viewport-scale, 1));
+      top: calc(-8px / var(--viewport-scale, 1));
       cursor: nesw-resize;
     }
     .sw {
-      left: -6px;
-      bottom: -6px;
+      left: calc(-8px / var(--viewport-scale, 1));
+      bottom: calc(-8px / var(--viewport-scale, 1));
       cursor: nesw-resize;
     }
     .se {
-      right: -6px;
-      bottom: -6px;
+      right: calc(-8px / var(--viewport-scale, 1));
+      bottom: calc(-8px / var(--viewport-scale, 1));
       cursor: nwse-resize;
     }
     .preview {
@@ -147,6 +180,7 @@ export class DetectionEditorComponent {
   readonly showClassNames = input(false);
   readonly selectWhileAdding = input(false);
   readonly disabled = input(false);
+  readonly viewportScale = input(1);
   readonly addClass = input<InferenceModelClass | null>(null);
   readonly boxesChange = output<ReviewedDetection[]>();
   readonly selectedIndexChange = output<number | null>();
@@ -192,6 +226,10 @@ export class DetectionEditorComponent {
     this.plane().nativeElement.setPointerCapture(event.pointerId);
   }
   move(event: PointerEvent): void {
+    if (this.disabled()) {
+      this.cancel();
+      return;
+    }
     const g = this.gesture;
     if (!g || event.pointerId !== g.pointerId) return;
     const p = this.point(event);
@@ -223,6 +261,10 @@ export class DetectionEditorComponent {
     this.preview.set(r);
   }
   finish(event: PointerEvent): void {
+    if (this.disabled()) {
+      this.cancel();
+      return;
+    }
     const g = this.gesture;
     if (!g || event.pointerId !== g.pointerId) return;
     const r = this.preview();
@@ -242,9 +284,10 @@ export class DetectionEditorComponent {
     this.cancel();
   }
   cancel(): void {
-    if (this.gesture && this.plane().nativeElement.hasPointerCapture(this.gesture.pointerId))
-      this.plane().nativeElement.releasePointerCapture(this.gesture.pointerId);
+    const gesture = this.gesture;
     this.gesture = null;
     this.preview.set(null);
+    if (gesture && this.plane().nativeElement.hasPointerCapture(gesture.pointerId))
+      this.plane().nativeElement.releasePointerCapture(gesture.pointerId);
   }
 }

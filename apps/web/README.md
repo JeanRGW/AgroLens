@@ -87,6 +87,10 @@ save conflicts, and downloaded YOLO labels. They do not exercise live model exec
 - Properties, talhões, cultures, estadios management
 - Admin users, access grants, audit + CSV export
 - Canvas annotation editor with undo/redo and class palette
+- Labeling viewport: 100–800% zoom, fit-to-area reset, draw/pan tools, two-finger
+  pinch and pan, and touch-friendly resize handles. Ctrl/Cmd + wheel zooms at
+  the pointer; ordinary scrolling still scrolls the page. View changes never
+  change saved label coordinates. Failed image loads offer an explicit retry.
 - AI-assisted labeling: choose a detection model and generate suggestions for the current
   image in a responsive popup with scope cards, an image preview, and confidence controls.
   Suggestions can also target images without saved annotations or the entire upload. Preview confidence-filtered

@@ -318,3 +318,91 @@ test('Escape closes the popup, restores focus, and preserves unsaved labels', as
   await expect(page.locator('.canvas-area .label-box')).toHaveCount(2);
   expect(state.saved.size).toBe(0);
 });
+
+test('touch drawing, pinch zoom, pan, and fit preserve normalized label geometry', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await mockApi(page);
+  await page.goto(`/labeling?uploadId=${uploadId}`);
+  await expect(page.getByRole('button', { name: 'Salvar', exact: true })).toBeEnabled();
+  const host = page.locator('.canvas-host');
+  await host.scrollIntoViewIfNeeded();
+  const plane = (await page.locator('.canvas-area .overlay').boundingBox())!;
+  const session = await page.context().newCDPSession(page);
+  await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+  const touch = (
+    type: 'touchStart' | 'touchMove' | 'touchEnd',
+    points: { x: number; y: number; id: number }[],
+  ) => session.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+  await touch('touchStart', [
+    { id: 1, x: plane.x + plane.width * 0.2, y: plane.y + plane.height * 0.2 },
+  ]);
+  await touch('touchMove', [
+    { id: 1, x: plane.x + plane.width * 0.4, y: plane.y + plane.height * 0.4 },
+  ]);
+  await touch('touchEnd', []);
+  await expect(page.locator('.canvas-area .label-box')).toHaveCount(1);
+  const bounds = (await host.boundingBox())!;
+  const x = bounds.x + bounds.width / 2,
+    y = bounds.y + bounds.height / 2;
+  await touch('touchStart', [
+    { id: 1, x: x - 40, y },
+    { id: 2, x: x + 40, y },
+  ]);
+  await touch('touchMove', [
+    { id: 1, x: x - 80, y },
+    { id: 2, x: x + 80, y },
+  ]);
+  await touch('touchEnd', []);
+  await expect(page.getByLabel('Zoom atual')).toHaveText('200%');
+  await expect(page.locator('.canvas-area .label-box')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Mover', exact: true }).click();
+  await host.scrollIntoViewIfNeeded();
+  const updated = (await host.boundingBox())!;
+  await touch('touchStart', [{ id: 1, x: updated.x + 100, y: updated.y + 100 }]);
+  await touch('touchMove', [{ id: 1, x: updated.x + 140, y: updated.y + 130 }]);
+  await touch('touchEnd', []);
+  await expect(page.locator('.image-stage')).not.toHaveCSS('transform', 'matrix(2, 0, 0, 2, 0, 0)');
+  await page.getByRole('button', { name: 'Ajustar', exact: true }).click();
+  await expect(page.getByLabel('Zoom atual')).toHaveText('100%');
+  await page.getByRole('button', { name: 'Rotular', exact: true }).click();
+  await page.getByRole('button', { name: 'Aumentar zoom', exact: true }).click();
+  await expect(page.getByLabel('Zoom atual')).toHaveText('125%');
+  await host.scrollIntoViewIfNeeded();
+  const handle = (await page.locator('.canvas-area .se').boundingBox())!;
+  const fitted = (await page.locator('.canvas-area .overlay').boundingBox())!;
+  const corner = { id: 1, x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
+  await touch('touchStart', [corner]);
+  await touch('touchMove', [
+    { ...corner, x: corner.x + fitted.width * 0.1, y: corner.y + fitted.height * 0.1 },
+  ]);
+  await touch('touchEnd', []);
+  await page.screenshot({ path: test.info().outputPath('labeling-touch-workspace.png') });
+  await page.getByRole('button', { name: 'Salvar', exact: true }).click();
+  await expect.poll(() => state.saved.size).toBe(1);
+  const label = state.saved.get(imageIds[0])!.labels as {
+    width: number;
+    height: number;
+    xCenter: number;
+  }[];
+  expect(label).toHaveLength(1);
+  expect(label[0].width).toBeCloseTo(0.3, 2);
+  expect(label[0].height).toBeCloseTo(0.3, 2);
+  expect(label[0].xCenter).toBeCloseTo(0.35, 2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('failed image loads offer an explicit retry and recover editor readiness', async ({
+  page,
+}) => {
+  await mockApi(page);
+  await page.route('**/icons/icon-512.png', (route) => route.abort());
+  await page.goto(`/labeling?uploadId=${uploadId}`);
+  await expect(page.getByText('Não foi possível carregar a imagem.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Salvar', exact: true })).toBeDisabled();
+  await page.unroute('**/icons/icon-512.png');
+  await page.getByRole('button', { name: 'Tentar novamente', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Salvar', exact: true })).toBeEnabled();
+  await expect(page.getByText('Não foi possível carregar a imagem.')).toHaveCount(0);
+});

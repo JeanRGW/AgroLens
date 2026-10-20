@@ -39,6 +39,36 @@ describe('DetectionEditorComponent gestures', () => {
     ]);
     expect(fixture.componentInstance.boxes()[0].confidence).toBe(0.9);
   });
+  it('keeps small-box tags outside the box and the same screen size at high zoom', () => {
+    const { fixture, plane } = setup();
+    fixture.componentRef.setInput('showClassNames', true);
+    fixture.componentRef.setInput('boxes', [{ ...box, width: 0.02, height: 0.02 }]);
+    const host = fixture.nativeElement as HTMLElement;
+    host.style.cssText = 'position:relative;display:block;width:400px;height:400px';
+    fixture.detectChanges();
+    const tag = host.querySelector('.box-name') as HTMLElement;
+    const element = host.querySelector('.box') as HTMLElement;
+    const original = tag.getBoundingClientRect();
+    expect(original.bottom).toBeLessThanOrEqual(element.getBoundingClientRect().top);
+    fixture.componentRef.setInput('viewportScale', 8);
+    plane.style.transform = 'scale(8)';
+    fixture.detectChanges();
+    const zoomed = tag.getBoundingClientRect();
+    expect(zoomed.width).toBeCloseTo(original.width, 0);
+    expect(zoomed.height).toBeCloseTo(original.height, 0);
+    expect(zoomed.bottom).toBeLessThanOrEqual(element.getBoundingClientRect().top);
+    fixture.componentRef.setInput('boxes', [
+      { ...box, xCenter: 0.95, yCenter: 0.02, width: 0.02, height: 0.02 },
+    ]);
+    fixture.detectChanges();
+    expect(tag.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      element.getBoundingClientRect().bottom,
+    );
+    expect(tag.getBoundingClientRect().right).toBeLessThanOrEqual(
+      element.getBoundingClientRect().right,
+    );
+    fixture.destroy();
+  });
   for (const color of [null, '#e53935']) {
     it(`keeps selected borders white with ${color ?? 'default'} box colors`, () => {
       const { fixture } = setup();
@@ -83,5 +113,22 @@ describe('DetectionEditorComponent gestures', () => {
     pointer(plane, 'pointermove', 600, 600);
     pointer(plane, 'pointercancel', 600, 600);
     expect(changed).not.toHaveBeenCalled();
+  });
+  it('discards a gesture when capture is lost or editing becomes disabled', () => {
+    const { fixture, plane, changed, pointer } = setup();
+    const box = fixture.nativeElement.querySelector('.box');
+    pointer(box, 'pointerdown', 500, 500);
+    pointer(plane, 'pointermove', 600, 600);
+    pointer(plane, 'lostpointercapture', 600, 600);
+    pointer(plane, 'pointerup', 600, 600);
+    expect(changed).not.toHaveBeenCalled();
+    pointer(box, 'pointerdown', 500, 500);
+    pointer(plane, 'pointermove', 600, 600);
+    fixture.componentRef.setInput('disabled', true);
+    fixture.detectChanges();
+    pointer(plane, 'pointerup', 600, 600);
+    expect(changed).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.preview()).toBeNull();
+    fixture.destroy();
   });
 });
