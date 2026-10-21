@@ -140,6 +140,19 @@ const adminMenu: MenuItem[] = [
               </a>
             }
           }
+
+          <hr class="section-divider" />
+
+          <a
+            mat-list-item
+            routerLink="/about"
+            routerLinkActive="active-link"
+            [routerLinkActiveOptions]="{ exact: true }"
+            (click)="onNavItemClick()"
+          >
+            <mat-icon matListItemIcon>info</mat-icon>
+            <span matListItemTitle>Sobre</span>
+          </a>
         </mat-nav-list>
       </mat-sidenav>
 

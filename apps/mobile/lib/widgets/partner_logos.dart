@@ -7,9 +7,12 @@ const kPartnerLogos = [
   'CC_logo.png',
   'agraria_logo.svg',
   'capes_logo.png',
-  'FA_logo.png',
   'CNPq_logo.svg',
-  'NMAP_logo.png',
+  'FAPA_logo.png',
+  'FA_logo.png',
+  'FundoParana_logo.png',
+  'SEET_logo.png',
+  'LOGO_NMAP_NOVA.png',
   'UNICENTRO_logo.png',
 ];
 

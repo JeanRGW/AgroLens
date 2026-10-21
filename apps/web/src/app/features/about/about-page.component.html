@@ -1,0 +1,87 @@
+<section class="about-page">
+  <app-page-header
+    eyebrow="Sobre"
+    title="Sobre o projeto"
+    subtitle="Conheça o AgroLens, as instituições parceiras e como citar o trabalho."
+  />
+
+  <mat-card class="info-card project-card">
+    <mat-card-header>
+      <mat-card-title>Sobre o projeto</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @for (paragraph of description; track paragraph) {
+        <p class="prose">{{ paragraph }}</p>
+      }
+      <p class="prose note">{{ note }}</p>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="info-card partner-card">
+    <mat-card-header>
+      <mat-card-title>Instituições parceiras</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <p class="prose partner-intro">{{ partnerIntro }}</p>
+
+      <ul class="logo-grid">
+        @for (logo of partnerLogos; track logo.file) {
+          <li class="logo-tile">
+            <img [src]="'logos/' + logo.file" [alt]="logo.label" loading="lazy" />
+          </li>
+        }
+      </ul>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="info-card citation-card">
+    <mat-card-header>
+      <mat-card-title>Como citar</mat-card-title>
+    </mat-card-header>
+    <mat-card-content class="citation-body">
+      <div class="citation-reference">
+        <p class="citation-title">{{ citationTitle }}</p>
+
+        <ul class="author-list">
+          @for (author of citationAuthors; track author) {
+            <li>{{ author }}</li>
+          }
+        </ul>
+
+        <ul class="affiliation-list">
+          @for (affiliation of citationAffiliations; track affiliation) {
+            <li>{{ affiliation }}</li>
+          }
+        </ul>
+      </div>
+
+      <div class="citation-registration">
+        <p class="column-label">Registro INPI</p>
+        <p class="prose registration">{{ citationRegistration }}</p>
+        @for (registration of citationRegistrations; track registration) {
+          <p class="prose registration">{{ registration }}</p>
+        }
+      </div>
+
+      <div class="abnt">
+        <p class="abnt-label">
+          <mat-icon>format_quote</mat-icon>
+          Formato ABNT
+        </p>
+        <p class="abnt-text">{{ citationAbnt }}</p>
+        <app-copy-id-button
+          [id]="citationAbnt"
+          displayText="Copiar"
+          copiedMessage="Citação copiada."
+          ariaLabel="Copiar a citação no formato ABNT"
+        />
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <footer class="page-footer">
+    <a [href]="appUrl" target="_blank" rel="noopener noreferrer">{{ appUrl }}</a>
+    <p>Para suporte, contate o administrador do sistema.</p>
+    <p>Desenvolvido em 2026</p>
+  </footer>
+</section>

@@ -68,7 +68,7 @@ $admin-theme: mat.define-theme(
 
   --agri-muted-text: #4c5d3d;
 
-  --agri-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Courier New', monospace;
+  --agri-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', Consolas, 'Courier New', monospace;
 
   // Motion tokens (global juicy UI system)
   --motion-fast: 150ms;
@@ -410,7 +410,7 @@ a:hover {
 
 /* Misc */
 .mono {
-  font-family: 'JetBrains Mono', 'SF Mono', Consolas, 'Courier New', monospace;
+  font-family: var(--agri-mono);
   font-size: 0.8rem;
 }
 

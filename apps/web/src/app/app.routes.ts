@@ -121,6 +121,11 @@ export const routes: Routes = [
           import('./features/profile/profile-page.component').then((m) => m.ProfilePageComponent),
       },
       {
+        path: 'about',
+        loadComponent: () =>
+          import('./features/about/about-page.component').then((m) => m.AboutPageComponent),
+      },
+      {
         path: 'admin',
         canActivate: [adminGuard],
         children: [
