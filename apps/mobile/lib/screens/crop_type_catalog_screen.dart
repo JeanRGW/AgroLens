@@ -244,11 +244,6 @@ class _CropTypeCatalogScreenState extends State<CropTypeCatalogScreen> {
           const SizedBox(height: 6),
           CatalogActionRow(
             actions: [
-              CatalogAction(
-                label: 'Estádios',
-                icon: Icons.timeline_outlined,
-                onPressed: () => _openDetails(cropType),
-              ),
               if (widget.catalogRepository.canMutate(cropType)) ...[
                 CatalogAction(
                   label: 'Editar',
@@ -258,13 +253,23 @@ class _CropTypeCatalogScreenState extends State<CropTypeCatalogScreen> {
                       : () => _openEditForm(cropType),
                 ),
                 CatalogAction(
+                  label: '+Estádios',
+                  icon: Icons.timeline_outlined,
+                  onPressed: () => _openDetails(cropType),
+                ),
+                CatalogAction(
                   label: 'Excluir',
                   icon: Icons.delete_outline,
                   onPressed: cropType.isPendingSync
                       ? _showPendingSyncBlockedMessage
                       : () => _deleteCropType(cropType),
                 ),
-              ],
+              ] else
+                CatalogAction(
+                  label: '+Estádios',
+                  icon: Icons.timeline_outlined,
+                  onPressed: () => _openDetails(cropType),
+                ),
             ],
           ),
         ],

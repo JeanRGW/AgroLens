@@ -18,7 +18,7 @@ export function shortId(value: string): string {
       class="uid-copy"
       (click)="copy()"
       [disabled]="!id"
-      [attr.aria-label]="'Copiar ID: ' + (id || '')"
+      [attr.aria-label]="ariaLabel || 'Copiar ID: ' + (id || '')"
       [attr.title]="id || ''"
     >
       <span class="uid-label">{{ label }}</span>
@@ -39,7 +39,6 @@ export function shortId(value: string): string {
       font-family: var(--agri-mono);
       font-size: 0.8rem;
       color: var(--agri-accent-dark);
-      max-width: 220px;
       max-width: 100%;
 
       .uid-label {
@@ -81,6 +80,8 @@ export class CopyIdButtonComponent {
   @Input() displayText = '';
   /** Optional `Tipo: …` prefix rendered before the display text. */
   @Input() prefix = '';
+  /** Overrides the default "Copiar ID: …" accessible name. */
+  @Input() ariaLabel = '';
 
   private readonly clipboard = inject(Clipboard);
   private readonly snackBar = inject(MatSnackBar);

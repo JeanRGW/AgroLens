@@ -13,7 +13,21 @@ dart compile js -O4 --no-source-maps tool/drift_worker.dart -o .dart_tool/web-st
 cp .dart_tool/web-storage/drift_worker.js web/drift_worker.js
 temporary=$(mktemp web/sqlite3.wasm.XXXXXX)
 trap 'rm -f "$temporary"' EXIT
-curl --fail --location --show-error \
-  "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-${version}/sqlite3.wasm" \
-  --output "$temporary"
-mv "$temporary" web/sqlite3.wasm
+url="https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-${version}/sqlite3.wasm"
+# The release CDN intermittently answers 503, so retry before giving up.
+for attempt in 1 2 3; do
+  if curl --fail --location --show-error --retry 2 --retry-delay 2 "$url" --output "$temporary"; then
+    mv "$temporary" web/sqlite3.wasm
+    exit 0
+  fi
+  echo "Attempt $attempt to download $url failed." >&2
+  sleep $((attempt * 3))
+done
+# The wasm matching the pinned sqlite3 version is committed to the repository,
+# so a failed refresh must not break the build.
+if [[ -s web/sqlite3.wasm ]]; then
+  echo "Keeping the committed web/sqlite3.wasm (sqlite3 ${version})." >&2
+  exit 0
+fi
+echo "Failed to download $url and no committed web/sqlite3.wasm to fall back on." >&2
+exit 1

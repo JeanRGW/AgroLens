@@ -12,7 +12,7 @@
 // stale-while-revalidate, so a fresh bundle is picked up within one reload.
 
 const CACHE_PREFIX = "agrolens-m-";
-const CACHE_NAME = `${CACHE_PREFIX}v4`;
+const CACHE_NAME = `${CACHE_PREFIX}v6`;
 
 // Boot-critical files: the app must start without a network round trip.
 const REQUIRED_SHELL = [
@@ -44,6 +44,8 @@ const OPTIONAL_SHELL = [
   "canvaskit/chromium/canvaskit.wasm",
   "canvaskit/webparagraph/canvaskit.js",
   "canvaskit/webparagraph/canvaskit.wasm",
+  // App icon shown by the home greeting banner.
+  "assets/assets/app_icon.png",
   "assets/assets/logo/agraria_logo.svg",
   "assets/assets/logo/agronomia_logo.png",
   "assets/assets/logo/BDA_logo.png",
@@ -51,8 +53,11 @@ const OPTIONAL_SHELL = [
   "assets/assets/logo/CC_logo.png",
   "assets/assets/logo/CNPq_logo.svg",
   "assets/assets/logo/FA_logo.png",
+  "assets/assets/logo/FAPA_logo.png",
+  "assets/assets/logo/FundoParana_logo.png",
   "assets/assets/logo/main_logo.png",
-  "assets/assets/logo/NMAP_logo.png",
+  "assets/assets/logo/seti_logo.png",
+  "assets/assets/logo/LOGO_NMAP_NOVA.png",
   "assets/assets/logo/UNICENTRO_logo.png",
 ];
 

@@ -102,3 +102,5 @@ save conflicts, and downloaded YOLO labels. They do not exercise live model exec
   reloading a conflict requires confirmation before discarding unsaved changes.
 - YOLO export dialog and ZIP download
 - Inference viewer
+- "Sobre" page: project description, partner institution logos and the "Como citar"
+  reference block (authors, departments and both INPI software registrations)

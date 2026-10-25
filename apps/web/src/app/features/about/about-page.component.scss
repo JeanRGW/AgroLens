@@ -1,0 +1,227 @@
+.about-page {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 1320px;
+  margin-inline: auto;
+}
+
+.info-card {
+  border-radius: 16px;
+}
+
+mat-card-header mat-card-title {
+  font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--agri-text);
+}
+
+.prose {
+  margin: 0 0 0.85rem;
+  max-width: 68ch;
+  line-height: 1.65;
+  color: var(--agri-text-secondary);
+  text-align: justify;
+}
+
+.prose:last-child {
+  margin-bottom: 0;
+}
+
+.partner-intro {
+  text-align: center;
+  margin-inline: auto;
+  margin-bottom: 1.25rem;
+}
+
+/* The NMAP statement closes the narrative, so it is set apart from it. */
+.note {
+  margin-top: 1.1rem;
+  margin-bottom: 0;
+  padding: 0.6rem 0 0.6rem 0.95rem;
+  border-left: 3px solid var(--agri-accent);
+  color: var(--agri-text);
+  font-weight: 500;
+}
+
+/* ——— Partner logos ——— */
+
+.logo-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.logo-tile {
+  display: grid;
+  place-items: center;
+  min-height: 88px;
+  padding: 0.7rem;
+  background: #ffffff;
+  border: 1px solid var(--agri-border);
+  border-radius: 12px;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.logo-tile:hover {
+  border-color: var(--agri-border-strong);
+  box-shadow: 0 6px 16px rgba(36, 50, 29, 0.08);
+  transform: translateY(-1px);
+}
+
+.logo-tile img {
+  max-width: 100%;
+  max-height: 60px;
+  object-fit: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-tile {
+    transition: none;
+  }
+
+  .logo-tile:hover {
+    transform: none;
+  }
+}
+
+/* ——— Citation ——— */
+
+.citation-body {
+  display: grid;
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.citation-hint {
+  margin: 0;
+  color: var(--agri-text-muted);
+  font-size: 0.85rem;
+}
+
+/* The ABNT line is a reference record, so it is set in the mono face. */
+.abnt {
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  background: var(--agri-fill-subtle);
+  border: 1px solid var(--agri-border);
+  border-left: 3px solid var(--agri-accent);
+}
+
+.abnt-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--agri-accent-dark);
+}
+
+.abnt-label mat-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--agri-accent);
+}
+
+.abnt-text {
+  margin: 0;
+  font-family: var(--agri-mono);
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: var(--agri-text);
+}
+
+.abnt app-copy-id-button {
+  margin-top: 0.6rem;
+  display: inline-flex;
+  /* Keep the button at its natural width so the label is never truncated. */
+  min-width: max-content;
+}
+
+/* ——— Footer ——— */
+
+.page-footer {
+  display: grid;
+  gap: 0.3rem;
+  text-align: center;
+  color: var(--agri-text-muted);
+  font-size: 0.85rem;
+  padding-bottom: 0.5rem;
+}
+
+.page-footer p {
+  margin: 0;
+}
+
+/* ——— Wide layout ——— */
+
+@media (min-width: 1100px) {
+  .about-page {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-areas:
+      'header header'
+      'project partner'
+      'citation citation'
+      'footer footer';
+    align-items: start;
+  }
+
+  app-page-header {
+    grid-area: header;
+  }
+
+  .project-card {
+    grid-area: project;
+  }
+
+  .partner-card {
+    grid-area: partner;
+  }
+
+  .citation-card {
+    grid-area: citation;
+  }
+
+  .page-footer {
+    grid-area: footer;
+  }
+
+  .logo-tile {
+    min-height: 96px;
+  }
+
+  .logo-tile img {
+    max-height: 66px;
+  }
+}
+
+@media (max-width: 720px) {
+  /* Justified text opens ugly gaps on narrow screens. */
+  .prose {
+    text-align: left;
+  }
+
+  .logo-grid {
+    gap: 0.6rem;
+  }
+
+  .logo-tile {
+    min-height: 64px;
+    padding: 0.45rem;
+  }
+
+  .logo-tile img {
+    max-height: 44px;
+  }
+}

@@ -107,7 +107,7 @@ const adminMenu: MenuItem[] = [
 
           <hr class="section-divider" />
 
-          <p class="section-label">Gestão</p>
+          <p class="section-label">Cadastros</p>
 
           @for (item of managementMenu; track item.route) {
             <a
@@ -140,6 +140,19 @@ const adminMenu: MenuItem[] = [
               </a>
             }
           }
+
+          <hr class="section-divider" />
+
+          <a
+            mat-list-item
+            routerLink="/about"
+            routerLinkActive="active-link"
+            [routerLinkActiveOptions]="{ exact: true }"
+            (click)="onNavItemClick()"
+          >
+            <mat-icon matListItemIcon>info</mat-icon>
+            <span matListItemTitle>Sobre</span>
+          </a>
         </mat-nav-list>
       </mat-sidenav>
 

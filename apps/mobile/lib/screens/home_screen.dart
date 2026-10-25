@@ -337,11 +337,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   Container(
                     width: 56,
                     height: 56,
+                    padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(Icons.dashboard, color: Colors.white),
+                    child: Image.asset(
+                      'assets/app_icon.png',
+                      fit: BoxFit.contain,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -357,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                         ),
                         Text(
-                          'Escolha uma área para continuar.',
+                          'Escolha uma opção para continuar.',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
                                 color: Colors.white.withValues(alpha: 0.9),
@@ -397,6 +401,37 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 10),
             _card(
               context,
+              Icons.manage_search_outlined,
+              'Inferência (Processamento)',
+              'Analisar imagens e visualizar detecções',
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      InferenceScreen(service: widget.syncService.inference),
+                ),
+              ),
+              [
+                Theme.of(context).colorScheme.primary,
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _card(
+              context,
+              Icons.add_a_photo_outlined,
+              'Novo upload',
+              'Criar e preparar um novo envio de imagens',
+              () {
+                if (_storageError == null && !_loading) {
+                  unawaited(_createUpload());
+                }
+              },
+              const [Color(0xff6a4e1a), Color(0xffb17a22)],
+            ),
+            const SizedBox(height: 12),
+            _card(
+              context,
               Icons.cloud_outlined,
               'Uploads',
               _pendingCount > 0
@@ -416,39 +451,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const [Color(0xff0b5d9a), Color(0xff1481b8)],
             ),
-            const SizedBox(height: 12),
-            _card(
-              context,
-              Icons.manage_search_outlined,
-              'Inferência',
-              'Analisar imagens e visualizar detecções',
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      InferenceScreen(service: widget.syncService.inference),
-                ),
-              ),
-              const [Color(0xff245d38), Color(0xff398455)],
+            const SizedBox(height: 20),
+            const Text(
+              'Cadastro',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 12),
-            _card(
-              context,
-              Icons.add_a_photo_outlined,
-              'Novo upload',
-              'Criar e preparar um novo envio de imagens',
-              () {
-                if (_storageError == null && !_loading) {
-                  unawaited(_createUpload());
-                }
-              },
-              const [Color(0xff6a4e1a), Color(0xffb17a22)],
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             _card(
               context,
               Icons.place_outlined,
-              'Propriedades',
+              'Propriedades e Talhões',
               'Gerenciar propriedades e talhões',
               () => Navigator.push(
                 context,
@@ -464,7 +476,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _card(
               context,
               Icons.eco_outlined,
-              'Culturas',
+              'Culturas e Estádios',
               'Cadastrar, editar e remover culturas',
               () => Navigator.push(
                 context,
