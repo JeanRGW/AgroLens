@@ -5,13 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { CopyIdButtonComponent } from '../../shared/components/copy-id-button.component';
 import { PageHeaderComponent } from '../../shared/components/page-header.component';
 import {
-  APP_URL,
   CITATION_ABNT,
-  CITATION_AFFILIATIONS,
-  CITATION_AUTHORS,
-  CITATION_REGISTRATION,
-  CITATION_REGISTRATIONS,
-  CITATION_TITLE,
   PARTNER_INTRO,
   PARTNER_LOGOS,
   PROJECT_DESCRIPTION,
@@ -30,11 +24,5 @@ export class AboutPageComponent {
   readonly description = PROJECT_DESCRIPTION;
   readonly note = PROJECT_NOTE;
   readonly partnerIntro = PARTNER_INTRO;
-  readonly citationTitle = CITATION_TITLE;
-  readonly citationAuthors = CITATION_AUTHORS;
-  readonly citationAffiliations = CITATION_AFFILIATIONS;
-  readonly citationRegistration = CITATION_REGISTRATION;
-  readonly citationRegistrations = CITATION_REGISTRATIONS;
   readonly citationAbnt = CITATION_ABNT;
-  readonly appUrl = APP_URL;
 }

@@ -1,56 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../widgets/partner_logos.dart';
 
-/// Title of the work as it should be referenced.
-const _kCitationTitle =
-    'AgroLens: plataforma de captura de imagens de campo, anotação e exportação '
-    'de conjuntos de dados YOLO para agricultura de precisão.';
-
-/// Authors with the department each one is affiliated with.
-const _kCitationAuthors = <String>[
-  'Jean Rafael Guilouski Wojcik (DECOMP)',
-  'Jotair Elio Kwiatkowski Junior (DECOMP)',
-  'Leandro Rampim (DEAGRO)',
-];
-
-/// Institutions behind each cited department.
-const _kCitationAffiliations = <String>[
-  'Departamento de Ciência da Computação (DECOMP) — Setor de Ciências Exatas '
-      'e de Tecnologia (SEET), Universidade Estadual do Centro-Oeste '
-      '(Unicentro)',
-  'Departamento de Agronomia (DEAGRO) — Universidade Estadual do '
-      'Centro-Oeste (Unicentro)',
-];
-
-/// Software registration at the Brazilian National Institute of Industrial
-/// Property. The registrations list their own author lists, which are wider
-/// than the reference block above.
-const _kCitationRegistration =
-    'Software registrado no Instituto Nacional da Propriedade Industrial '
-    '(INPI), titular: Universidade Estadual do Centro-Oeste (Unicentro).';
-
-/// One line per INPI certificate, with the authors each one names.
-const _kCitationRegistrations = <String>[
-  'AgroLens — processo nº BR512026002893-0, publicado em 16/04/2026. '
-      'Autores: Jotair Elio Kwiatkowski Junior; Leandro Rampim; Carlos Eduardo '
-      'Andrade Iatskiu; Jean Rafael Guilouski Wojcik.',
-  'AgroLensWeb — processo nº BR512026009114-4, publicado em 30/06/2026. '
-      'Autores: Jotair Elio Kwiatkowski Junior; Leandro Rampim; Carlos Eduardo '
-      'Andrade Iatskiu; Cauã André Conzatti; Jean Rafael Guilouski Wojcik; '
-      'Vitor Muller Anunciato.',
-];
-
-/// Copy-ready citation in ABNT style.
+/// Copy-ready reference to the AgroLens software, in ABNT style.
 const _kCitationAbnt =
     'WOJCIK, Jean Rafael Guilouski; KWIATKOWSKI JUNIOR, Jotair Elio; RAMPIM, '
-    'Leandro. AgroLens: plataforma de captura de imagens de campo, anotação e '
-    'exportação de conjuntos de dados YOLO para agricultura de precisão. '
-    'Guarapuava: Universidade Estadual do Centro-Oeste, 2026. Registro INPI nº '
-    'BR512026002893-0 (AgroLens) e nº BR512026009114-4 (AgroLensWeb). '
+    'Leandro. AgroLens: plataforma de captura de imagens de campo, anotação, '
+    'exportação e inferência para agricultura de precisão. '
+    'Guarapuava: Universidade Estadual do Centro-Oeste, 2026. Registro de '
+    'programa de computador INPI nº BR512026002893-0. '
     'Disponível em: https://app.agrolens.rgw.app.';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
+
+  /// Copies [text] and confirms it, so the reference can be pasted as-is.
+  Future<void> _copyCitation(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await Clipboard.setData(const ClipboardData(text: _kCitationAbnt));
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Referência copiada.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Sobre')),
@@ -93,7 +65,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'Uma solução móvel para coleta, categorização e sincronização de imagens destinadas ao treinamento de modelos de IA. Desenvolvida com tecnologias modernas, permite capturar e enviar imagens e metadados, incluindo informações sobre cultivo e localização.\n\nO sistema oferece sincronização automática na nuvem, suporte à operação offline e organização por culturas, talhões e propriedades. Com uma interface intuitiva e recursos robustos, facilita o processo de coleta de imagens.\n\nO núcleo de mecanização de agricultura de precisão NMAP da Unicentro oferece mais uma solução na área de tecnologia',
+                    'Uma solução móvel para coleta, categorização e sincronização de imagens destinadas ao treinamento de modelos de IA. Desenvolvida com tecnologias modernas, permite capturar e enviar imagens e metadados, incluindo informações sobre cultivo e localização.\n\nO sistema oferece sincronização automática na nuvem, suporte à operação offline e organização por culturas, talhões e propriedades. Com uma interface intuitiva e recursos robustos, facilita o processo de coleta de imagens.\n\nO Núcleo de Mecanização e Agricultura de Precisão (NMAP) da Unicentro oferece mais uma solução na área de tecnologia',
                     style: TextStyle(height: 1.6),
                     textAlign: TextAlign.justify,
                   ),
@@ -202,43 +174,10 @@ class AboutScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    _kCitationTitle,
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                    textAlign: TextAlign.justify,
-                  ),
-                  const SizedBox(height: 12),
-                  for (final author in _kCitationAuthors)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(author),
-                    ),
-                  const SizedBox(height: 8),
-                  for (final affiliation in _kCitationAffiliations)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        affiliation,
-                        style: Theme.of(context).textTheme.bodySmall,
-                        textAlign: TextAlign.justify,
-                      ),
-                    ),
-                  const SizedBox(height: 8),
                   Text(
-                    _kCitationRegistration,
+                    'Referência do software no padrão ABNT (NBR 6023).',
                     style: Theme.of(context).textTheme.bodySmall,
-                    textAlign: TextAlign.justify,
                   ),
-                  const SizedBox(height: 8),
-                  for (final registration in _kCitationRegistrations)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        registration,
-                        style: Theme.of(context).textTheme.bodySmall,
-                        textAlign: TextAlign.justify,
-                      ),
-                    ),
                   const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
@@ -253,7 +192,7 @@ class AboutScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Formato ABNT',
+                          'Referência',
                           style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
@@ -263,6 +202,12 @@ class AboutScreen extends StatelessWidget {
                           style: Theme.of(context).textTheme.bodySmall,
                           textAlign: TextAlign.justify,
                         ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => _copyCitation(context),
+                          icon: const Icon(Icons.copy_all_outlined, size: 18),
+                          label: const Text('Copiar referência'),
+                        ),
                       ],
                     ),
                   ),
@@ -271,23 +216,10 @@ class AboutScreen extends StatelessWidget {
             ),
           ),
           const Padding(
-            padding: EdgeInsets.fromLTRB(20, 30, 20, 12),
-            child: Text(
-              'https://app.agrolens.rgw.app',
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             child: Text(
               'Para suporte, contate o administrador do sistema.',
               textAlign: TextAlign.center,
-            ),
-          ),
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: Text('Desenvolvido em 2026'),
             ),
           ),
         ],

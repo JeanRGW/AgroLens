@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agrolens/screens/about_screen.dart';
@@ -33,7 +34,7 @@ void main() {
       'assets/logo/FAPA_logo.png',
       'assets/logo/FA_logo.png',
       'assets/logo/FundoParana_logo.png',
-      'assets/logo/SEET_logo.png',
+      'assets/logo/seti_logo.png',
       'assets/logo/LOGO_NMAP_NOVA.png',
       'assets/logo/UNICENTRO_logo.png',
     ]);
@@ -46,42 +47,66 @@ void main() {
 
     expect(
       find.textContaining(
-        'O núcleo de mecanização de agricultura de precisão NMAP da Unicentro '
+        'O Núcleo de Mecanização e Agricultura de Precisão (NMAP) da Unicentro '
         'oferece mais uma solução na área de tecnologia',
       ),
       findsOneWidget,
     );
   });
 
-  testWidgets('cites the authors, the departments and the INPI registration', (
+  testWidgets('shows a single copy-ready ABNT reference to the software', (
     tester,
   ) async {
     await pumpAbout(tester);
 
     expect(find.text('Como citar'), findsOneWidget);
-    expect(find.textContaining('Jean Rafael Guilouski Wojcik'), findsWidgets);
-    expect(find.textContaining('Jotair Elio Kwiatkowski Junior'), findsWidgets);
-    expect(find.textContaining('Leandro Rampim'), findsWidgets);
-    expect(
-      find.textContaining('Departamento de Ciência da Computação (DECOMP)'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Departamento de Agronomia (DEAGRO)'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Instituto Nacional da Propriedade Industrial'),
-      findsOneWidget,
-    );
-    // Both INPI registrations are cited, in the reference block and in the
-    // ABNT line, and no placeholder is left behind.
-    expect(find.textContaining('BR512026002893-0'), findsNWidgets(2));
-    expect(find.textContaining('BR512026009114-4'), findsNWidgets(2));
-    expect(find.textContaining('XXXXXX'), findsNothing);
+    // The reference names the authors, the software, the institution, the INPI
+    // registration and the access date, and no placeholder is left behind.
     expect(
       find.textContaining('WOJCIK, Jean Rafael Guilouski'),
       findsOneWidget,
     );
+    expect(
+      find.textContaining('KWIATKOWSKI JUNIOR, Jotair Elio'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('RAMPIM, Leandro'), findsOneWidget);
+    expect(find.textContaining('AgroLens: plataforma'), findsOneWidget);
+    expect(
+      find.textContaining('Universidade Estadual do Centro-Oeste, 2026'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('BR512026002893-0'), findsOneWidget);
+    expect(find.textContaining('XXXXXX'), findsNothing);
+    expect(find.text('Copiar referência'), findsOneWidget);
+  });
+
+  testWidgets('copies the reference to the clipboard', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await pumpAbout(tester);
+    final copy = find.text('Copiar referência');
+    await tester.ensureVisible(copy);
+    await tester.pumpAndSettle();
+    await tester.tap(copy);
+    await tester.pump();
+
+    expect(copied, startsWith('WOJCIK, Jean Rafael Guilouski'));
+    expect(copied, contains('BR512026002893-0'));
   });
 }

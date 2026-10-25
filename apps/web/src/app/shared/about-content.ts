@@ -27,8 +27,8 @@ export const PARTNER_LOGOS: readonly PartnerLogo[] = [
   { file: 'FA_logo.png', label: 'Fundação Araucária' },
   { file: 'FundoParana_logo.png', label: 'Fundo Paraná' },
   {
-    file: 'SEET_logo.png',
-    label: 'Setor de Ciências Exatas e de Tecnologia (SEET) — Unicentro',
+    file: 'seti_logo.png',
+    label: 'Secretaria da Ciência, Tecnologia e Ensino Superior (SETI) — Paraná',
   },
   {
     file: 'LOGO_NMAP_NOVA.png',
@@ -44,43 +44,11 @@ export const PROJECT_DESCRIPTION = [
 
 /** Closing statement about the NMAP nucleus, set apart from the narrative. */
 export const PROJECT_NOTE =
-  'O núcleo de mecanização de agricultura de precisão NMAP da Unicentro oferece mais uma solução na área de tecnologia';
+  'O Núcleo de Mecanização e Agricultura de Precisão (NMAP) da Unicentro oferece mais uma solução na área de tecnologia';
 
 export const PARTNER_INTRO =
   'Desenvolvido com o apoio de instituições de pesquisa e desenvolvimento agrícola, o que contribui para a inovação no setor.';
 
-/** Title of the work as it should be referenced. */
-export const CITATION_TITLE =
-  'AgroLens: plataforma de captura de imagens de campo, anotação e exportação de conjuntos de dados YOLO para agricultura de precisão.';
-
-/** Authors with the department each one is affiliated with. */
-export const CITATION_AUTHORS: readonly string[] = [
-  'Jean Rafael Guilouski Wojcik (DECOMP)',
-  'Jotair Elio Kwiatkowski Junior (DECOMP)',
-  'Leandro Rampim (DEAGRO)',
-];
-
-/** Institutions behind each cited department. */
-export const CITATION_AFFILIATIONS: readonly string[] = [
-  'Departamento de Ciência da Computação (DECOMP) — Setor de Ciências Exatas e de Tecnologia (SEET), Universidade Estadual do Centro-Oeste (Unicentro)',
-  'Departamento de Agronomia (DEAGRO) — Universidade Estadual do Centro-Oeste (Unicentro)',
-];
-
-/**
- * Software registration at the Brazilian National Institute of Industrial
- * Property. Each registration carries the author list of its own certificate,
- * which is wider than the reference block above.
- */
-export const CITATION_REGISTRATION =
-  'Software registrado no Instituto Nacional da Propriedade Industrial (INPI), titular: Universidade Estadual do Centro-Oeste (Unicentro).';
-
-export const CITATION_REGISTRATIONS: readonly string[] = [
-  'AgroLens — processo nº BR512026002893-0, publicado em 16/04/2026. Autores: Jotair Elio Kwiatkowski Junior; Leandro Rampim; Carlos Eduardo Andrade Iatskiu; Jean Rafael Guilouski Wojcik.',
-  'AgroLensWeb — processo nº BR512026009114-4, publicado em 30/06/2026. Autores: Jotair Elio Kwiatkowski Junior; Leandro Rampim; Carlos Eduardo Andrade Iatskiu; Cauã André Conzatti; Jean Rafael Guilouski Wojcik; Vitor Muller Anunciato.',
-];
-
-/** Copy-ready citation in ABNT style. */
+/** Copy-ready reference to the AgroLens software, in ABNT style. */
 export const CITATION_ABNT =
-  'WOJCIK, Jean Rafael Guilouski; KWIATKOWSKI JUNIOR, Jotair Elio; RAMPIM, Leandro. AgroLens: plataforma de captura de imagens de campo, anotação e exportação de conjuntos de dados YOLO para agricultura de precisão. Guarapuava: Universidade Estadual do Centro-Oeste, 2026. Registro INPI nº BR512026002893-0 (AgroLens) e nº BR512026009114-4 (AgroLensWeb). Disponível em: https://app.agrolens.rgw.app.';
-
-export const APP_URL = 'https://app.agrolens.rgw.app';
+  'WOJCIK, Jean Rafael Guilouski; KWIATKOWSKI JUNIOR, Jotair Elio; RAMPIM, Leandro. AgroLens: plataforma de captura de imagens de campo, anotação, exportação e inferência para agricultura de precisão. Guarapuava: Universidade Estadual do Centro-Oeste, 2026. Registro de programa de computador INPI nº BR512026002893-0. Disponível em: https://app.agrolens.rgw.app.';

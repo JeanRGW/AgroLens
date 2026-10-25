@@ -107,7 +107,7 @@ const adminMenu: MenuItem[] = [
 
           <hr class="section-divider" />
 
-          <p class="section-label">Gestão</p>
+          <p class="section-label">Cadastros</p>
 
           @for (item of managementMenu; track item.route) {
             <a

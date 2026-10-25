@@ -96,56 +96,14 @@ mat-card-header mat-card-title {
 
 .citation-body {
   display: grid;
-  gap: 1.5rem;
+  gap: 0.9rem;
   align-items: start;
 }
 
-.citation-title {
-  margin: 0 0 0.9rem;
-  max-width: 62ch;
-  font-weight: 700;
-  line-height: 1.5;
-  color: var(--agri-text);
-  text-align: justify;
-}
-
-.author-list,
-.affiliation-list {
-  list-style: none;
+.citation-hint {
   margin: 0;
-  padding: 0;
-  max-width: 62ch;
-}
-
-.author-list li {
-  margin-bottom: 0.25rem;
-  color: var(--agri-text);
-}
-
-.affiliation-list {
-  margin-top: 0.75rem;
-}
-
-.affiliation-list li {
-  margin-bottom: 0.35rem;
+  color: var(--agri-text-muted);
   font-size: 0.85rem;
-  line-height: 1.5;
-  color: var(--agri-text-secondary);
-  text-align: justify;
-}
-
-.column-label {
-  margin: 0 0 0.55rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--agri-accent-dark);
-}
-
-.registration {
-  font-size: 0.85rem;
-  margin-bottom: 0.6rem;
 }
 
 /* The ABNT line is a reference record, so it is set in the mono face. */
@@ -206,10 +164,6 @@ mat-card-header mat-card-title {
   margin: 0;
 }
 
-.page-footer a {
-  color: var(--agri-accent-dark);
-}
-
 /* ——— Wide layout ——— */
 
 @media (min-width: 1100px) {
@@ -243,11 +197,6 @@ mat-card-header mat-card-title {
     grid-area: footer;
   }
 
-  .citation-body {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) minmax(0, 0.9fr);
-    gap: 2rem;
-  }
-
   .logo-tile {
     min-height: 96px;
   }
@@ -259,9 +208,7 @@ mat-card-header mat-card-title {
 
 @media (max-width: 720px) {
   /* Justified text opens ugly gaps on narrow screens. */
-  .prose,
-  .citation-title,
-  .affiliation-list li {
+  .prose {
     text-align: left;
   }
 

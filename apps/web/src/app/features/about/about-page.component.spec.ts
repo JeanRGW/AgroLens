@@ -30,27 +30,37 @@ describe('AboutPageComponent', () => {
     expect(images.every((image) => (image.getAttribute('alt') ?? '').length > 0)).toBeTrue();
   });
 
-  it('cites the authors, the departments and both INPI registrations', () => {
-    const text = render().textContent ?? '';
+  it('shows a single copy-ready ABNT reference to the software', () => {
+    const element = render();
+    const text = element.textContent ?? '';
 
     expect(text).toContain('Como citar');
-    expect(text).toContain('Jean Rafael Guilouski Wojcik (DECOMP)');
-    expect(text).toContain('Jotair Elio Kwiatkowski Junior (DECOMP)');
-    expect(text).toContain('Leandro Rampim (DEAGRO)');
-    expect(text).toContain('Departamento de Ciência da Computação (DECOMP)');
-    expect(text).toContain('Departamento de Agronomia (DEAGRO)');
-    expect(text).toContain('Instituto Nacional da Propriedade Industrial');
-    expect(text).toContain('BR512026002893-0');
-    expect(text).toContain('BR512026009114-4');
-    expect(text).not.toContain('XXXXXX');
     expect(text).toContain('WOJCIK, Jean Rafael Guilouski');
+    expect(text).toContain('KWIATKOWSKI JUNIOR, Jotair Elio');
+    expect(text).toContain('RAMPIM, Leandro');
+    expect(text).toContain('AgroLens: plataforma');
+    expect(text).toContain('Universidade Estadual do Centro-Oeste, 2026');
+    expect(text).toContain('BR512026002893-0');
+    expect(text).not.toContain('XXXXXX');
+
+    // Reduced block: one reference only, no author/affiliation/registration
+    // columns, and the other INPI registration is gone.
+    expect(text).not.toContain('BR512026009114-4');
+    expect(element.querySelector('.citation-reference')).toBeNull();
+    expect(element.querySelector('.author-list')).toBeNull();
+    expect(element.querySelector('.affiliation-list')).toBeNull();
+    expect(element.querySelector('.column-label')).toBeNull();
+
+    const copy = element.querySelector('app-copy-id-button button') as HTMLButtonElement;
+    expect(copy).not.toBeNull();
+    expect(copy.getAttribute('aria-label')).toBe('Copiar a referência ABNT');
   });
 
   it('mentions the NMAP nucleus in the project description', () => {
     const text = render().textContent ?? '';
 
     expect(text).toContain(
-      'O núcleo de mecanização de agricultura de precisão NMAP da Unicentro oferece mais uma solução na área de tecnologia',
+      'O Núcleo de Mecanização e Agricultura de Precisão (NMAP) da Unicentro oferece mais uma solução na área de tecnologia',
     );
   });
 });

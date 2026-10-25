@@ -118,15 +118,20 @@ async function activate(script, keys) {
 
 test("Flutter activation removes only old Flutter caches", async () => {
   const worker = await readFile(new URL("sw.js", web), "utf8");
+  // Derive the names from the worker so a cache version bump cannot silently
+  // turn this assertion into "deletes the current cache too".
+  const [, prefix, version] = worker.match(
+    /const CACHE_PREFIX = "([^"]+)";\s*const CACHE_NAME = `\$\{CACHE_PREFIX\}([^`]+)`;/,
+  );
   const keys = [
-    "agrolens-m-v2",
-    "agrolens-m-v3",
-    "agrolens-m-v4",
+    `${prefix}v2`,
+    `${prefix}v3`,
+    `${prefix}${version}`,
     "ngsw:/:db:control",
     "unrelated",
   ];
   const result = await activate(worker, keys);
-  assert.deepEqual(result.deleted, ["agrolens-m-v2", "agrolens-m-v3"]);
+  assert.deepEqual(result.deleted, [`${prefix}v2`, `${prefix}v3`]);
 });
 
 test("Flutter does not cache API or Angular resources", async () => {

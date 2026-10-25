@@ -257,11 +257,6 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: CatalogActionRow(
               actions: [
-                CatalogAction(
-                  onPressed: () => _openDetails(property),
-                  icon: Icons.grid_view,
-                  label: 'Talhões',
-                ),
                 if (widget.catalogRepository.canMutate(property)) ...[
                   CatalogAction(
                     onPressed: property.isPendingSync
@@ -271,13 +266,23 @@ class _PropertyCatalogScreenState extends State<PropertyCatalogScreen> {
                     label: 'Editar',
                   ),
                   CatalogAction(
+                    onPressed: () => _openDetails(property),
+                    icon: Icons.grid_view,
+                    label: '+Talhões',
+                  ),
+                  CatalogAction(
                     onPressed: property.isPendingSync
                         ? _showPendingSyncBlockedMessage
                         : () => _deleteProperty(property),
                     icon: Icons.delete_outline,
                     label: 'Excluir',
                   ),
-                ],
+                ] else
+                  CatalogAction(
+                    onPressed: () => _openDetails(property),
+                    icon: Icons.grid_view,
+                    label: '+Talhões',
+                  ),
               ],
             ),
           ),

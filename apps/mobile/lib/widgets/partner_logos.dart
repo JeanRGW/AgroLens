@@ -11,7 +11,7 @@ const kPartnerLogos = [
   'FAPA_logo.png',
   'FA_logo.png',
   'FundoParana_logo.png',
-  'SEET_logo.png',
+  'seti_logo.png',
   'LOGO_NMAP_NOVA.png',
   'UNICENTRO_logo.png',
 ];

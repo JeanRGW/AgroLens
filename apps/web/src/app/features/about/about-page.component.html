@@ -39,49 +39,25 @@
       <mat-card-title>Como citar</mat-card-title>
     </mat-card-header>
     <mat-card-content class="citation-body">
-      <div class="citation-reference">
-        <p class="citation-title">{{ citationTitle }}</p>
-
-        <ul class="author-list">
-          @for (author of citationAuthors; track author) {
-            <li>{{ author }}</li>
-          }
-        </ul>
-
-        <ul class="affiliation-list">
-          @for (affiliation of citationAffiliations; track affiliation) {
-            <li>{{ affiliation }}</li>
-          }
-        </ul>
-      </div>
-
-      <div class="citation-registration">
-        <p class="column-label">Registro INPI</p>
-        <p class="prose registration">{{ citationRegistration }}</p>
-        @for (registration of citationRegistrations; track registration) {
-          <p class="prose registration">{{ registration }}</p>
-        }
-      </div>
+      <p class="citation-hint">Referência do software no padrão ABNT (NBR 6023).</p>
 
       <div class="abnt">
         <p class="abnt-label">
           <mat-icon>format_quote</mat-icon>
-          Formato ABNT
+          Referência
         </p>
         <p class="abnt-text">{{ citationAbnt }}</p>
         <app-copy-id-button
           [id]="citationAbnt"
-          displayText="Copiar"
-          copiedMessage="Citação copiada."
-          ariaLabel="Copiar a citação no formato ABNT"
+          displayText="Copiar referência"
+          copiedMessage="Referência copiada."
+          ariaLabel="Copiar a referência ABNT"
         />
       </div>
     </mat-card-content>
   </mat-card>
 
   <footer class="page-footer">
-    <a [href]="appUrl" target="_blank" rel="noopener noreferrer">{{ appUrl }}</a>
     <p>Para suporte, contate o administrador do sistema.</p>
-    <p>Desenvolvido em 2026</p>
   </footer>
 </section>
