@@ -44,6 +44,8 @@ const OPTIONAL_SHELL = [
   "canvaskit/chromium/canvaskit.wasm",
   "canvaskit/webparagraph/canvaskit.js",
   "canvaskit/webparagraph/canvaskit.wasm",
+  // App icon shown by the home greeting banner.
+  "assets/assets/app_icon.png",
   "assets/assets/logo/agraria_logo.svg",
   "assets/assets/logo/agronomia_logo.png",
   "assets/assets/logo/BDA_logo.png",

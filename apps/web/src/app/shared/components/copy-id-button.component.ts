@@ -39,7 +39,7 @@ export function shortId(value: string): string {
       font-family: var(--agri-mono);
       font-size: 0.8rem;
       color: var(--agri-accent-dark);
-      max-width: 220px;
+      max-width: 100%;
 
       .uid-label {
         overflow: hidden;
