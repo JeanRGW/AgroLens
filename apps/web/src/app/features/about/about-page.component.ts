@@ -6,6 +6,7 @@ import { CopyIdButtonComponent } from '../../shared/components/copy-id-button.co
 import { PageHeaderComponent } from '../../shared/components/page-header.component';
 import {
   CITATION_ABNT,
+  INPI_REGISTRATIONS,
   PARTNER_INTRO,
   PARTNER_LOGOS,
   PROJECT_DESCRIPTION,
@@ -25,4 +26,5 @@ export class AboutPageComponent {
   readonly note = PROJECT_NOTE;
   readonly partnerIntro = PARTNER_INTRO;
   readonly citationAbnt = CITATION_ABNT;
+  readonly inpiRegistrations = INPI_REGISTRATIONS;
 }

@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../widgets/custom_app_bar.dart';
+import '../widgets/custom_scaffold.dart';
 import '../widgets/partner_logos.dart';
+
+/// Software registrations at the National Institute of Industrial Property,
+/// shown discreetly at the end of the screen rather than in the reference.
+const _kInpiRegistrations = <(String, String)>[
+  ('AgroLens', 'BR512026002893-0'),
+  ('AgroLensWeb', 'BR512026009114-4'),
+];
 
 /// Copy-ready reference to the AgroLens software, in ABNT style.
 const _kCitationAbnt =
     'WOJCIK, Jean Rafael Guilouski; KWIATKOWSKI JUNIOR, Jotair Elio; RAMPIM, '
     'Leandro. AgroLens: plataforma de captura de imagens de campo, anotação, '
     'exportação e inferência para agricultura de precisão. '
-    'Guarapuava: Universidade Estadual do Centro-Oeste, 2026. Registro de '
-    'programa de computador INPI nº BR512026002893-0. '
+    'Guarapuava: Universidade Estadual do Centro-Oeste, 2026. '
     'Disponível em: https://app.agrolens.rgw.app.';
 
 class AboutScreen extends StatelessWidget {
@@ -24,8 +32,12 @@ class AboutScreen extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Sobre')),
+  Widget build(BuildContext context) => CustomScaffold(
+    appBar: CustomAppBar(
+      leading: CustomAppBarAction.backButton(context),
+      title: 'Sobre',
+      subtitle: 'Conheça o projeto e como citar',
+    ),
     body: SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,11 +227,44 @@ class AboutScreen extends StatelessWidget {
               ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: Text(
-              'Para suporte, contate o administrador do sistema.',
-              textAlign: TextAlign.center,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+            child: Column(
+              children: [
+                const Text(
+                  'Para suporte, contate o administrador do sistema.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 12,
+                  runSpacing: 2,
+                  children: [
+                    for (final (product, number) in _kInpiRegistrations)
+                      Text(
+                        '$product $number',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          color: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.75),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Registros de programa de computador no INPI.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    color: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

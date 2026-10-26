@@ -59,5 +59,14 @@
 
   <footer class="page-footer">
     <p>Para suporte, contate o administrador do sistema.</p>
+    <p class="registrations">
+      @for (registration of inpiRegistrations; track registration.number) {
+        <span class="registration">
+          {{ registration.product }}
+          <span class="registration-number">{{ registration.number }}</span>
+        </span>
+      }
+    </p>
+    <p class="registration-caption">Registros de programa de computador no INPI.</p>
   </footer>
 </section>

@@ -28,13 +28,13 @@ void main() {
       'assets/logo/agronomia_logo.png',
       'assets/logo/BDA_logo.png',
       'assets/logo/CC_logo.png',
+      'assets/logo/seti_logo.png',
+      'assets/logo/FA_logo.png',
+      'assets/logo/FundoParana_logo.png',
       'assets/logo/agraria_logo.svg',
       'assets/logo/capes_logo.png',
       'assets/logo/CNPq_logo.svg',
       'assets/logo/FAPA_logo.png',
-      'assets/logo/FA_logo.png',
-      'assets/logo/FundoParana_logo.png',
-      'assets/logo/seti_logo.png',
       'assets/logo/LOGO_NMAP_NOVA.png',
       'assets/logo/UNICENTRO_logo.png',
     ]);
@@ -60,8 +60,8 @@ void main() {
     await pumpAbout(tester);
 
     expect(find.text('Como citar'), findsOneWidget);
-    // The reference names the authors, the software, the institution, the INPI
-    // registration and the access date, and no placeholder is left behind.
+    // The reference cites the software itself: authors, title, institution and
+    // URL, with no INPI certificate and no access date.
     expect(
       find.textContaining('WOJCIK, Jean Rafael Guilouski'),
       findsOneWidget,
@@ -77,6 +77,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('BR512026002893-0'), findsOneWidget);
+    // The registrations live in the footer, outside the reference.
+    expect(find.textContaining('BR512026009114-4'), findsOneWidget);
+    expect(
+      find.textContaining('Registros de programa de computador'),
+      findsOneWidget,
+    );
     expect(find.textContaining('XXXXXX'), findsNothing);
     expect(find.text('Copiar referência'), findsOneWidget);
   });
@@ -107,6 +113,8 @@ void main() {
     await tester.pump();
 
     expect(copied, startsWith('WOJCIK, Jean Rafael Guilouski'));
-    expect(copied, contains('BR512026002893-0'));
+    expect(copied, contains('Disponível em: https://app.agrolens.rgw.app.'));
+    expect(copied, isNot(contains('BR512026')));
+    expect(copied, isNot(contains('Acesso em')));
   });
 }
