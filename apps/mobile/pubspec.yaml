@@ -1,7 +1,7 @@
 name: agrolens
 description: "Flutter field app for AgroLens image capture, metadata collection, offline queueing, and backend sync."
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.0+1
 license: Apache-2.0
 repository: https://github.com/JeanRGW/AgroLens/tree/main/apps/mobile
 homepage: https://github.com/JeanRGW/AgroLens/tree/main/apps/mobile#readme
